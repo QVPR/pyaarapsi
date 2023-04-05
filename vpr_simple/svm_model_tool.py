@@ -21,10 +21,10 @@ patch_sklearn()
 from sklearn import svm
 from sklearn.preprocessing import StandardScaler
 
-from aarapsi_robot_pack.core.enum_tools import enum_name
-from aarapsi_robot_pack.core.file_system_tools import scan_directory
-from aarapsi_robot_pack.vpr_simple import VPRImageProcessor, FeatureType
-from aarapsi_robot_pack.vpred import *
+from ..core.enum_tools import enum_name
+from ..core.file_system_tools import scan_directory
+from ..vpr_simple import VPRImageProcessor, FeatureType
+from ..vpred import *
 
 # For logging
 class State(Enum):

@@ -13,12 +13,12 @@ import csv
 from enum import Enum
 from tqdm import tqdm
 try:
-    from aarapsi_robot_pack.core.enum_tools import enum_name
-    from aarapsi_robot_pack.vpr_classes import NetVLAD_Container, HybridNet_Container
-    from aarapsi_robot_pack.core.helper_tools import formatException
+    from ..core.enum_tools import enum_name
+    from ..vpr_classes import NetVLAD_Container, HybridNet_Container
+    from ..core.helper_tools import formatException
     PYTHON_LIBRARY_STATUS = True
 except:
-    print("This file is running without knowledge of, or outside of, the aarapsi_robot_pack python library")
+    print("This file is running without knowledge of, or outside of, the pyaarapsi python library")
     print("This is OK, however feature extraction and building new compressed libraries is disabled.")
     print("Although best efforts have been made to ensure compatibility, issues may arise.")
     PYTHON_LIBRARY_STATUS = False

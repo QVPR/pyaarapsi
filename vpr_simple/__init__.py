@@ -3,6 +3,8 @@ from .vpr_image_methods import *
 from .vpr_plots import *
 from .svm_model_tool import *
 
+from enum import Enum
+
 class Tolerance_Mode(Enum):
     METRE_CROW_TRUE = 0
     METRE_CROW_MATCH = 1

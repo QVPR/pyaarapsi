@@ -1,6 +1,6 @@
 import argparse as ap
 import string
-from aarapsi_robot_pack.core.enum_tools import enum_value_options
+from .enum_tools import enum_value_options
 
 # Collection of functions that check whether an input can be appropriately cast
 # Functions are named check_(desired output type)

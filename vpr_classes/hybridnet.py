@@ -11,7 +11,7 @@ import torch
 from tqdm.auto import tqdm
 import cv2
 from PIL import Image
-from aarapsi_robot_pack.vpr_classes.download_models import download_hybridnet_models, HYBRIDNET_ROOT_DIR
+from .download_models import download_hybridnet_models, HYBRIDNET_ROOT_DIR
 
 class PlaceDataset(torch.utils.data.Dataset):
     def __init__(self, image_data, dims=None):

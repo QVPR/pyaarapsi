@@ -6,9 +6,8 @@ import gdown
 import sys
 import os
 import imp # TODO: deprecated.
-AARAPSI_ROBOT_PACK_ROOT_DIR = imp.find_module("aarapsi_robot_pack")[1]
 PATCHNETVLAD_ROOT_DIR       = imp.find_module("patchnetvlad")[1]
-HYBRIDNET_ROOT_DIR          = os.path.join(AARAPSI_ROBOT_PACK_ROOT_DIR, 'HybridNet')
+HYBRIDNET_ROOT_DIR          = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir)), 'HybridNet')
 
 def ask_yesnoexit(question):
     """
