@@ -1,0 +1,13 @@
+pyaarapsi.code-workspace
+.vscode/
+build/
+.prof
+__pycache__
+src/CMakeLists.txt
+*:Zone.Identifier
+*.caffemodel
+*.avi
+*.pcd
+*.pyc
+*.swp
+*.npz

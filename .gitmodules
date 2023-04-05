@@ -1,0 +1,3 @@
+[submodule "Patch-NetVLAD"]
+	path = Patch-NetVLAD
+	url = https://github.com/QVPR/Patch-NetVLAD
