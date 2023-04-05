@@ -20,7 +20,7 @@ is_conda = os.path.exists(os.path.join(sys.prefix, 'conda-meta'))
 if not is_conda:
     install_require_list.append('opencv-python')
 
-setup(name='patchnetvlad',
+setup(name='pyaarapsi',
       version='0.1.0',
       description='PyAARAPSI: Python Package for AARAPSI Project',
       author='Owen Claxton, Connor Malone, and Helen Carson',
