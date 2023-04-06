@@ -72,7 +72,8 @@ class RobotRun:
             print('Error: feature_image: no features')
             return
         else:
-            return self.feature(number).reshape((self.frame_size,self.frame_size))
+            size=int((len(self.feature(number)))**(1/2)) # frame size of reshaped feature vector
+            return self.feature(number).reshape((size,size))
         
     def set_xy(self, xy, num=None):
         '''
