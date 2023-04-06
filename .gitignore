@@ -12,3 +12,4 @@ src/CMakeLists.txt
 *.swp
 *.npz
 *.egg-info
+.ipynb_checkpoints
