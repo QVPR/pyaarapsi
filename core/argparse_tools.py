@@ -86,6 +86,8 @@ def check_valid_ip(value):
 
 def check_string(value):
     str_value = str(value)
+    if str_value.lower() == 'none':
+        return None
     return str_value
 
 def check_enum(value, enum, skip=[None]):
