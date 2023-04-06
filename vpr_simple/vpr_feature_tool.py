@@ -14,6 +14,7 @@ from enum import Enum
 from tqdm import tqdm
 try:
     from ..core.enum_tools import enum_name
+    from ..core.ros_tools import LogType, roslogger
     from ..vpr_classes import NetVLAD_Container, HybridNet_Container
     from ..core.helper_tools import formatException
     PYTHON_LIBRARY_STATUS = True
@@ -31,14 +32,6 @@ class FeatureType(Enum):
     NETVLAD     = 3
     HYBRIDNET   = 4
 
-# For logging
-class State(Enum):
-    DEBUG       = "[DEBUG]"
-    INFO        = "[INFO]"
-    WARN        = "[WARN]"
-    ERROR       = "[!ERROR!]"
-    FATAL       = "[!!FATAL!!]"
-
 class VPRImageProcessor: # main ROS class
     def __init__(self, ros=False, init_netvlad=False, init_hybridnet=False, cuda=False, dims=None):
         global PYTHON_LIBRARY_STATUS
@@ -54,35 +47,18 @@ class VPRImageProcessor: # main ROS class
             self.IMG_DIMS = dims
 
         if not self.allow_build and (self.init_hybridnet or self.init_hybridnet):
-            self.print("Initialisation request for hybridnet or netvlad but generation of new libraries and feature extraction is disabled", State.INFO)
+            self.print("Initialisation request for hybridnet or netvlad but generation of new libraries and feature extraction is disabled", LogType.INFO)
         elif self.allow_build:
             if self.init_netvlad:
                 if dims is None: raise Exception("init_netvlad specified true but dims not provided")
-                self.netvlad = NetVLAD_Container(cuda=self.cuda, ngpus=int(self.cuda), logger=lambda x: self.print(x, State.DEBUG), dims=self.IMG_DIMS)
+                self.netvlad = NetVLAD_Container(cuda=self.cuda, ngpus=int(self.cuda), logger=lambda x: self.print(x, LogType.DEBUG), dims=self.IMG_DIMS)
 
             if self.init_hybridnet:
                 if dims is None: raise Exception("init_hybridnet specified true but dims not provided")
-                self.hybridnet = HybridNet_Container(cuda=self.cuda, logger=lambda x: self.print(x, State.DEBUG), dims=self.IMG_DIMS)
+                self.hybridnet = HybridNet_Container(cuda=self.cuda, logger=lambda x: self.print(x, LogType.DEBUG), dims=self.IMG_DIMS)
 
-    def print(self, text, state):
-    # Print function helper
-    # For use with integration with ROS
-        try:
-            if self.ros: # if used inside of a running ROS node
-                if state == State.DEBUG:
-                    rospy.logdebug(text)
-                elif state == State.INFO:
-                    rospy.loginfo(text)
-                elif state == State.WARN:
-                    rospy.logwarn(text)
-                elif state == State.ERROR:
-                    rospy.logerr(text)
-                elif state == State.FATAL:
-                    rospy.logfatal(text)
-            else:
-                raise Exception
-        except:
-            print(state.value + " " + str(text))
+    def print(self, text, logtype):
+        roslogger(text, logtype, self.ros)
 
     def buildFullDictionary(self, dict_in=None):
         if not (dict_in is None):
@@ -110,12 +86,12 @@ class VPRImageProcessor: # main ROS class
 
         assert self.allow_build == True, "library generation is disabled"
 
-        self.print("[loadFull] Attempting to load library.", State.DEBUG)
+        self.print("[loadFull] Attempting to load library.", LogType.DEBUG)
         if not self.loadImageFeatures(img_paths, feat_type, img_dims, seed_raw_image_data): raise Exception("Fatal")
         if not len(self.loadOdometry(odom_path)): raise Exception("Fatal")
         self.buildFullDictionary()
         if not (self.IMAGES_LOADED and self.ODOM_LOADED):
-            self.print("[loadFull] Terminating; load procedure failed.", State.FATAL)
+            self.print("[loadFull] Terminating; load procedure failed.", LogType.FATAL)
             sys.exit()
         return self.SET_DICT
 
@@ -149,14 +125,14 @@ class VPRImageProcessor: # main ROS class
             for key in self.IMG_FEATS:
                 self.IMG_FEATS[key] = dict.fromkeys(img_set_names)
             for img_path in self.IMG_PATHS:
-                self.print("[loadImageFeatures] Loading set %s >>%s<<" % (str(self.IMG_PATHS), str(img_path)), State.INFO)
+                self.print("[loadImageFeatures] Loading set %s >>%s<<" % (str(self.IMG_PATHS), str(img_path)), LogType.INFO)
                 self.processImageDataset(img_path, fttypes, seed_raw_image_data)
             self.IMAGES_LOADED = True
             return len(self.IMG_PATHS)
     
         except Exception as e:
-            self.print("[loadImageFeatures] Unable to interpret, failed. Check variables.\nEnsure: img_paths is a valid string array, feat_type is a valid FeatureType value (not NONE), and image dimensions are a two-element integer tuple of valid dimensions (greater than zero).\nCode: %s" % (e), State.ERROR)
-            self.print(formatException(), State.DEBUG)
+            self.print("[loadImageFeatures] Unable to interpret, failed. Check variables.\nEnsure: img_paths is a valid string array, feat_type is a valid FeatureType value (not NONE), and image dimensions are a two-element integer tuple of valid dimensions (greater than zero).\nCode: %s" % (e), LogType.ERROR)
+            self.print(formatException(), LogType.DEBUG)
             self.clearImageVariables()
             return 0
 
@@ -173,16 +149,16 @@ class VPRImageProcessor: # main ROS class
             if not len(img_file_paths):
                 raise Exception("[processImageDataset] No files at path - cannot continue.")
             
-            self.print("[processImageDataset] Attempting to process images for directory: %s" % (img_set_name), State.DEBUG)
+            self.print("[processImageDataset] Attempting to process images for directory: %s" % (img_set_name), LogType.DEBUG)
             image_list      = []
             for img_file_path in tqdm(img_file_paths):
                 image_list.append(cv2.imread(img_file_path)[:, :, ::-1])
         else:
-            self.print("[processImageDataset] Using seed_raw_image_data for directory: %s" % (img_set_name), State.DEBUG)
+            self.print("[processImageDataset] Using seed_raw_image_data for directory: %s" % (img_set_name), LogType.DEBUG)
             image_list      = seed_raw_image_data[img_path]
 
         for fttype in fttype_in:
-            self.print("[processImageDataset] Loading set %s >>%s<<" % (str(list(self.IMG_FEATS.keys())), enum_name(fttype)), State.DEBUG)
+            self.print("[processImageDataset] Loading set %s >>%s<<" % (str(list(self.IMG_FEATS.keys())), enum_name(fttype)), LogType.DEBUG)
             self.IMG_FEATS[enum_name(fttype)][img_set_name] = copy.deepcopy(self.getFeat(image_list, fttype, use_tqdm=True))
     
     def getFeat(self, im, fttype_in, dims=None, use_tqdm=False):
@@ -256,7 +232,7 @@ class VPRImageProcessor: # main ROS class
             self.ODOM_LOADED = True
             return self.ODOM
         except Exception as e:
-            self.print("[loadOdometry] Unable to interpret, failed. Check variables.\nEnsure: odom_path is a valid string.\nCode: %s" % (e), State.ERROR)
+            self.print("[loadOdometry] Unable to interpret, failed. Check variables.\nEnsure: odom_path is a valid string.\nCode: %s" % (e), LogType.ERROR)
             self.clearOdomVariables()
             return {}
     
@@ -266,7 +242,7 @@ class VPRImageProcessor: # main ROS class
 
         assert self.allow_build == True, "library generation is disabled"
 
-        self.print("[processOdomDataset] Attempting to process odometry from: %s" % (self.ODOM_PATH), State.DEBUG)
+        self.print("[processOdomDataset] Attempting to process odometry from: %s" % (self.ODOM_PATH), LogType.DEBUG)
         self.TIMES = []
         self._POSI = {'x': [], 'y': [], 'yaw': []}
         self._VELO = {'x': [], 'y': [], 'yaw': []}
@@ -299,7 +275,7 @@ class VPRImageProcessor: # main ROS class
         if not (self.IMAGES_LOADED):
             raise Exception("[save2npz] No images loaded. loadImageFeatures() must be performed before any save process can be performed.")
         if not (self.ODOM_LOADED):
-            self.print("[save2npz] No odometry loaded: rows will be empty.", State.WARN)
+            self.print("[save2npz] No odometry loaded: rows will be empty.", LogType.WARN)
 
         # ensure we don't double up on a ".npz":
         ext = os.path.splitext(filename)[-1].lower()
@@ -316,13 +292,13 @@ class VPRImageProcessor: # main ROS class
         full_file_path = filename_extended + ".npz"
         # perform save to compressed numpy file:
         try:
-            self.print("[save2npz] Saving data as '%s'." % (full_file_path), State.INFO)
+            self.print("[save2npz] Saving data as '%s'." % (full_file_path), LogType.INFO)
             # Perform actual save operation, where each dict key is assigned as the variable name on the left-hand-side of equality 
             # i.e. filename, ft, x, y, and z will be dict keys, with lists or dicts assigned to them.
             np.savez(full_file_path, img_feats=self.IMG_FEATS, odom=self.ODOM, times=self.TIMES, \
                         odom_path=self.ODOM_PATH, image_paths=self.IMG_PATHS, img_dims=self.IMG_DIMS)
         except Exception as e:
-            self.print("[save2npz] Unable to perform save operation. Check path.\nCode: %s" % (e), State.ERROR)
+            self.print("[save2npz] Unable to perform save operation. Check path.\nCode: %s" % (e), LogType.ERROR)
 
     def _npzLoader(self, database_path, filename):
     # Private method, embedded in public methods
@@ -338,7 +314,7 @@ class VPRImageProcessor: # main ROS class
         file_found = False
         for entry in os.scandir(database_path):
             if entry.is_file() and entry.name.startswith(filename):
-                self.print("[_npzLoader] File found: %s" % (entry.name), State.INFO)
+                self.print("[_npzLoader] File found: %s" % (entry.name), LogType.INFO)
                 data = np.load(entry.path, allow_pickle=True)
                 file_found = True
                 break
@@ -346,9 +322,9 @@ class VPRImageProcessor: # main ROS class
             raise Exception("[_npzLoader] No file found starting with %s in directory '%s'" % (filename, database_path))
 
         try:
-            self.print("[_npzLoader] Data Main Keys: %s" % (str(np.fromiter(data.keys(), (str, 20))).replace('\'', '').replace('\n', '').replace(' ', ', ')), State.DEBUG)
-            self.print("[_npzLoader] Data Image Keys: %s" % (str(np.fromiter(data['img_feats'].item().keys(), (str, 20))).replace('\'', '').replace('\n', '').replace(' ', ', ')), State.DEBUG)
-            self.print("[_npzLoader] Data Odom Keys: %s" % (str(np.fromiter(data['odom'].item().keys(), (str, 20))).replace('\'', '').replace('\n', '').replace(' ', ', ')), State.DEBUG)
+            self.print("[_npzLoader] Data Main Keys: %s" % (str(np.fromiter(data.keys(), (str, 20))).replace('\'', '').replace('\n', '').replace(' ', ', ')), LogType.DEBUG)
+            self.print("[_npzLoader] Data Image Keys: %s" % (str(np.fromiter(data['img_feats'].item().keys(), (str, 20))).replace('\'', '').replace('\n', '').replace(' ', ', ')), LogType.DEBUG)
+            self.print("[_npzLoader] Data Odom Keys: %s" % (str(np.fromiter(data['odom'].item().keys(), (str, 20))).replace('\'', '').replace('\n', '').replace(' ', ', ')), LogType.DEBUG)
             # update class attributes:
             self.IMG_FEATS = data['img_feats'].item()
             self.ODOM = data['odom'].item()
@@ -384,12 +360,12 @@ class VPRImageProcessor: # main ROS class
                 filename_extended = filename_extended + "%d" % (img_dims[1])
 
             dict_keys, imgs_keys, odom_keys = self._npzLoader(database_path, filename_extended)
-            self.print("[npzLoader] Success. Data found with keys: \n\t%s" % (dict_keys), State.DEBUG)
-            self.print("[npzLoader] Image dictionary contains keys: \n\t%s" % (imgs_keys), State.DEBUG)
-            self.print("[npzLoader] Odometry dictionary contains keys: \n\t%s" % (odom_keys), State.DEBUG)
+            self.print("[npzLoader] Success. Data found with keys: \n\t%s" % (dict_keys), LogType.DEBUG)
+            self.print("[npzLoader] Image dictionary contains keys: \n\t%s" % (imgs_keys), LogType.DEBUG)
+            self.print("[npzLoader] Odometry dictionary contains keys: \n\t%s" % (odom_keys), LogType.DEBUG)
             return True
         except Exception as e:
-            self.print("[npzLoader] Load failed. Check path and file name is correct.\nCode: %s" % (e), State.ERROR)
+            self.print("[npzLoader] Load failed. Check path and file name is correct.\nCode: %s" % (e), LogType.ERROR)
             return {}
 
     def npzDatabaseLoadSave(self, database_path, filename, img_paths, odom_path, feat_type, img_dims, do_save=False, seed_raw_image_data=None):
@@ -399,13 +375,13 @@ class VPRImageProcessor: # main ROS class
     # do_save=True enables saving for fast loading (with directory/filename specified by database_path and filename respectively)
 
         if not self.npzLoader(database_path, filename, img_dims):
-            self.print("[npzDatabaseLoadSave] Fast load failed. Building normally.", State.WARN)
+            self.print("[npzDatabaseLoadSave] Fast load failed. Building normally.", LogType.WARN)
             self.SET_DICT = self.loadFull(img_paths, odom_path, feat_type, img_dims, seed_raw_image_data)
             if not len(self.SET_DICT):
                 raise Exception("[npzDatabaseLoadSave] Normal load failed, fatal error.")
         
             if do_save:
-                self.print("[npzDatabaseLoadSave] Build success.", State.INFO)
+                self.print("[npzDatabaseLoadSave] Build success.", LogType.INFO)
                 self.save2npz(database_path, filename)
 
         return self.SET_DICT

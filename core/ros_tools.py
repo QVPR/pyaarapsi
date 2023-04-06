@@ -1,5 +1,39 @@
 #!/usr/bin/env python3
 import rospy
+from enum import Enum
+
+# For logging
+class LogType(Enum):
+    DEBUG       = "[DEBUG]"
+    INFO        = "[INFO]"
+    WARN        = "[WARN]"
+    ERROR       = "[!ERROR!]"
+    FATAL       = "[!!FATAL!!]"
+
+
+def roslogger(text, logtype, ros=False, throttle=0, no_stamp=False):
+# Print function helper
+# For use with integration with ROS
+    try:
+        if ros: # if used inside of a running ROS node
+            if no_stamp:
+                go_back = '\b' * 21
+            else:
+                go_back = ''
+            if logtype == LogType.DEBUG:
+                rospy.logdebug_throttle(throttle, go_back + text)
+            elif logtype == LogType.INFO:
+                rospy.loginfo_throttle(throttle, go_back + text)
+            elif logtype == LogType.WARN:
+                rospy.logwarn_throttle(throttle, go_back + text)
+            elif logtype == LogType.ERROR:
+                rospy.logerr_throttle(throttle, go_back + text)
+            elif logtype == LogType.FATAL:
+                rospy.logfatal_throttle(throttle, go_back + text)
+        else:
+            raise Exception
+    except:
+        print(logtype.value + " " + str(text))
 
 class ROS_Param:
 
