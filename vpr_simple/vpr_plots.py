@@ -263,16 +263,16 @@ def updateDVecFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
     nmrc.fig_dvec_handles['tru'].data_source.data = {'x': [tInd], 'y': [dvc[tInd]/dvc_max_val]}
 
 ##################################################################
-#### Distance Vector Figure: do and update
+#### Filtered Distance Vector Figure: do and update
 
 def doFDVCFigBokeh(nmrc, odom_in):
 # Set up distance vector figure
 
-    fig_dvec    = figure(title="Distance Vector", width=500, height=250, \
+    fig_dvec    = figure(title="Filtered Distance Vector", width=500, height=250, \
                             x_axis_label = 'Index', y_axis_label = 'Distance', \
                             x_range = (0, len(odom_in['position']['x'])), y_range = (0, 1.2))
     fig_dvec    = disable_toolbar(fig_dvec)
-    dvc_plotted = fig_dvec.line([],   [], color="black",            legend_label="Warped Distance Vector") # distance vector
+    dvc_plotted = fig_dvec.line([],   [], color="black",            legend_label="Filtered Distance Vector") # distance vector
     mat_plotted = fig_dvec.circle([], [], color="red",     size=7,  legend_label="Selected") # matched image (lowest distance)
     tru_plotted = fig_dvec.circle([], [], color="magenta", size=7,  legend_label="True") # true image (correct match)
 
@@ -367,8 +367,8 @@ def updateOdomFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
         nmrc.fig_odom_handles['mat'].data_source.stream(new_mat_data, rollover=num_points)
 
 ##################################################################
-#### Distance Vector Figure: do and update
-
+#### SVM Metrics Figure: do and update
+#TODO
 def doSVMMFigBokeh(nmrc, odom_in):
 # Set up distance vector figure
 
@@ -387,7 +387,7 @@ def doSVMMFigBokeh(nmrc, odom_in):
     fig_dvec.legend.background_fill_alpha=0
 
     return {'fig': fig_dvec, 'spd': spd_plotted, 'dvc': dvc_plotted, 'mat': mat_plotted, 'tru': tru_plotted}
-
+#TODO
 def updateSVMMFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
 # Update DVec figure with new data (match->mInd, true->tInd)
 # Use old handles (mat, tru) and crunched distance vector (dvc)
