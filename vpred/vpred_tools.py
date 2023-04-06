@@ -2,28 +2,29 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import cdist
 
-def create_similarity_matrix(ref_arr, qry_arr):
-    # Arrays (ref_arr, qry_arr) must be a 2D, consisting of feature vectors: np.array([[X,X...],[X,X...]]) but may contain only one vector: np.array([[X,X...]])
-    # norm should contain an input that can return a mean and std using norm.mean() and norm.std() methods
-    mat = cdist(ref_arr, qry_arr, 'euclidean')
-    return mat
-    
+def create_similarity_vector(reference_feature_vector,query_features):
+    # query features must be a 2-D vector: np.array([[X,X...]])
+    # reference features must be a 2D array
+    similarity_vector = cdist(reference_feature_vector,query_features,'euclidean')
+    return similarity_vector
 
-def create_normalised_similarity_matrix(ref_arr, qry_arr):
-    # Arrays must be a 2D, consisting of feature vectors: np.array([[X,X...],[X,X...]]) but may contain only one vector: np.array([[X,X...]])
-    Sref    = cdist(ref_arr, ref_arr, 'euclidean')
-    S       = cdist(ref_arr, qry_arr, 'euclidean')
+def create_similarity_matrix(reference_feature_vector,query_feature_vector):
+    # query features must be a 2D array of feature vectors: np.array([[X,X...],[X,X...]])
+    # reference features must be a 2D array of feature vectors
+    similarity_matrix = cdist(reference_feature_vector,query_feature_vector,'euclidean')
+    return similarity_matrix
 
-    # Normalise S:
-    refmean = Sref.mean()
-    refstd  = Sref.std()
-    Snorm   = ( S - refmean ) / refstd
-
-    return Snorm, refmean, refstd
+def create_normalised_similarity_matrix(reference_feature_vector,query_feature_vector):
+    # query features must be a 2D array of feature vectors: np.array([[X,X...],[X,X...]])
+    # reference features must be a 2D array of feature vectors
+    Sref = cdist(reference_feature_vector,reference_feature_vector,'euclidean')
+    S = cdist(reference_feature_vector,query_feature_vector,'euclidean')
+    Snorm = (S - Sref.mean())/Sref.std()
+    return Snorm, Sref.mean(), Sref.std()
 
 def find_best_match(similarity_matrix):
     # works for similarity vectors as well as matrices
-    # TODO: need to identify if there are multiple entries with the best match!
+    # TODO: need to identify if there are multiple entries with the best match
     return np.argmin(similarity_matrix,axis=0)
 
 def find_next_best_match(similarity_matrix):
@@ -68,13 +69,13 @@ def find_nth_best_match_distances(similarity_matrix,n):
     return S_sorted[n-1,:] 
 
 def apply_distance_threshold(best_match_distances, threshold):
-    return best_match_distances < threshold
+    return best_match_distances <= threshold
 
 def extract_similarity_vector(Smatrix, query_number):
     if type(query_number) != int:
         print('ERROR extract_similarity_vector: query number must be an integer')
         return
-    if (query_number >= Smatrix.shape[0]) | (query_number < 0):
+    if (query_number >= Smatrix.shape[1]) | (query_number < 0):
         print('ERROR extract_similarity_vector: query number is less than zero or larger than query vector')
         return
     return Smatrix[:,query_number]
@@ -134,7 +135,18 @@ def find_prediction_performance_metrics(predicted_in_tolerance,actually_in_toler
     fn = ~predicted_in_tolerance & actually_in_tolerance
     return find_metrics(tp,fp,tn,fn,verbose)
 
-def find_y(S,actual_match,tolerance_threshold):
+def find_each_prediction_metric(predicted_in_tolerance,actually_in_tolerance): #as np.array
+    
+    predicted_in_tolerance=predicted_in_tolerance.astype('bool')
+    actually_in_tolerance=actually_in_tolerance.astype('bool')
+    
+    tp = predicted_in_tolerance & actually_in_tolerance
+    fp = predicted_in_tolerance & ~actually_in_tolerance
+    tn = ~predicted_in_tolerance & ~actually_in_tolerance
+    fn = ~predicted_in_tolerance & actually_in_tolerance
+    return tp,fp,tn,fn
+
+def find_y(S,actual_match,tolerance_threshold): # Note this doesn't account for when a match doesn't exist!!
     frame_error = find_frame_error(S,actual_match)
     in_tol = is_within_frame_tolerance(frame_error,tolerance_threshold)
     return in_tol
@@ -142,7 +154,7 @@ def find_y(S,actual_match,tolerance_threshold):
 def find_closedloop_performance_metrics(S,actual_match,tolerance,pred_intol):
 
     actually_intol=find_y(S,actual_match,tolerance)
-    match_exists = np.full_like(pred_intol,True)  # Assume that a match exist for each query
+    match_exists = np.full_like(pred_intol,True)  # Assume that a match exist for each query -- need to rework if not!!
 
     match_distances=find_best_match_distances(S)
     d_sweep = np.linspace(match_distances.min(),match_distances.max(),2000) #2000 is number of points in p-r curve
@@ -164,18 +176,40 @@ def find_baseline_performance_metrics(S,actual_match,tolerance):
 
 def plot_baseline_vs_closedloop_PRcurves(S,actual_match,tolerance,y_pred):
     p,r,tp,fp,tn,fn,d=find_baseline_performance_metrics(S,actual_match,tolerance)
-    plt.plot(r,p)
+    plt.plot(r,p);
     p,r,tp,fp,tn,fn,d=find_closedloop_performance_metrics(S,actual_match,tolerance,y_pred)
-    plt.plot(r,p)
-    plt.xlim(0,1)
-    plt.ylim(0,1)
-    plt.ylabel('Precision')
-    plt.xlabel('Recall')
-    plt.legend(['baseline','closed-loop'])
-    plt.title('Baseline vs Closed-Loop Performance')
+    plt.plot(r,p); 
+    plt.xlim(0,1); plt.ylim(0,1);
+    plt.ylabel('Precision');
+    plt.xlabel('Recall');
+    plt.legend(['baseline','closed-loop']);
+    plt.title('Baseline vs Closed-Loop Performance');
     return
 
-def find_mean_localisation_error(S,actual_match,y_pred=[0]):
-    if len(y_pred)==1: # default case where y_pred is not specified
-        y_pred=np.full(len(actual_match),True)
-    return find_frame_error(S,actual_match)[y_pred].mean()
+def find_precision_atR(P,R,desired_recall,verbose=False):
+    ''' 
+    Return the precision at a specific recall
+    P is a vector of precision values
+    R is a vector of corresponding recall values
+    '''
+    x=np.array(abs(R - desired_recall))
+    R_idx=np.where(x == x.min())[0].max()
+    if verbose==True:
+        print('at {0:3.1f}% Recall, Precision = {1:3.1f}%'.format(R[R_idx]*100,P[R_idx]*100))
+    return P[R_idx],R[R_idx],R_idx
+    
+def find_recall_atP(P,R,desired_precision,verbose=False):
+    ''' 
+    Return the recall at a specific precision
+    P is a vector of precision values
+    R is a vector of corresponding recall values
+    '''
+    x=np.array(abs(P - desired_precision))
+    xmin=x[~np.isnan(x)].min() # do this to remove any NaN values for precision
+    P_idx=np.where(x == xmin)[0].max()
+    if verbose==True:
+        print('at {0:3.1f}% Precision, Recall = {1:3.1f}%'.format(P[P_idx]*100,R[P_idx]*100))
+    #check:
+    if abs(P[P_idx] - desired_precision) > 0.01:
+        print('debug WARNING find_recall_atP: precision value is > 0.01 from desired P')
+    return P[P_idx],R[P_idx],P_idx
