@@ -135,7 +135,7 @@ class NetVLAD_Container:
         if not isfile(resume_ckpt):
             resume_ckpt = join(PATCHNETVLAD_ROOT_DIR, resume_ckpt)
             if not isfile(resume_ckpt):
-                download_netvlad_models(ask_for_permission=True)
+                download_netvlad_models()
 
         if isfile(resume_ckpt):
             self.logger("=> Trying to load checkpoint '{}'".format(resume_ckpt))
