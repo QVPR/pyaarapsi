@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from sklearn import svm
 from sklearn.preprocessing import StandardScaler
 from copy import copy
+from .vpred_factors import *
 from .robotvpr import *
 
 class RobotMonitor2D:
@@ -94,6 +95,9 @@ class RobotMonitor2D:
         ax.imshow(Z,origin='lower',extent=extent,aspect='auto');
         ax.contour(F1,F2,Z,levels=[0])
         ax.scatter(factor1,factor2,color=np.where(vpr.y,'g','r'),marker='.');
+        ax.set_xlabel(self.factors[0])
+        ax.set_ylabel(self.factors[1]);
+        ax.set_title('Z');
         return fig,ax
     
     
@@ -191,3 +195,7 @@ class DoubleRobotMonitor:
         ax.contour(F1,F2,Z,levels=[0])
         ax.scatter(factor1,factor2,color=np.where(vpr.y,'g','r'),marker='.');
         ax.axvline(0,ls='dashed',color='blue')
+        ax.set_ylabel('best match distance');
+        ax.set_xlabel('z-value from first SVM');
+        ax.set_title('Z');
+        return fig,ax
