@@ -143,6 +143,7 @@ class RobotRun:
             self.xy=self.xy[np.r_[start:end+1]]  # (note cannot use slices here, need to use indexing)
             self.x=self.xy[:,0]
             self.y=self.xy[:,1]
+            self.yaw=self.yaw[np.r_[start:end+1]]
         if len(self.odo_list) > 0:               # update odometry filenames if they exist
             self.odo_list=self.odo_list[start:end+1]
         if self.features.size > 0:               # update feature matrix (also use indices not slicing)
