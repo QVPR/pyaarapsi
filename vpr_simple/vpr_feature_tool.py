@@ -31,6 +31,7 @@ class FeatureType(Enum):
     PATCHNORM   = 2
     NETVLAD     = 3
     HYBRIDNET   = 4
+    ROLLNORM    = 5
 
 class VPRImageProcessor: # main ROS class
     def __init__(self, ros=False, init_netvlad=False, init_hybridnet=False, cuda=False, dims=None):
@@ -187,7 +188,7 @@ class VPRImageProcessor: # main ROS class
             req_mode    = isinstance(im, list)
 
             for fttype in fttypes:
-                if (fttype == FeatureType.RAW or fttype == FeatureType.PATCHNORM):
+                if fttype in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.ROLLNORM]:
                     if not req_mode:
                         im = [im]
                     ft_ready_list = []
@@ -198,6 +199,8 @@ class VPRImageProcessor: # main ROS class
                         ft  = cv2.cvtColor(imr, cv2.COLOR_RGB2GRAY)
                         if fttype == FeatureType.PATCHNORM:
                             ft = self.patchNormaliseImage(ft, 8)
+                        elif fttype == FeatureType.ROLLNORM:
+                            ft = self.rollNormaliseImage(ft, 8)
                         ft_ready_list.append(ft.flatten())
                     if len(ft_ready_list) == 1:
                         ft_ready = ft_ready_list[0]
@@ -424,6 +427,22 @@ class VPRImageProcessor: # main ROS class
                 img2[iStart:iEnd, jStart:jEnd] /= std1 # crush by std
 
         return img2   
+
+    def rollNormaliseImage(self, img, kernel_size):
+    # take input image and use a rolling kernel to noramlise
+    # returns: rolling-kernel-normalised image
+
+        img1            = img.astype(float)
+        img2            = img1.copy()
+        
+        if kernel_size == 1: # single pixel; already p-n'd
+            return img2
+        
+        k_options       = list(range(-kernel_size,kernel_size+1,1))
+        rolled_stack    = np.dstack([np.roll(np.roll(img2,i,0),j,1) for j in k_options for i in k_options])
+        rollnormed      = np.mean(rolled_stack, 2) / np.std(rolled_stack, 2)
+
+        return rollnormed  
 
     def roundSpatial(self, spatial_vec, metrics=None):
         if metrics is None:
