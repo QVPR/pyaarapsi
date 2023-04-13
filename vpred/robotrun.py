@@ -17,6 +17,18 @@ def make_odo_filenames(folder_name,imglist):
         odo_filenames.append(image_names[len(folder_name):len(folder_name)+len('frame_id_000001')] + '.csv')
     return odo_filenames
 
+def wrap_heading(heading):
+    '''
+    Wrap heading in degrees to avoid bouncing around -180 to +180
+    '''
+    new_heading = np.zeros_like(heading)
+    for i,h in enumerate(heading):
+        if h < -175:
+            new_heading[i]=h+360
+        else:
+            new_heading[i]=h
+    return new_heading
+
 class RobotRun:
     """Class for processing robot runs through an environment"""
     
@@ -90,6 +102,24 @@ class RobotRun:
             self.x[num]=xy[0]
             self.y[num]=xy[1]
         self.GEO_TAGGED = True
+        
+    def set_yaw(self, yaw, num=None):
+        '''
+        Set a yaw value (quasi heading) in the geo-tag for each image
+        Either for the complete array, or a single frame
+        '''
+        if num == None:
+            # if len(yaw) != self.imgnum:
+            #     print('Error: set_yaw requires length of yaw vector to equal number of images in run');
+            # else:
+            self.yaw=yaw
+        else: # TODO: check num is an integer <= self.imgnum
+            self.yaw[num]=yaw
+            
+    def wrap_yaw(self):
+        tmp_heading = wrap_heading(self.yaw)
+        self.yaw = tmp_heading
+        return self.yaw
             
     def extract_geotags(self, odo_folder):
         '''
