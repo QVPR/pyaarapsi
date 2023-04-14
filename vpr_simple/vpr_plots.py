@@ -165,7 +165,7 @@ def doCntrFigBokeh(nmrc, odom_in):
     fig_cntr        = figure(title="SVM Contour", width=500, height=500, \
                             x_axis_label = 'VA Factor', y_axis_label = 'Grad Factor')
 
-    fig_cntr        = disable_toolbar(fig_cntr)
+    #fig_cntr        = disable_toolbar(fig_cntr)
 
     img_rand        = np.array(np.ones((1000,1000,4))*255, dtype=np.uint8)
     img_uint32      = img_rand.view(dtype=np.uint32).reshape(img_rand.shape[:-1])
@@ -229,6 +229,32 @@ def updateCntrFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
     nmrc.new_field = False
 
 ##################################################################
+#### Linear & Angular Vector Figure: do and update
+
+def doXYWVFigBokeh(nmrc, odom_in):
+# Set up distance vector figure
+
+    fig_xywv    = figure(title="Linear & Angular Vectors", width=500, height=250, \
+                            x_axis_label = 'Index', y_axis_label = 'Value', \
+                            x_range = (0, len(odom_in['position']['x'])))#, y_range = (0, 1.2))
+    fig_xywv    = disable_toolbar(fig_xywv)
+    rw_plotted  = fig_xywv.line(x=[], y=[], color="black", legend_label="Yaw Vector") # distance vector
+
+    fig_xywv.legend.location=(0, 140)
+    fig_xywv.legend.orientation='horizontal'
+    fig_xywv.legend.border_line_alpha=0
+    fig_xywv.legend.background_fill_alpha=0
+
+    return {'fig': fig_xywv, 'rw': rw_plotted, 'rwc': 1}
+
+def updateXYWVFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
+# Update DVec figure with new data (match->mInd, true->tInd)
+# Use old handles (mat, tru) and crunched distance vector (dvc)
+    new_yaw_data = dict(x=[nmrc.fig_xywv_handles['rwc']], y=[np.round(odom_in['position']['yaw'][mInd],3)])
+    nmrc.fig_xywv_handles['rwc'] = (nmrc.fig_xywv_handles['rwc'] + 1) % len(odom_in['position']['x'])
+    nmrc.fig_xywv_handles['rw'].data_source.stream(new_yaw_data, rollover=1000)
+
+##################################################################
 #### Distance Vector Figure: do and update
 
 def doDVecFigBokeh(nmrc, odom_in):
@@ -255,12 +281,12 @@ def updateDVecFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
 # Use old handles (mat, tru) and crunched distance vector (dvc)
     spd = cdist(np.transpose(np.matrix([odom_in['position']['x'],odom_in['position']['y']])), \
         np.matrix([odom_in['position']['x'][mInd], odom_in['position']['y'][mInd]]))
-    spd_max_val = np.max(spd[:])
-    dvc_max_val = np.max(dvc[:])
-    nmrc.fig_dvec_handles['spd'].data_source.data = {'x': list(range(len(spd-1))), 'y': spd/spd_max_val}
-    nmrc.fig_dvec_handles['dvc'].data_source.data = {'x': list(range(len(dvc-1))), 'y': dvc/dvc_max_val}
-    nmrc.fig_dvec_handles['mat'].data_source.data = {'x': [mInd], 'y': [dvc[mInd]/dvc_max_val]}
-    nmrc.fig_dvec_handles['tru'].data_source.data = {'x': [tInd], 'y': [dvc[tInd]/dvc_max_val]}
+    spd_lims = [np.max(spd[:]), np.min(spd[:])]
+    dvc_lims = [np.max(dvc[:]), np.min(dvc[:])]
+    nmrc.fig_dvec_handles['spd'].data_source.data = {'x': list(range(len(spd-1))), 'y': (spd-spd_lims[1])/(spd_lims[0]-spd_lims[1])}
+    nmrc.fig_dvec_handles['dvc'].data_source.data = {'x': list(range(len(dvc-1))), 'y': (dvc-dvc_lims[1])/(dvc_lims[0]-dvc_lims[1])}
+    nmrc.fig_dvec_handles['mat'].data_source.data = {'x': [mInd], 'y': [(dvc[mInd]-dvc_lims[1])/(dvc_lims[0]-dvc_lims[1])]}
+    nmrc.fig_dvec_handles['tru'].data_source.data = {'x': [tInd], 'y': [(dvc[tInd]-dvc_lims[1])/(dvc_lims[0]-dvc_lims[1])]}
 
 ##################################################################
 #### Filtered Distance Vector Figure: do and update
@@ -288,11 +314,11 @@ def updateFDVCFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
 # Use old handles (mat, tru) and crunched distance vector (dvc)
     spd = cdist(np.transpose(np.matrix([odom_in['position']['x'],odom_in['position']['y']])), \
         np.matrix([odom_in['position']['x'][mInd], odom_in['position']['y'][mInd]]))
-    spd_max_val = np.max(spd[:])
-    dvc_max_val = np.max(dvc[:])
-    spd_norm = np.array(spd).flatten()/spd_max_val 
-    dvc_norm = np.array(dvc).flatten()/dvc_max_val
-    spd_x_dvc = (spd_norm**2 + dvc_norm) / 2
+    spd_lims = [np.max(spd[:]), np.min(spd[:])]
+    dvc_lims = [np.max(dvc[:]), np.min(dvc[:])]
+    spd_norm = (np.array(spd).flatten()-spd_lims[1])/(spd_lims[0]-spd_lims[1])
+    dvc_norm = (np.array(dvc).flatten()-dvc_lims[1])/(dvc_lims[0]-dvc_lims[1])
+    spd_x_dvc = (0.5*spd_norm**2 + 0.5*dvc_norm)
     nmrc.fig_fdvc_handles['dvc'].data_source.data = {'x': list(range(len(dvc-1))), 'y': spd_x_dvc}
     nmrc.fig_fdvc_handles['mat'].data_source.data = {'x': [mInd], 'y': [spd_x_dvc[mInd]]}
     nmrc.fig_fdvc_handles['tru'].data_source.data = {'x': [tInd], 'y': [spd_x_dvc[tInd]]}
@@ -393,9 +419,9 @@ def updateSVMMFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
 # Use old handles (mat, tru) and crunched distance vector (dvc)
     spd = cdist(np.transpose(np.matrix([odom_in['position']['x'],odom_in['position']['y']])), \
         np.matrix([odom_in['position']['x'][mInd], odom_in['position']['y'][mInd]]))
-    spd_max_val = np.max(spd[:])
-    dvc_max_val = np.max(dvc[:])
-    nmrc.fig_svmm_handles['spd'].data_source.data = {'x': list(range(len(spd-1))), 'y': spd/spd_max_val}
-    nmrc.fig_svmm_handles['dvc'].data_source.data = {'x': list(range(len(dvc-1))), 'y': dvc/dvc_max_val}
-    nmrc.fig_svmm_handles['mat'].data_source.data = {'x': [mInd], 'y': [dvc[mInd]/dvc_max_val]}
-    nmrc.fig_svmm_handles['tru'].data_source.data = {'x': [tInd], 'y': [dvc[tInd]/dvc_max_val]}
+    spd_lims = [np.max(spd[:]), np.min(spd[:])]
+    dvc_lims = [np.max(dvc[:]), np.min(dvc[:])]
+    nmrc.fig_dvec_handles['spd'].data_source.data = {'x': list(range(len(spd-1))), 'y': (spd-spd_lims[1])/(spd_lims[0]-spd_lims[1])}
+    nmrc.fig_dvec_handles['dvc'].data_source.data = {'x': list(range(len(dvc-1))), 'y': (dvc-dvc_lims[1])/(dvc_lims[0]-dvc_lims[1])}
+    nmrc.fig_dvec_handles['mat'].data_source.data = {'x': [mInd], 'y': [(dvc[mInd]-dvc_lims[1])/(dvc_lims[0]-dvc_lims[1])]}
+    nmrc.fig_dvec_handles['tru'].data_source.data = {'x': [tInd], 'y': [(dvc[tInd]-dvc_lims[1])/(dvc_lims[0]-dvc_lims[1])]}

@@ -28,6 +28,36 @@ def check_positive_float(value):
         raise ap.ArgumentTypeError(error_text)
     return ivalue
 
+def check_bounded_float(value, _min, _max, equality):
+    error_text = "%s is either an invalid float value." % (str(value))
+    error_text_bounds = "%s is not between the required bounds of {%s}."
+    try:
+        ivalue = float(value)
+        if equality == 'lower':
+            if not (ivalue >= _min) and (ivalue < _max):
+                bounding_str = "%s <= val < %s" % (str(_min), str(_max))
+                raise ap.ArgumentTypeError(error_text_bounds % (str(value), bounding_str))
+        elif equality == 'upper':
+            if not (ivalue > _min) and (ivalue <= _max):
+                bounding_str = "%s < val <= %s" % (str(_min), str(_max))
+                raise ap.ArgumentTypeError(error_text_bounds % (str(value), bounding_str))
+        elif equality == 'both':
+            if not (ivalue >= _min) and (ivalue <= _max):
+                bounding_str = "%s <= val <= %s" % (str(_min), str(_max))
+                raise ap.ArgumentTypeError(error_text_bounds % (str(value), bounding_str))
+        elif equality == 'none':
+            if not (ivalue > _min) and (ivalue < _max):
+                bounding_str = "%s < val < %s" % (str(_min), str(_max))
+                raise ap.ArgumentTypeError(error_text_bounds % (str(value), bounding_str))
+        else:
+            raise Exception('Invalid equality mode %s. Valid modes: lower, upper, both, none.' % str(equality))
+    except:
+        raise ap.ArgumentTypeError(error_text)
+        
+    if ivalue <= 0:
+        raise ap.ArgumentTypeError(error_text)
+    return ivalue
+
 def check_bool(value):
     error_text = "%s is an invalid boolean." % (str(value))
     if isinstance(value, bool): return value
@@ -89,6 +119,13 @@ def check_string(value):
     if str_value.lower() == 'none':
         return None
     return str_value
+
+def check_string_list(value):
+    str_value = str(value)
+    str_list  = str_value.replace('(','').replace(')','').replace('[','').replace(']','').translate(str.maketrans('', '', string.whitespace)).split(',')
+    for i in range(len(str_list)):
+        str_list[i] = check_string(str_list[i])
+    return str_list
 
 def check_enum(value, enum, skip=[None]):
     error_text = "%s is an invalid (or not accepted) identifier within the enumeration %s" % (str(value), str(enum))

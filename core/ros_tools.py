@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import rospy
 from enum import Enum
+from geometry_msgs.msg import Quaternion
+from tf.transformations import quaternion_from_euler, euler_from_quaternion
 
 # For logging
 class LogType(Enum):
@@ -9,7 +11,6 @@ class LogType(Enum):
     WARN        = "[WARN]"
     ERROR       = "[!ERROR!]"
     FATAL       = "[!!FATAL!!]"
-
 
 def roslogger(text, logtype, ros=False, throttle=0, no_stamp=False):
 # Print function helper
@@ -34,6 +35,13 @@ def roslogger(text, logtype, ros=False, throttle=0, no_stamp=False):
             raise Exception
     except:
         print(logtype.value + " " + str(text))
+
+def yaw_from_q(q):
+    return euler_from_quaternion([float(q.x), float(q.y), float(q.z), float(q.w)])[2]
+
+def q_from_yaw(yaw):
+    q = quaternion_from_euler(0, 0, yaw) # roll, pitch, yaw
+    return Quaternion(x=q[0], y=q[1], z=q[2], w=q[3])
 
 class ROS_Param:
 
