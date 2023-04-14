@@ -8,8 +8,11 @@ from copy import copy
 from .vpred_factors import *
 from .robotvpr import *
 
-class RobotMonitor(object):
 
+class RobotMonitor(object):
+    '''
+    Base Class for Robot Monitor objects
+    '''
     def __init__(self,vpr):
         # TODO: Not sure if this is needed
         pass
@@ -40,7 +43,6 @@ class RobotMonitor(object):
         if len(self.factors) > 2:
             print('Error: robotmonitor.py plotZ: Cannot plot Z with >2 factors (yet)');
             return
-        
         ZSIZE=200
         if vpr == None:
             factor1=self.factor1
@@ -80,20 +82,13 @@ class RobotMonitor(object):
                 y=vpr.y
             ax.scatter(factor1[ y],factor2[ y],color='g',marker='.',label='good');
             ax.scatter(factor1[~y],factor2[~y],color='r',marker='.',label='bad');
-
-            # Use this to modify to plot TP/FP/TN/FN in different colours:
-            # tp,fp,tn,fn=find_each_prediction_metric(self.predict_quality(vpr),vpr.y)
-            # ax.scatter(factor1[tp],factor2[tp],color='green',marker='.',label='TP');
-            # ax.scatter(factor1[fp],factor2[fp],color='red',marker='.',label='FP');
-            # ax.scatter(factor1[fn],factor2[fn],color='blue',marker='.',label='FN');
-            # ax.scatter(factor1[tn],factor2[tn],color='orange',marker='.',label='TN');
-            
             ax.legend();
-    
         return fig,ax
 
 class RobotMonitor2D(RobotMonitor):
-    
+    '''
+    Robot Monitor using a single SVM with two factors
+    '''
     def __init__(self,vpr):
         self.factor1 = find_va_factor(vpr.S)
         self.factor2 = find_grad_factor(vpr.S)
@@ -120,6 +115,9 @@ class RobotMonitor2D(RobotMonitor):
         
 
 class RobotMonitor3D(RobotMonitor):
+    '''
+    Robot Monitor using a single SVM with three factors
+    '''
     
     def __init__(self,vpr):
         self.factor1 = find_va_factor(vpr.S)
@@ -147,6 +145,9 @@ class RobotMonitor3D(RobotMonitor):
         return self.scaler.transform(X)
     
 class DoubleRobotMonitor(RobotMonitor):
+    '''
+    Robot Monitor using two cascaded SVMs
+    '''
     
     def __init__(self, vpr, mon):
         self.factor1=mon.decision_values(vpr)
@@ -173,3 +174,8 @@ class DoubleRobotMonitor(RobotMonitor):
         bms=vpr.best_match_S
         X=np.c_[zvals,bms]
         return self.scaler.transform(X)
+    
+    def plotZ(self,vpr=None,show_points=True):
+        fig,ax=super().plotZ(vpr,show_points)
+        ax.axvline(0,ls='dashed',color='blue');
+        return fig,ax
