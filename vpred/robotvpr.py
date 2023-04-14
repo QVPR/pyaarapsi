@@ -238,5 +238,21 @@ class RobotVPR:
             print('80th,90th,95th,99th percentiles = {0} m'.format(np.percentile(gaps,[80,90,95,99])))
         return gaps
     
+    def plot_error_along_route(self,ypred):
+        tp,fp,tn,fn=find_each_prediction_metric(ypred,self.y)
+        fig,ax=plt.subplots(figsize=(20,4))
+        num_qrys = self.qry.imgnum
+        qrys=np.arange(num_qrys)
+        ax.scatter(qrys[fn],self.ref_error[fn],marker='.',color='lightblue',label='FN (removed)')
+        ax.scatter(qrys[tn],self.ref_error[tn],marker='.',color='lightgray',label='TN (removed)')
+        ax.scatter(qrys[tp],self.ref_error[tp],marker='.',color='g',label='TP (retained)');
+        ax.scatter(qrys[fp],self.ref_error[fp],marker='.',color='r',label='FP (retained)');
+        ax.axhline(self.tolerance,ls='dashed',label='Tolerance')
+        ax.set_xlabel('query number');
+        ax.set_ylabel('localisation error (m)');
+        ax.set_title('Error along the query route - showing retained (predicted good), and removed points');
+        ax.legend();
+        return fig,ax;
+    
     def __repr__(self):  # Return a string containing a printable representation of an object.
         return f"{self.__class__.__name__}(ref={self.ref.folder},qry={self.qry.folder})"
