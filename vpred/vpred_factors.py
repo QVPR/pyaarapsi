@@ -1,5 +1,5 @@
 import numpy as np
-from .vpred_tools import find_nth_best_match_distances
+#from .vpred_tools import find_nth_best_match_distances
 
 def find_minima(sequence):
     # find the number of local minima in each sequence:
@@ -72,4 +72,19 @@ def find_grad_factor(S):
             g1=Sv[m0_index-1]-m0
             g2=Sv[m0_index+1]-m0
             g[q]=g1+g2
+    return g
+
+def find_all_grad_factors(s):
+    g=np.zeros_like(s);
+    for i in np.arange(len(s)):
+        if i == 0:
+            g[0]=s[1]-s[0]
+        elif i < (len(s)-1):
+            grad_before=s[i-1]-s[i]
+            grad_after =s[i+1]-s[i]
+            temp_g=(grad_before + grad_after)
+            g[i]=temp_g
+        elif i == (len(s)-1):
+            temp_g=(s[i-1]-s[i])
+            g[i]=temp_g
     return g
