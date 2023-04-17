@@ -151,12 +151,13 @@ class RobotVPR:
         p,r,_,_,_,_,_=self.compute_PRcurve_metrics()
         return plot_PR(r,p);
     
-    def plot_cl_vs_bl_PRcurve(self,y_pred):        
+    def plot_cl_vs_bl_PRcurve(self,y_pred,ax=None,fig=None):        
         '''
         Plot Precision-Recall curves for baseline VPR technique (using minimum distance as a threshold)
         vs the closed-loop system (which retains only good points, then applies the distance threshold)
         '''
-        fig,ax=plt.subplots()
+        if ax == None:
+            fig,ax=plt.subplots()
         p,r,_,_,_,_,_=self.compute_PRcurve_metrics()
         ax.plot(r,p,label='baseline');
         p,r,_,_,_,_,_=self.compute_cl_PRcurve_metrics(y_pred)
@@ -280,15 +281,6 @@ class RobotVPR_fromS(RobotVPR):
         self.tolerance = 1 # default tolerance is one frame
         self.units = 'frames'
         self.description=description
-    
-    # def set_query(self,query):
-    #     '''
-    #     Add a query run as a RobotRun object
-    #     Once added, the VPR parameters will be computed, including distance matrix and best match
-    #     '''
-    #     self.qry = query
-    #     self.num_qrys = query.imgnum
-    #     self.S, self.Srefmean, self.Srefstd  = create_normalised_similarity_matrix(self.ref.features,self.qry.features)
         self.best_match = find_best_match(self.S)
         self.best_match_S = find_best_match_distances(self.S)
         self.ALL_TRUE = np.full(self.num_qrys,True,dtype='bool')
