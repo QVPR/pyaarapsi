@@ -219,7 +219,7 @@ class ROS_Param:
     updates_queued      = [] # list of parameters pending an update
     updates_possible    = [] # list of parameter names to check against (in case a parameter update was triggered against a parameter not in scope)
 
-    def __init__(self, name, value, evaluation, force=False, namespace=None):
+    def __init__(self, name, value, evaluation, force=False):
         '''
         Initialisation
 
@@ -228,14 +228,11 @@ class ROS_Param:
         - value:        default value of parameter if unset on parameter server
         - evaluation:   handle to method to check value type
         - force:        bool to force update of value on parameter server with input value
-        - namespace:    string name of namespace to be appended to name
         Returns:
         None
         '''
-        if namespace is None:
-            self.name = name
-        else:
-            self.name = namespace + "/" + name
+
+        self.name = name
         self.updates_possible.append(self.name)
         self.evaluation = evaluation
         self.value = None
