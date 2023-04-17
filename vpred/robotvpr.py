@@ -126,6 +126,9 @@ class RobotVPR:
         #    self.match_exists=(self.min_error<=self.tolerance)
         #--------
         print('tolerance={0} {1}'.format(self.tolerance, self.units))
+        
+    def set_description(self,description):
+        self.description = description
     
     def assess_performance(self, tolerance=1, units='frames', match_found=None):
         '''
@@ -241,12 +244,18 @@ class RobotVPR:
     def plot_error_along_route(self,ypred):
         tp,fp,tn,fn=find_each_prediction_metric(ypred,self.y)
         fig,ax=plt.subplots(figsize=(20,4))
-        num_qrys = self.qry.imgnum
-        qrys=np.arange(num_qrys)
-        ax.scatter(qrys[fn],self.ref_error[fn],marker='.',color='lightblue',label='FN (removed)')
-        ax.scatter(qrys[tn],self.ref_error[tn],marker='.',color='lightgray',label='TN (removed)')
-        ax.scatter(qrys[tp],self.ref_error[tp],marker='.',color='g',label='TP (retained)');
-        ax.scatter(qrys[fp],self.ref_error[fp],marker='.',color='r',label='FP (retained)');
+        qrys=np.arange(self.num_qrys)
+        if self.units == 'm':
+            error = self.ref_error
+        elif self.units == 'frames':
+            error = self.frame_error
+        else:
+            print('Error: robotvpr.py: plot_error_along_route: units needs to be either m or frames');
+            return
+        ax.scatter(qrys[fn],error[fn],marker='.',color='lightblue',label='FN (removed)')
+        ax.scatter(qrys[tn],error[tn],marker='.',color='lightgray',label='TN (removed)')
+        ax.scatter(qrys[tp],error[tp],marker='.',color='g',label='TP (retained)');
+        ax.scatter(qrys[fp],error[fp],marker='.',color='r',label='FP (retained)');
         ax.axhline(self.tolerance,ls='dashed',label='Tolerance')
         ax.set_xlabel('query number');
         ax.set_ylabel('localisation error (m)');
@@ -256,3 +265,46 @@ class RobotVPR:
     
     def __repr__(self):  # Return a string containing a printable representation of an object.
         return f"{self.__class__.__name__}(ref={self.ref.folder},qry={self.qry.folder})"
+    
+
+class RobotVPR_fromS(RobotVPR):
+    
+    def __init__(self,S,actual_match,description=""):
+        """
+        Constructs the attributes of a RobotVPR object, based on a distance matrix
+        """    
+        self.S=S
+        self.gt_match=actual_match
+        self.num_refs=S.shape[0]
+        self.num_qrys=S.shape[1]
+        self.tolerance = 1 # default tolerance is one frame
+        self.units = 'frames'
+        self.description=description
+    
+    # def set_query(self,query):
+    #     '''
+    #     Add a query run as a RobotRun object
+    #     Once added, the VPR parameters will be computed, including distance matrix and best match
+    #     '''
+    #     self.qry = query
+    #     self.num_qrys = query.imgnum
+    #     self.S, self.Srefmean, self.Srefstd  = create_normalised_similarity_matrix(self.ref.features,self.qry.features)
+        self.best_match = find_best_match(self.S)
+        self.best_match_S = find_best_match_distances(self.S)
+        self.ALL_TRUE = np.full(self.num_qrys,True,dtype='bool')
+        
+        #if self.ref.GEO_TAGGED and self.qry.GEO_TAGGED:
+            #self.gt_distances = cdist(self.ref.xy, self.qry.xy)
+            #self.gt_match = self.gt_distances.argmin(axis=0)          # index of the closest reference for each query
+        self.frame_error = abs(self.best_match-self.gt_match)     # number of frames between VPR match and actual match
+            #self.abs_error = compute_distance_in_m(self.ref.xy[gt_match],self.qry.xy)              # distance in m between matching points
+            #self.min_error = self.gt_distances.min(axis=0)
+            #self.abs_error = self.gt_distances[self.best_match, np.arange(self.num_qrys)]
+            #self.ref_error = np.diag(cdist(self.ref.xy[self.gt_match],self.ref.xy[self.best_match])) # distance in m along reference route only
+        
+        # TODO: rework when matches do not exist for each query
+        self.match_exists = self.ALL_TRUE
+        pass
+    
+    def __repr__(self):  # Return a string containing a printable representation of an object.
+        return f"{self.__class__.__name__}(description={self.description},num_refs={self.num_refs},num_qrys={self.num_qrys})"
