@@ -128,6 +128,15 @@ class SVMModelProcessor: # main ROS class
                 self._load(models[name])
                 break
         return self
+    
+    def swap(self, model_params):
+        models = self._get_models(self.models_dir)
+        for name in models:
+            if models[name]['params'] == model_params:
+                self._load(models[name])
+                return True
+        return False
+
 
     def load_model(self, model_name, dir=None):
     # load via string matching name of model file
@@ -154,7 +163,8 @@ class SVMModelProcessor: # main ROS class
         Xrt_scaled      = self.model['model']['scaler'].transform(Xrt)  # perform scaling using same parameters as calibration set
         y_zvalues_rt    = self.model['model']['svm'].decision_function(Xrt_scaled)[0] # 'z' value; not probability but "related"...
         y_pred_rt       = self.model['model']['svm'].predict(Xrt_scaled)[0] # Make the prediction: predict whether this match is good or bad
-        return (y_pred_rt, y_zvalues_rt, [factor1_qry, factor2_qry])
+        prob            = self.model['model']['svm'].predict_proba(Xrt_scaled)[:,1] # get probability of prediction
+        return (y_pred_rt, y_zvalues_rt, [factor1_qry, factor2_qry], prob)
     
     def generate_svm_mat(self, array_dim=500):
         # Generate decision function matrix:
@@ -311,6 +321,7 @@ class SVMModelProcessor: # main ROS class
 
     def _load(self, raw_model):
     # when loading objects inside dicts from .npz files, must extract with .item() each object
+        del self.model
         self.model = dict(model=raw_model['model'].item(), params=raw_model['params'].item())
         self.model_ready = True
 
