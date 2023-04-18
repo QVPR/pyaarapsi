@@ -204,27 +204,29 @@ class RobotVPR:
             plt.plot(self.ref.x,self.ref.y,label='ref');
             plt.plot(self.qry.x,self.qry.y,label='qry');
             plt.legend();
-            plt.xlabel('x'); plt.ylabel('y');
+            plt.xlabel('x (m)'); plt.ylabel('y (m)');
             plt.title('Qry and Ref Runs');
         else:
             print('Info: plot_runs: Cannot plot as ref and query are not both GEOTAGGED')
         return
         
-    def plot_ypred(self,y_pred):
+    def plot_ypred(self,y_pred,ax=None,fig=None):
         '''
         Plot the route showing TP and FP prediction locations
         '''
+        if ax == None:
+            fig,ax=plt.subplots();
         if self.qry.GEO_TAGGED:
             tp,fp,tn,fn=find_each_prediction_metric(y_pred,self.y)
-            plt.scatter(self.qry.x,self.qry.y,color='lightgray',marker='.');
-            plt.scatter(self.qry.x[tp],self.qry.y[tp],color='g',marker='.',label='TP');
-            plt.scatter(self.qry.x[fp],self.qry.y[fp],color='r',marker='x',label='FP');
-            plt.legend();
-            plt.xlabel('x'); plt.ylabel('y');
-            plt.title('TP and FP locations along query route');
+            ax.scatter(self.qry.x,self.qry.y,color='lightgray',marker='.');
+            ax.scatter(self.qry.x[tp],self.qry.y[tp],color='g',marker='.',label='TP');
+            ax.scatter(self.qry.x[fp],self.qry.y[fp],color='r',marker='x',label='FP');
+            ax.legend();
+            ax.set_xlabel('x'); ax.set_ylabel('y');
+            ax.set_title('TP and FP locations along query route');
         else:
             print('Info: plot_ypred: query run is not GEOTAGGED, cannot plot route')
-        return
+        return fig,ax
     
     def find_gap_distances(self,y_pred,verbose=False):
         '''
@@ -296,6 +298,10 @@ class RobotVPR_fromS(RobotVPR):
         
         # TODO: rework when matches do not exist for each query
         self.match_exists = self.ALL_TRUE
+        pass
+    
+    def plot_ypred(self,y_pred,ax=None,fig=None):
+        print('Warning: robotvpr.py plot_ypred: Cannot plot ypred as not GEOTAGGED (yet)');
         pass
     
     def __repr__(self):  # Return a string containing a printable representation of an object.
