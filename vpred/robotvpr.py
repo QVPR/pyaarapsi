@@ -112,7 +112,7 @@ class RobotVPR:
         else:
             print('Error: find_y: tolerance units needs to be in frame or units but is {0}'.format(self.units))
     
-    def set_tolerance(self, tolerance, units):
+    def set_tolerance(self, tolerance, units, verbose=True):
         '''
         Set tolerance in meters or frames
         '''
@@ -125,12 +125,13 @@ class RobotVPR:
         #if self.units == 'm':
         #    self.match_exists=(self.min_error<=self.tolerance)
         #--------
-        print('tolerance={0} {1}'.format(self.tolerance, self.units))
+        if verbose == True:
+            print('tolerance={0} {1}'.format(self.tolerance, self.units))
         
     def set_description(self,description):
         self.description = description
     
-    def assess_performance(self, tolerance=1, units='frames', match_found=None):
+    def assess_performance(self, tolerance=1, units='frames', match_found=None, verbose=True):
         '''
         Compute performance parameters of VPR technique given tolerance in frames or units
         
@@ -138,11 +139,10 @@ class RobotVPR:
         Here, match_found=None is not referring to no matches found, but simply not specifying matches found
         '''
         self.set_tolerance(tolerance,units)            
-        print('tolerance={0} {1}'.format(tolerance, units))
         self.find_y()
         if match_found is None:
             match_found=self.ALL_TRUE
-        return find_vpr_performance_metrics(match_found,self.y,self.match_exists,verbose=True);
+        return find_vpr_performance_metrics(match_found,self.y,self.match_exists,verbose=verbose);
     
     def plot_PRcurve(self):
         '''
