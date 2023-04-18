@@ -59,7 +59,7 @@ class RobotMonitor(object):
         extent=[f1[0],f1[-1],f2[0],f2[-1]]
         return Z,F1,F2,extent,factor1,factor2
     
-    def plotZ(self,vpr=None,show_points=True):
+    def plotZ(self,vpr=None,show_points=True,ax=None,fig=None,basic=False):
         
         if len(self.factors) > 2:
             print('Error: robotmonitor.py plotZ: Cannot plot Z with >2 factors (yet)');
@@ -67,9 +67,13 @@ class RobotMonitor(object):
 
         # Plot decision function and boundary:
         Z,F1,F2,extent,factor1,factor2=self.generate_Z(vpr)
-        fig,ax=plt.subplots();
-        ax.imshow(Z,origin='lower',extent=extent,aspect='auto');
-        ax.contour(F1,F2,Z,levels=[0])
+        if ax == None:
+            fig,ax=plt.subplots();
+        if basic == True:
+            ax.imshow(Z>=0,origin='lower',extent=extent,aspect='auto',cmap='gray');
+        else:
+            ax.imshow(Z,origin='lower',extent=extent,aspect='auto');
+            ax.contour(F1,F2,Z,levels=[0])
         ax.set_xlabel(self.factors[0])
         ax.set_ylabel(self.factors[1]);
         ax.set_title('Z');
@@ -175,7 +179,7 @@ class DoubleRobotMonitor(RobotMonitor):
         X=np.c_[zvals,bms]
         return self.scaler.transform(X)
     
-    def plotZ(self,vpr=None,show_points=True):
-        fig,ax=super().plotZ(vpr,show_points)
+    def plotZ(self,vpr=None,show_points=True,ax=None,fig=None,basic=False):
+        fig,ax=super().plotZ(vpr,show_points,ax,fig,basic)
         ax.axvline(0,ls='dashed',color='blue');
         return fig,ax
