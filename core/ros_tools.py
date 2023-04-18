@@ -218,8 +218,9 @@ class ROS_Param:
 
     updates_queued      = [] # list of parameters pending an update
     updates_possible    = [] # list of parameter names to check against (in case a parameter update was triggered against a parameter not in scope)
+    param_objects       = []
 
-    def __init__(self, name, value, evaluation, force=False):
+    def __init__(self, name, value, evaluation, force=False, server=None):
         '''
         Initialisation
 
@@ -228,14 +229,23 @@ class ROS_Param:
         - value:        default value of parameter if unset on parameter server
         - evaluation:   handle to method to check value type
         - force:        bool to force update of value on parameter server with input value
+        - server:       ROS_Param_Server reference
         Returns:
         None
         '''
 
-        self.name = name
-        self.updates_possible.append(self.name)
+        self.name       = name
+        self.server     = server
+
+        if self.server is None:
+            self.updates_possible.append(self.name)
+            self.param_objects.append(self)
+            self.get = self._get_no_server
+        else:
+            self.get = self._get_server
+
         self.evaluation = evaluation
-        self.value = None
+        self.value      = None
         if rospy.has_param(self.name) and (not force):
             try:
                 check_value = self.evaluation(rospy.get_param(self.name, value))
@@ -245,9 +255,28 @@ class ROS_Param:
         else:
             self.set(value)
 
-    def get(self):
+    def update(self):
+        check_value     = rospy.get_param(self.name, self.value)
+        try:
+            self.value  = self.evaluation(check_value)
+            return (True, check_value)
+        except:
+            return (False, check_value)
+
+    def _get_server(self):
         '''
-        Retrieve value of variable
+        Return value of variable
+
+        Inputs:
+        None
+        Returns:
+        - parsed value of variable
+        '''
+        return self.value
+
+    def _get_no_server(self):
+        '''
+        Retrieve value of variable if no ROS_Param_Server exists
         Runs a check to see if a change has been made to parameter server value
 
         Inputs:
@@ -276,3 +305,24 @@ class ROS_Param:
         '''
         rospy.set_param(self.name, value)
         self.value = self.evaluation(value)
+
+class ROS_Param_Server:
+    def __init__(self):
+        self.updates_possible   = []
+        self.params             = {}
+
+    def add(self, name, value, evaluation, force=False):
+        self.params[name] = ROS_Param(name, value, evaluation, force, server=self)
+        self.updates_possible.append(name)
+        return self.params[name]
+
+    def update(self, name):
+        update_status = self.params[name].update()
+        if not update_status[0]:
+            roslogger("Bad parameter server value. Overriding with last safe value. Parameter: %s [Bad: %s, Replaced: %s]." 
+                      % (str(name), str(update_status[1]), str(self.params[name].value)))
+
+    def exists(self, name):
+        if name in self.updates_possible:
+            return True
+        return False
