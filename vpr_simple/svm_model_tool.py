@@ -56,11 +56,11 @@ class SVMModelProcessor: # main ROS class
                 raise Exception("Model load failed.")
             self._print("[SVMModelProcessor] Model Ready.", State.INFO)
 
-    def generate_model(self, database_path, cal_qry_dataset, cal_ref_dataset, img_dims, folder, ft_type, save=True):
+    def generate_model(self, database_path, qry, ref, img_dims, folder, ft_type, save=True):
         # store for access in saving operation:
         self.database_path      = database_path
-        self.cal_qry_dataset    = cal_qry_dataset
-        self.cal_ref_dataset    = cal_ref_dataset 
+        self.cal_qry_dataset    = qry
+        self.cal_ref_dataset    = ref 
         self.img_dims           = img_dims
         self.folder             = folder
         self.feat_type          = ft_type
@@ -129,12 +129,15 @@ class SVMModelProcessor: # main ROS class
                 break
         return self
     
-    def swap(self, model_params):
+    def swap(self, model_params, generate=False):
         models = self._get_models(self.models_dir)
         for name in models:
             if models[name]['params'] == model_params:
                 self._load(models[name])
                 return True
+        if generate:
+            self.generate_model(**model_params)
+            return True
         return False
 
 
@@ -288,6 +291,7 @@ class SVMModelProcessor: # main ROS class
                                     img_dims=self.img_dims, folder=self.folder, \
                                     database_path=self.database_path, ft_type=self.feat_type)
         model_dict          = dict(svm=self.svm_model, scaler=self.scaler, rstd=self.rstd, rmean=self.rmean, factors=[self.factor1_cal, self.factor2_cal])
+        del self.model
         self.model          = dict(params=params_dict, model=model_dict)
         self.model_ready    = True
 
