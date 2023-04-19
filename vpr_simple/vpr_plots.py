@@ -186,8 +186,8 @@ def updateCntrFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
     xlims = (np.min(nmrc.svm_field_msg.data.xlim), np.max(nmrc.svm_field_msg.data.xlim))
     ylims = (np.min(nmrc.svm_field_msg.data.ylim), np.max(nmrc.svm_field_msg.data.ylim))
 
-    f1_clip = np.clip(nmrc.state.factors[0], xlims[0], xlims[1])
-    f2_clip = np.clip(nmrc.state.factors[1], ylims[0], ylims[1])
+    f1_clip = np.clip(((nmrc.state.factors[0]-xlims[0])/(xlims[1]-xlims[0]))*100, 0, 100)
+    f2_clip = np.clip(((nmrc.state.factors[1]-ylims[0])/(ylims[1]-ylims[0]))*100, 0, 100)
 
     to_stream = dict(x=[f1_clip], y=[f2_clip])
 
@@ -217,14 +217,18 @@ def updateCntrFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
     # collapse into uint32:
     img_uint32 = img_rgba.view(dtype=np.uint32).reshape(img_rgba.shape[:-1])
 
-    nmrc.fig_cntr_handles['img'].data_source.data = dict(x=[xlims[0]], y=[ylims[0]], dw=[xlims[1] - xlims[0]], \
-                                                         dh=[ylims[1] - ylims[0]], image=[img_uint32.copy()])
+    nmrc.fig_cntr_handles['img'].data_source.data = dict(x=[0], y=[0], dw=[100], \
+                                                         dh=[100], image=[img_uint32.copy()])
+    
+    # clear old data:
+    for key in ['in_y', 'out_y', 'in_n', 'out_n']:
+        nmrc.fig_cntr_handles[key].data_source.data = dict(x=[], y=[])
 
     nmrc.fig_cntr_handles['fig'].title.text         = nmrc.svm_field_msg.data.title
     nmrc.fig_cntr_handles['fig'].xaxis.axis_label   = nmrc.svm_field_msg.data.xlab
     nmrc.fig_cntr_handles['fig'].yaxis.axis_label   = nmrc.svm_field_msg.data.ylab
-    nmrc.fig_cntr_handles['fig'].x_range            = Range1d(xlims[0], xlims[1])
-    nmrc.fig_cntr_handles['fig'].y_range            = Range1d(ylims[0], ylims[1])
+    nmrc.fig_cntr_handles['fig'].x_range.update(start=0, end=100, bounds=(0, 100))
+    nmrc.fig_cntr_handles['fig'].y_range.update(start=0, end=100, bounds=(0, 100))
 
     nmrc.new_field = False
 
