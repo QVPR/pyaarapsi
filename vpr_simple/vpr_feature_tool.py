@@ -58,6 +58,9 @@ class VPRImageProcessor: # main ROS class
                 if dims is None: raise Exception("init_hybridnet specified true but dims not provided")
                 self.hybridnet = HybridNet_Container(cuda=self.cuda, logger=lambda x: self.print(x, LogType.DEBUG), dims=self.IMG_DIMS)
 
+    def swap(self, params):
+        return False # TODO
+
     def print(self, text, logtype):
         roslogger(text, logtype, self.ros)
 
