@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import rospy
+import logging
 from enum import Enum
 from cv_bridge import CvBridge
 
@@ -8,6 +9,19 @@ from sensor_msgs.msg import Image, CompressedImage
 from aarapsi_robot_pack.msg import Heartbeat as Hb
 
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
+
+def set_rospy_log_lvl(log_level):
+    '''
+    Change a ROS node's log_level after init_node has been performed.
+    Source: https://answers.ros.org/question/9802/change-rospy-node-log-level-while-running/
+
+    Inputs:
+    - log_level: rospy log_level, either an integer or rospy enum (i.e. to set to debug, use either 1 or rospy.DEBUG)
+    Returns:
+    None
+    '''
+    logger = logging.getLogger('rosout')
+    logger.setLevel(rospy.impl.rosout._rospy_to_logging_levels[log_level])
 
 def imgmsgtrans(msg, transform, bridge=None):
     '''
