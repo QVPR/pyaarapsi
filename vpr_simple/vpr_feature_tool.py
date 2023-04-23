@@ -52,11 +52,11 @@ class VPRImageProcessor: # main ROS class
         elif self.allow_build:
             if self.init_netvlad:
                 if dims is None: raise Exception("init_netvlad specified true but dims not provided")
-                self.netvlad = NetVLAD_Container(cuda=self.cuda, ngpus=int(self.cuda), logger=lambda x: self.print(x, LogType.DEBUG), dims=self.IMG_DIMS)
+                self.netvlad = NetVLAD_Container(cuda=self.cuda, ngpus=int(self.cuda), logger=lambda x: self.print(x, LogType.DEBUG))
 
             if self.init_hybridnet:
                 if dims is None: raise Exception("init_hybridnet specified true but dims not provided")
-                self.hybridnet = HybridNet_Container(cuda=self.cuda, logger=lambda x: self.print(x, LogType.DEBUG), dims=self.IMG_DIMS)
+                self.hybridnet = HybridNet_Container(cuda=self.cuda, logger=lambda x: self.print(x, LogType.DEBUG))
 
     def swap(self, params):
         return False # TODO

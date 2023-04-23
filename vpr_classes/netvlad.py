@@ -91,14 +91,12 @@ class PlaceDataset(torch.utils.data.Dataset):
 
 class NetVLAD_Container:
     def __init__(self, logger=print, cuda=False, ngpus=0, 
-                 dims=None, imw=640, imh=480, 
-                 batchsize=5, cachebatchsize=5, num_pcs=4096, 
+                 imw=640, imh=480, batchsize=5, cachebatchsize=5, num_pcs=4096, 
                  threads=0, resumepath='./pretrained_models/mapillary_WPCA'):
         
         self.cuda           = cuda
         self.ngpus          = ngpus
         self.logger         = logger
-        self.dims           = dims
         self.imw            = imw
         self.imh            = imh
         self.batchsize      = batchsize
@@ -161,7 +159,6 @@ class NetVLAD_Container:
         del self.cuda
         del self.ngpus
         del self.logger
-        del self.dims
         del self.imw
         del self.imh
         del self.batchsize

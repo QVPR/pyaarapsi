@@ -23,21 +23,14 @@ from sklearn.preprocessing import StandardScaler
 
 from ..core.enum_tools import enum_name
 from ..core.file_system_tools import scan_directory
-from ..vpr_simple import VPRImageProcessor, FeatureType
+from ..core.ros_tools import LogType, roslogger
+from ..vpr_simple import VPRImageProcessor
 from ..vpred import *
-
-# For logging
-class State(Enum):
-    DEBUG = "[DEBUG]"
-    INFO = "[INFO]"
-    WARN = "[WARN]"
-    ERROR = "[!ERROR!]"
-    FATAL = "[!!FATAL!!]"
 
 class SVMModelProcessor: # main ROS class
     def __init__(self, models_dir, model=None, try_gen=True, ros=False):
-        self._clear()       # initialise variables in system
         self.models_dir     = models_dir
+        self.model_ready    = False
         self.ros            = ros
         # for making new models:
         self.cal_qry_ip     = VPRImageProcessor(ros=self.ros) # all else defaults to False or None which we want :)
@@ -49,12 +42,12 @@ class SVMModelProcessor: # main ROS class
             elif isinstance(model, dict):
                 self.load_model_params(model)
                 if try_gen and (not self.model_ready):
-                    self.generate_model(model['database_path'], model['qry'], model['ref'], model['img_dims'], model['folder'], model['ft_type'])
+                    self.generate_model(**model)
             else:
                 raise Exception("Model type not supported. Valid types: str, dict")
             if not self.model_ready:
                 raise Exception("Model load failed.")
-            self._print("[SVMModelProcessor] Model Ready.", State.INFO)
+            self.print("[SVMModelProcessor] Model Ready.", LogType.INFO)
 
     def generate_model(self, database_path, qry, ref, img_dims, folder, ft_type, save=True):
         # store for access in saving operation:
@@ -83,11 +76,12 @@ class SVMModelProcessor: # main ROS class
             dir = self.models_dir
         if not self.model_ready:
             raise Exception("Model not loaded in system. Either call 'generate_model' or 'load_model(_params)' before using this method.")
-        self._prep_directory(dir)
+        Path(dir).mkdir(parents=False, exist_ok=True)
+        Path(dir+"/params").mkdir(parents=False, exist_ok=True)
         if check_exists:
             existing_file = self._check(dir)
             if existing_file:
-                self._print("[save_model] File exists with identical parameters: %s", State.INFO)
+                self.print("[save_model] File exists with identical parameters: %s", LogType.INFO)
                 return self
         
         # Ensure file name is of correct format, generate if not provided
@@ -111,39 +105,29 @@ class SVMModelProcessor: # main ROS class
         if not (dir[-1] == "/"):
             separator = "/"
         full_file_path = dir + separator + file_name
+        full_param_path = dir +"/params" + separator + file_name
         np.savez(full_file_path, **self.model)
-        self._print("[save_model] Saved file to %s" % full_file_path, State.INFO)
+        np.savez(full_param_path, **self.model['params'])
+        self.print("[save_model] Saved file, params to %s, %s" % (full_file_path, full_param_path), LogType.INFO)
         return self
 
     def load_model_params(self, model_params, dir=None):
     # load via search for param match
-        self._print("[load_model_params] Loading model.", State.DEBUG)
+        self.print("[load_model_params] Loading model.", LogType.DEBUG)
         self.model_ready = False
         if dir is None:
             dir = self.models_dir
         models = self._get_models(dir)
         self.model = {}
         for name in models:
-            if models[name]['params'] == model_params:
-                self._load(models[name])
+            if models[name] == model_params:
+                self._load(name)
                 break
         return self
-    
-    def swap(self, model_params, generate=False):
-        models = self._get_models(self.models_dir)
-        for name in models:
-            if models[name]['params'] == model_params:
-                self._load(models[name])
-                return True
-        if generate:
-            self.generate_model(**model_params)
-            return True
-        return False
-
 
     def load_model(self, model_name, dir=None):
     # load via string matching name of model file
-        self._print("[load_model] Loading %s" % (model_name), State.DEBUG)
+        self.print("[load_model] Loading %s" % (model_name), LogType.DEBUG)
         self.model_ready = False
         if dir is None:
             dir = self.models_dir
@@ -151,9 +135,20 @@ class SVMModelProcessor: # main ROS class
         self.model = {}
         for name in models:
             if name == model_name:
-                self._load(models[name])
+                self._load(name)
                 break
         return self
+    
+    def swap(self, model_params, generate=False):
+        models = self._get_models(self.models_dir)
+        for name in models:
+            if models[name] == model_params:
+                self._load(name)
+                return True
+        if generate:
+            self.generate_model(**model_params)
+            return True
+        return False
     
     def predict(self, dvc):
         if not self.model_ready:
@@ -203,15 +198,15 @@ class SVMModelProcessor: # main ROS class
         models = self._get_models(dir)
         for name in models:
             if models[name]['params'] == self.model['params']:
-                return models[name]
+                return name
         return ""
 
     def _load_cal_data(self):
         # Process calibration data (only needs to be done once)
-        self._print("Loading calibration query data set...", State.DEBUG)
+        self.print("Loading calibration query data set...", LogType.DEBUG)
         if not self.cal_qry_ip.npzLoader(self.database_path, self.cal_qry_dataset, img_dims=self.img_dims): # dims is needed bc cal_xxx_ip initialised without specifying.
             raise Exception('Query load failed.')
-        self._print("Loading calibration reference data set...", State.DEBUG)
+        self.print("Loading calibration reference data set...", LogType.DEBUG)
         if not self.cal_ref_ip.npzLoader(self.database_path, self.cal_ref_dataset, img_dims=self.img_dims): # dims is needed bc cal_xxx_ip initialised without specifying.
             raise Exception('Reference load failed.')
 
@@ -261,25 +256,17 @@ class SVMModelProcessor: # main ROS class
 
         [precision, recall, num_tp, num_fp, num_tn, num_fn] = \
             find_prediction_performance_metrics(self.y_pred_cal, self.y_cal, verbose=False)
-        self._print('Performance of prediction on calibration set:\nTP={0}, TN={1}, FP={2}, FN={3}\nprecision={4:3.1f}% recall={5:3.1f}%\n' \
-                   .format(num_tp,num_tn,num_fp,num_fn,precision*100,recall*100), State.INFO)
-    
-    def _prep_directory(self, dir):
-        try:
-            Path(dir).mkdir(parents=False, exist_ok=False) # throw both error states
-        except FileNotFoundError:
-            self._print("Error: parent directory does not exist.", State.ERROR)
-        except FileExistsError:
-            self._print("Directory already exists, no action needed.", State.INFO)
+        self.print('Performance of prediction on calibration set:\nTP={0}, TN={1}, FP={2}, FN={3}\nprecision={4:3.1f}% recall={5:3.1f}%\n' \
+                   .format(num_tp,num_tn,num_fp,num_fn,precision*100,recall*100), LogType.INFO)
 
     def _get_models(self, dir=None):
         if dir is None:
             dir = self.models_dir
         models = {}
         try:
-            entry_list = os.scandir(dir)
+            entry_list = os.scandir(dir+"/params")
         except FileNotFoundError:
-            self._print("Error: directory invalid.", State.ERROR)
+            self.print("Error: directory invalid.", LogType.ERROR)
             return models
         for entry in entry_list:
             if entry.is_file() and entry.name.startswith('svmmodel'):
@@ -295,59 +282,15 @@ class SVMModelProcessor: # main ROS class
         self.model          = dict(params=params_dict, model=model_dict)
         self.model_ready    = True
 
-    def _clear(self):
-    # Purge all variables
-        self.database_path      = ""
-        self.cal_qry_dataset    = ""
-        self.cal_ref_dataset    = "" 
-        self.folder             = ""
-        self.models_dir         = ""
-        self.tolerance          = None
-        self.Xcal               = None
-        self.Xcal_scaled        = None
-        self.y_cal              = None
-        self.y_pred_cal         = None
-        self.y_zvalues_cal      = None
-        self.svm_model          = None
-        self.scaler             = None
-        self.rmean              = None
-        self.rstd               = None
-        self.factor1_cal        = None
-        self.factor2_cal        = None
-        self.features_calqry    = []
-        self.features_calref    = []
-        self.feat_type          = FeatureType.NONE
-        self.odom_calqry        = {}
-        self.odom_calref        = {}
-        self.model              = {}
-        self.img_dims           = (-1, -1)
-        self.model_ready        = False
-
-    def _load(self, raw_model):
+    def _load(self, model_name):
     # when loading objects inside dicts from .npz files, must extract with .item() each object
         del self.model
+        raw_model = np.load(self.models_dir + "/" + model_name)
         self.model = dict(model=raw_model['model'].item(), params=raw_model['params'].item())
         self.model_ready = True
 
-    def _print(self, text, state):
-    # Print function helper
-    # For use with integration with ROS
-        try:
-            if self.ros: # if used inside of a running ROS node
-                if state == State.DEBUG:
-                    rospy.logdebug(text)
-                elif state == State.INFO:
-                    rospy.loginfo(text)
-                elif state == State.WARN:
-                    rospy.logwarn(text)
-                elif state == State.ERROR:
-                    rospy.logerr(text)
-                elif state == State.FATAL:
-                    rospy.logfatal(text)
-            else:
-                raise Exception("running external to node environment.")
-        except:
-            print(state.value + " " + str(text))
+    def print(self, text, logtype):
+        roslogger(text, logtype, self.ros)
         
 # import rospkg
 

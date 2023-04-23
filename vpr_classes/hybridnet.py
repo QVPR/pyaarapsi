@@ -59,13 +59,11 @@ class PlaceDataset(torch.utils.data.Dataset):
         del self.dims
 
 class HybridNet_Container:
-    def __init__(self, logger=print, cuda=False, 
-                 dims=None, target_layer='fc7_new'):
+    def __init__(self, logger=print, cuda=False, target_layer='fc7_new'):
         
         self.cuda           = cuda
         self.logger         = logger
         self.target_layer   = target_layer
-        self.dims           = dims
         # keep these features dim fixed as they need to match the network architecture inside "HybridNet"
         self.layerLabs      = ['conv3', 'conv4', 'conv5', 'conv6' ,'pool1', 'pool2', 'fc7_new', 'fc8_new']
         self.layerDims      = [64896, 64896, 43264, 43264, 69984, 43264, 4096, 2543]
@@ -103,7 +101,6 @@ class HybridNet_Container:
         del self.transformer
         del self.cuda
         del self.target_layer
-        del self.dims
         del self.layerLabs
         del self.layerDims
         del self.layerDict
