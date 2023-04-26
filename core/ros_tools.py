@@ -1,14 +1,116 @@
 #!/usr/bin/env python3
 import rospy
+import rosbag
 import logging
+import numpy as np
 from enum import Enum
 from cv_bridge import CvBridge
+from tqdm.auto import tqdm
 
 from geometry_msgs.msg import Quaternion
 from sensor_msgs.msg import Image, CompressedImage
 from aarapsi_robot_pack.msg import Heartbeat as Hb
 
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
+
+def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, use_tqdm=True):
+    '''
+    Open a ROS bag and extract odometry + image topics, sampling at a specified rate.
+    Data is appended by row containing the processed ROS data, stored as numpy types.
+    Returns type dict
+
+    Inputs:
+    - bag_path:     String for full file path for bag, i.e. /home/user/bag_file.bag
+    - sample_rate:  Float for rate at which rosbag should be sampled
+    - odom_topic:   string for odom topic to extract
+    - img_topics:   List of strings for image topics to extract, order specifies order in returned data
+    - printer:      Method wrapper for printing (default: print)
+    - use_tqdm:     Bool to enable/disable use of tqdm (default: True)
+    Returns:
+    dict
+    '''
+    topic_list = [odom_topic] + img_topics
+    # Read rosbag
+    data = rip_bag(bag_path, sample_rate, topic_list, printer=printer, use_tqdm=use_tqdm)
+
+    printer("Converting stored messages (%s)" % (str(len(data))))
+    bridge          = CvBridge()
+    new_dict        = {key: [] for key in img_topics + ['px', 'py', 'pw', 'vx', 'vy', 'vw', 't']}
+
+    compress_func   = lambda msg: bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
+    raw_img_func    = lambda msg: bridge.imgmsg_to_cv2(msg, "passthrough")
+    none_rows       =   0
+    if len(data) < 1:
+        raise Exception('No usable data!')
+    if use_tqdm:
+        iter_obj = tqdm(data)
+    else:
+        iter_obj = data
+    for row in iter_obj:
+        if None in row:
+            none_rows = none_rows + 1
+            continue
+        new_dict['t'].append(row[1].header.stamp.to_sec())
+        new_dict['px'].append(row[1].pose.pose.position.x)
+        new_dict['py'].append(row[1].pose.pose.position.y)
+        new_dict['pw'].append(yaw_from_q(row[1].pose.pose.orientation))
+
+        new_dict['vx'].append(row[1].twist.twist.linear.x)
+        new_dict['vy'].append(row[1].twist.twist.linear.y)
+        new_dict['vw'].append(row[1].twist.twist.angular.z)
+
+        for topic in img_topics:
+            if "/compressed" in topic:
+                new_dict[topic].append(compress_func(row[1 + topic_list.index(topic)]))
+            else:
+                new_dict[topic].append(raw_img_func(row[1 + topic_list.index(topic)]))
+    printer("%0.2f%% of %d rows contained NoneType; these were ignored." % (100 * none_rows / len(data), len(data)))
+    return {key: np.array(new_dict[key]) for key in new_dict}
+
+def rip_bag(bag_path, sample_rate, topics_in, printer=print, use_tqdm=True):
+    '''
+    Open a ROS bag and store messages from particular topics, sampling at a specified rate.
+    If no messages are received, list is populated with NoneType (empties are also NoneType)
+    Data is appended by row containing the raw ROS messages
+    First column corresponds to sample_rate * len(data)
+    Returns data (type List)
+
+    Inputs:
+    - bag_path:     String for full file path for bag, i.e. /home/user/bag_file.bag
+    - sample_rate:  Float for rate at which rosbag should be sampled
+    - topics_in:    List of strings for topics to extract, order specifies order in returned data (time column added to the front)
+    - printer:      Method wrapper for printing (default: print)
+    - use_tqdm:     Bool to enable/disable use of tqdm (default: True)
+    Returns:
+    List
+    '''
+    topics         = [None] + topics_in
+    data           = []
+    logged_t       = -1
+    num_topics     = len(topics)
+    num_rows       = 0
+
+    # Read rosbag
+    printer("Ripping through rosbag ...")
+
+    row = [None] * num_topics
+    with rosbag.Bag(bag_path, 'r') as ros_bag:
+        if use_tqdm: 
+            iter_obj = tqdm(ros_bag.read_messages(topics=topics))
+        else: 
+            iter_obj = ros_bag.read_messages(topics=topics)
+        for topic, msg, timestamp in iter_obj:
+            row[topics.index(topic)] = msg
+            if logged_t == -1:
+                logged_t    = timestamp.to_sec()
+            elif timestamp.to_sec() - logged_t > 1/sample_rate:
+                row[0]      = sample_rate * num_rows
+                data.append(row)
+                row         = [None] * num_topics
+                num_rows    = num_rows + 1
+                logged_t    = timestamp.to_sec()
+                
+    return data
 
 def set_rospy_log_lvl(log_level):
     '''
