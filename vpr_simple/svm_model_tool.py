@@ -38,10 +38,13 @@ class SVMModelProcessor: # main ROS class
 
         if not (model is None):
             if isinstance(model, str):
+                self.print("[SVMModelProcessor] Loading model by name...", LogType.INFO)
                 self.load_model(model)
             elif isinstance(model, dict):
+                self.print("[SVMModelProcessor] Loading model from parameters...", LogType.INFO)
                 self.load_model_params(model)
                 if try_gen and (not self.model_ready):
+                    self.print("[SVMModelProcessor] Load failed, attempting to generate model from parameters...", LogType.INFO)
                     self.generate_model(**model)
             else:
                 raise Exception("Model type not supported. Valid types: str, dict")
@@ -101,13 +104,10 @@ class SVMModelProcessor: # main ROS class
             file_name = name + "_%d" % count
             count += 1
         
-        separator = ""
-        if not (dir[-1] == "/"):
-            separator = "/"
-        full_file_path = dir + separator + file_name
-        full_param_path = dir +"/params" + separator + file_name
+        full_file_path = dir + "/" + file_name
+        full_param_path = dir + "/params/" + file_name
         np.savez(full_file_path, **self.model)
-        np.savez(full_param_path, **self.model['params'])
+        np.savez(full_param_path, params=self.model['params']) # save whole dictionary to preserve key object types
         self.print("[save_model] Saved file, params to %s, %s" % (full_file_path, full_param_path), LogType.INFO)
         return self
 
@@ -120,9 +120,12 @@ class SVMModelProcessor: # main ROS class
         models = self._get_models(dir)
         self.model = {}
         for name in models:
-            if models[name] == model_params:
-                self._load(name)
-                break
+            if models[name]['params'] == model_params:
+                try:
+                    self._load(name)
+                    break
+                except:
+                    self._fix(name)
         return self
 
     def load_model(self, model_name, dir=None):
@@ -135,19 +138,27 @@ class SVMModelProcessor: # main ROS class
         self.model = {}
         for name in models:
             if name == model_name:
-                self._load(name)
-                break
+                try:
+                    self._load(name)
+                    break
+                except:
+                    self._fix(name)
         return self
     
-    def swap(self, model_params, generate=False):
+    def swap(self, model_params, generate=False, allow_false=True):
         models = self._get_models(self.models_dir)
         for name in models:
-            if models[name] == model_params:
-                self._load(name)
-                return True
+            if models[name]['params'] == model_params:
+                try:
+                    self._load(name)
+                    return True
+                except:
+                    self._fix(name)
         if generate:
             self.generate_model(**model_params)
             return True
+        if not allow_false:
+            raise Exception('Model failed to load.')
         return False
     
     def predict(self, dvc):
@@ -264,13 +275,14 @@ class SVMModelProcessor: # main ROS class
             dir = self.models_dir
         models = {}
         try:
-            entry_list = os.scandir(dir+"/params")
+            entry_list = os.scandir(dir+"/params/")
         except FileNotFoundError:
             self.print("Error: directory invalid.", LogType.ERROR)
             return models
         for entry in entry_list:
             if entry.is_file() and entry.name.startswith('svmmodel'):
-                models[os.path.splitext(entry.name)[0]] = np.load(entry.path, allow_pickle=True)
+                loaded_model = dict(np.load(entry.path, allow_pickle=True))
+                models[os.path.splitext(entry.name)[0]] = loaded_model
         return models
 
     def _make(self):
@@ -281,11 +293,28 @@ class SVMModelProcessor: # main ROS class
         del self.model
         self.model          = dict(params=params_dict, model=model_dict)
         self.model_ready    = True
+    
+    def _fix(self, model_name):
+        if not model_name.endswith('.npz'):
+            model_name = model_name + '.npz'
+        self.print("Bad dataset state detected, performing cleanup...", LogType.WARN)
+        try:
+            os.remove(self.models_dir + '/' + model_name)
+            self.print("Purged: %s" % (self.models_dir + '/' + model_name), LogType.WARN)
+        except:
+            pass
+        try:
+            os.remove(self.models_dir + '/params/' + model_name)
+            self.print("Purged: %s" % (self.models_dir + '/params/' + model_name), LogType.WARN)
+        except:
+            pass
 
     def _load(self, model_name):
     # when loading objects inside dicts from .npz files, must extract with .item() each object
         del self.model
-        raw_model = np.load(self.models_dir + "/" + model_name)
+        if not model_name.endswith('.npz'):
+            model_name = model_name + '.npz'
+        raw_model = np.load(self.models_dir + "/" + model_name, allow_pickle=True)
         self.model = dict(model=raw_model['model'].item(), params=raw_model['params'].item())
         self.model_ready = True
 
