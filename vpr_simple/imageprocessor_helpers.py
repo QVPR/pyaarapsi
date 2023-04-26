@@ -6,12 +6,18 @@ from tqdm.auto import tqdm
 
 # For image processing type
 class FeatureType(Enum):
-    NONE        = 0
-    RAW         = 1
-    PATCHNORM   = 2
-    NETVLAD     = 3
-    HYBRIDNET   = 4
-    ROLLNORM    = 5
+    NONE                = 0
+    RAW                 = 1
+    PATCHNORM           = 2
+    NETVLAD             = 3
+    HYBRIDNET           = 4
+    ROLLNORM            = 5
+
+class Tolerance_Mode(Enum):
+    METRE_CROW_TRUE     = 0
+    METRE_CROW_MATCH    = 1
+    METRE_LINE          = 2
+    FRAME               = 3 
 
 def discretise(dict_in, metrics=None, mode=None, keep='first'):
     if not len(dict_in):

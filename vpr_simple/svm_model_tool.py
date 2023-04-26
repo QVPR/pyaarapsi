@@ -24,7 +24,7 @@ from sklearn.preprocessing import StandardScaler
 from ..core.enum_tools import enum_name
 from ..core.file_system_tools import scan_directory
 from ..core.ros_tools import LogType, roslogger
-from ..vpr_simple import VPRImageProcessor
+from ..vpr_simple.vpr_feature_tool import VPRImageProcessor
 from ..vpred import *
 
 class SVMModelProcessor: # main ROS class

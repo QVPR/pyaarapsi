@@ -3,17 +3,11 @@
 import numpy as np
 import copy
 import os
-import cv2
-import sys
-import csv
 import datetime
-from enum import Enum
-from tqdm import tqdm
 from pathlib import Path
 from ..core.enum_tools import enum_name
 from ..core.ros_tools import LogType, roslogger, process_bag
 from ..vpr_classes import NetVLAD_Container, HybridNet_Container
-from ..core.helper_tools import formatException
 from ..core.file_system_tools import scan_directory
 from .imageprocessor_helpers import *
 
@@ -182,6 +176,7 @@ class VPRImageProcessor: # main ROS class
         return False
     
     def swap(self, dataset_params, generate=False, allow_false=True):
+        # TODO
         datasets = self._get_datasets(self.npz_dbp)
         for name in datasets:
             if datasets[name]['params'] == dataset_params:
