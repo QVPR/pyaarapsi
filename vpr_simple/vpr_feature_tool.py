@@ -17,21 +17,13 @@ try:
     from ..core.ros_tools import LogType, roslogger
     from ..vpr_classes import NetVLAD_Container, HybridNet_Container
     from ..core.helper_tools import formatException
+    from .imageprocessor_helpers import FeatureType
     PYTHON_LIBRARY_STATUS = True
 except:
     print("This file is running without knowledge of, or outside of, the pyaarapsi python library")
     print("This is OK, however feature extraction and building new compressed libraries is disabled.")
     print("Although best efforts have been made to ensure compatibility, issues may arise.")
     PYTHON_LIBRARY_STATUS = False
-
-# For image processing type
-class FeatureType(Enum):
-    NONE        = 0
-    RAW         = 1
-    PATCHNORM   = 2
-    NETVLAD     = 3
-    HYBRIDNET   = 4
-    ROLLNORM    = 5
 
 class VPRImageProcessor: # main ROS class
     def __init__(self, ros=False, init_netvlad=False, init_hybridnet=False, cuda=False, dims=None):
