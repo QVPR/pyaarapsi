@@ -176,6 +176,6 @@ def rollNormaliseImage(img, kernel_size):
     
     k_options       = list(range(-kernel_size,kernel_size+1,1))
     rolled_stack    = np.dstack([np.roll(np.roll(img2,i,0),j,1) for j in k_options for i in k_options])
-    rollnormed      = np.mean(rolled_stack, 2) / np.std(rolled_stack, 2)
+    rollnormed      = 255 - (np.mean(rolled_stack, 2) / np.std(rolled_stack, 2))
 
     return rollnormed  
