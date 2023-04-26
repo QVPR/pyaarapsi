@@ -29,7 +29,11 @@ def enum_value_options(enumtype, skip=[None]):
     return options, str(options_text).replace('\'', '')
 
 def enum_value(enum_in):
+    if isinstance(enum_in, list):
+        return [i.value for i in enum_in]
     return enum_in.value
 
 def enum_name(enum_in):
+    if isinstance(enum_in, list):
+        return [i.name for i in enum_in]
     return str(enum_in.name)
