@@ -50,7 +50,7 @@ class VPRImageProcessor: # main ROS class
         else:
             self.print("[VPRImageProcessor] Initialised, no dataset loaded.", LogType.INFO)
 
-    def generate_dataset(self, bag_name, npz_dbp, bag_dbp, sample_rate, odom_topic, img_topics, img_dims, ft_types, filters={}, install=True):
+    def generate_dataset(self, bag_name, npz_dbp, bag_dbp, sample_rate, odom_topic, img_topics, img_dims, ft_types, filters={}):
         # store for access in saving operation:
         self.dataset_ready  = False
         self.npz_dbp        = npz_dbp
@@ -61,20 +61,20 @@ class VPRImageProcessor: # main ROS class
         roslogger('Performing feature extraction...', LogType.INFO, ros=self.ros)
         feature_vector_dict = {enum_name(ft_type): self.getFeat(list(rosbag_dict[img_topics[0]]), ft_type, img_dims, use_tqdm=self.use_tqdm) for ft_type in ft_types}
         roslogger('Done.', LogType.INFO, ros=self.ros)
+
+        # Create dataset dictionary and add feature vectors
         params_dict         = dict( bag_name=bag_name, npz_dbp=npz_dbp, bag_dbp=bag_dbp, \
                                     odom_topic=odom_topic, img_topics=img_topics, \
                                     sample_rate=sample_rate, ft_types=ft_types, img_dims=img_dims, filters=filters)
-        
-        dataset_dict        = { 'time': rosbag_dict['t'], \
-                                'odom': dict( position=dict( x=rosbag_dict['px'], y=rosbag_dict['py'], yaw=rosbag_dict['pw'] ),
-                                              velocity=dict( x=rosbag_dict['vx'], y=rosbag_dict['vy'], yaw=rosbag_dict['vw'] ))}
+        dataset_dict        = dict( time=rosbag_dict['t'], \
+                                    px=rosbag_dict['px'], py=rosbag_dict['py'], pw=rosbag_dict['pw'], \
+                                    vx=rosbag_dict['vx'], vy=rosbag_dict['vy'], vw=rosbag_dict['vw'] )
         dataset_dict.update(feature_vector_dict)
-        del self.dataset    
         dataset             = dict(params=params_dict, dataset=dataset_dict)
 
-        if install:
-            self.dataset        = dataset
-            self.dataset_ready  = True
+        del self.dataset   
+        self.dataset        = dataset
+        self.dataset_ready  = True
 
         if self.autosave:
             self.save_dataset(check_exists=True)
@@ -88,11 +88,6 @@ class VPRImageProcessor: # main ROS class
             raise Exception("Dataset not loaded in system. Either call 'generate_dataset' or 'load_dataset(_params)' before using this method.")
         Path(dir).mkdir(parents=False, exist_ok=True)
         Path(dir+"/params").mkdir(parents=False, exist_ok=True)
-        if check_exists:
-            existing_file = self._check(dir)
-            if existing_file:
-                self.print("[save_dataset] File exists with identical parameters: %s", LogType.INFO)
-                return self
         
         # Ensure file name is of correct format, generate if not provided
         file_list, _, _, = scan_directory(dir, short_files=True)
@@ -112,15 +107,21 @@ class VPRImageProcessor: # main ROS class
             while file_name in file_list:
                 file_name = name + "_%d" % count
                 count += 1
-            file_list = file_list + [file_name]
-            
-            full_file_path = dir + "/" + file_name
+            file_list       = file_list + [file_name]
+            full_file_path  = dir + "/" + file_name
             full_param_path = dir + "/params/" + file_name
 
-            sub_data                = copy.deepcopy({key: self.dataset['dataset'][key] for key in ['time', 'odom', enum_name(ft_type)]})
+            sub_data                = copy.deepcopy({key: self.dataset['dataset'][key] for key in ['time', 'px', 'py', 'pw', 'vx', 'vy', 'vw', enum_name(ft_type)]})
             sub_params              = copy.deepcopy(self.dataset['params'])
             sub_params['ft_types']  = [ft_type]
             sub_dataset             = dict(params=sub_params, dataset=sub_data)
+
+            if check_exists:
+                existing_file = self._check(dir, params=sub_params)
+                if existing_file:
+                    self.print("[save_dataset] File exists with identical parameters, skipping.", LogType.INFO)
+                    continue
+            
             np.savez(full_file_path, **sub_dataset)
             np.savez(full_param_path, params=sub_dataset['params']) # save whole dictionary to preserve key object types
             self.print("[save_dataset] Save complete.\n\tfile: %s\n\tparams:%s." % (full_file_path, full_param_path), LogType.INFO)
@@ -136,40 +137,36 @@ class VPRImageProcessor: # main ROS class
         if save:
             self.save_dataset(check_exists=True)
 
-    def load_dataset_by_parts(self, dataset_params, dir=None):
-    # load via search for param match
-        self.print("[load_dataset_by_parts] Loading dataset.", LogType.DEBUG)
-        if dir is None:
-            dir = self.npz_dbp
-        datasets = self._get_datasets(dir)
-        self.dataset = {}
-        for name in datasets:
-            if datasets[name]['params'] == dataset_params:
-                try:
-                    self._load(name)
-                    return True
-                except:
-                    self._fix(name)
-        return False
-
     def load_dataset_params(self, dataset_params, dir=None):
     # load via search for param match
+        self.dataset_ready = False
         self.print("[load_dataset_params] Loading dataset.", LogType.DEBUG)
         if dir is None:
             dir = self.npz_dbp
         datasets = self._get_datasets(dir)
         self.dataset = {}
-        for name in datasets:
-            if datasets[name]['params'] == dataset_params:
-                try:
-                    self._load(name)
-                    return True
-                except:
-                    self._fix(name)
+        sub_params = copy.deepcopy(dataset_params)
+        for c, ft_type in enumerate(dataset_params['ft_types']):
+            sub_params['ft_types'] = [ft_type]
+            for name in datasets:
+                if datasets[name]['params'] == sub_params:
+                    try:
+                        if not self.dataset_ready:
+                            self._load(name)
+                        else:
+                            self._extend(name, ft_type)
+                        if c == len(dataset_params['ft_types']) - 1:
+                            return True
+                    except:
+                        self._fix(name)
+                        return False
+                else:
+                    self.extend_dataset
         return False
 
     def load_dataset(self, dataset_name, dir=None):
     # load via string matching name of dataset file
+        self.dataset_ready = False
         self.print("[load_dataset] Loading %s" % (dataset_name), LogType.DEBUG)
         if dir is None:
             dir = self.npz_dbp
@@ -229,10 +226,12 @@ class VPRImageProcessor: # main ROS class
             raise Exception("[getFeat] Feature vector could not be constructed.\nCode: %s" % (e))
         
     #### Private methods:
-    def _check(self, dir):
+    def _check(self, dir, params=None):
         datasets = self._get_datasets(dir)
+        if params is None:
+            params = self.dataset['params']
         for name in datasets:
-            if datasets[name]['params'] == self.dataset['params']:
+            if datasets[name]['params'] == params:
                 return name
         return ""
     
@@ -266,18 +265,26 @@ class VPRImageProcessor: # main ROS class
         except:
             pass
 
-    def _load(self, dataset_name, install=True):
+    def _load(self, dataset_name,):
     # when loading objects inside dicts from .npz files, must extract with .item() each object
         if not dataset_name.endswith('.npz'):
             dataset_name = dataset_name + '.npz'
         
         raw_dataset = np.load(self.npz_dbp + "/" + dataset_name, allow_pickle=True)
-        if install:
-            del self.dataset
-            self.dataset = dict(dataset=raw_dataset['dataset'].item(), params=raw_dataset['params'].item())
-            self.dataset_ready = True
-            return self.dataset
-        return raw_dataset
+
+        del self.dataset
+        self.dataset = dict(dataset=raw_dataset['dataset'].item(), params=raw_dataset['params'].item())
+        self.dataset_ready = True
+        return self.dataset
+    
+    def _extend(self, dataset_name, ft_type):
+    # when loading objects inside dicts from .npz files, must extract with .item() each object
+        if not dataset_name.endswith('.npz'):
+            dataset_name = dataset_name + '.npz'
+        
+        raw_dataset = np.load(self.npz_dbp + "/" + dataset_name, allow_pickle=True)['dataset'].item()
+        self.dataset['dataset'][enum_name(ft_type)] = raw_dataset[enum_name(ft_type)]
+        return self.dataset
     
     def destroy(self):
         if self.init_hybridnet:
