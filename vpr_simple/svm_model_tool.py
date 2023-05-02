@@ -52,13 +52,13 @@ class SVMModelProcessor: # main ROS class
                 raise Exception("Model load failed.")
             self.print("[SVMModelProcessor] Model Ready.", LogType.INFO)
 
-    def generate_model(self, database_path, qry, ref, img_dims, folder, ft_type, save=True):
+    def generate_model(self, database_path, qry, ref, img_dims, view, ft_type, save=True):
         # store for access in saving operation:
         self.database_path      = database_path
         self.cal_qry_dataset    = qry
         self.cal_ref_dataset    = ref 
         self.img_dims           = img_dims
-        self.folder             = folder
+        self.view               = view
         self.feat_type          = ft_type
         self.model_ready        = False
 
@@ -234,8 +234,8 @@ class SVMModelProcessor: # main ROS class
         self.actual_match_cal = np.arange(len(self.features_calqry))
 
     def _calibrate(self):
-        self.features_calqry                = np.array(self.cal_qry_ip.SET_DICT['img_feats'][enum_name(self.feat_type)][self.folder])
-        self.features_calref                = np.array(self.cal_ref_ip.SET_DICT['img_feats'][enum_name(self.feat_type)][self.folder])
+        self.features_calqry                = np.array(self.cal_qry_ip.SET_DICT['img_feats'][enum_name(self.feat_type)][enum_name(self.view)])
+        self.features_calref                = np.array(self.cal_ref_ip.SET_DICT['img_feats'][enum_name(self.feat_type)][enum_name(self.view)])
         self.odom_calqry                    = self.cal_qry_ip.SET_DICT['odom']
         self.odom_calref                    = self.cal_ref_ip.SET_DICT['odom']
         self._clean_cal_data()
@@ -287,7 +287,7 @@ class SVMModelProcessor: # main ROS class
 
     def _make(self):
         params_dict         = dict(ref=self.cal_ref_dataset, qry=self.cal_qry_dataset, \
-                                    img_dims=self.img_dims, folder=self.folder, \
+                                    img_dims=self.img_dims, view=self.view, \
                                     database_path=self.database_path, ft_type=self.feat_type)
         model_dict          = dict(svm=self.svm_model, scaler=self.scaler, rstd=self.rstd, rmean=self.rmean, factors=[self.factor1_cal, self.factor2_cal])
         del self.model
@@ -311,42 +311,13 @@ class SVMModelProcessor: # main ROS class
 
     def _load(self, model_name):
     # when loading objects inside dicts from .npz files, must extract with .item() each object
-        del self.model
         if not model_name.endswith('.npz'):
             model_name = model_name + '.npz'
         raw_model = np.load(self.models_dir + "/" + model_name, allow_pickle=True)
+        del self.model
         self.model = dict(model=raw_model['model'].item(), params=raw_model['params'].item())
         self.model_ready = True
 
     def print(self, text, logtype):
         roslogger(text, logtype, self.ros)
-        
-# import rospkg
-
-# if __name__ == '__main__':  # only execute if run as main script
-#     root = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__)))
-#     model_dir = root + "/cfg/svm_models"
-#     dbp = root + "/data/compressed_sets"
-#     qry = 's1_cw_z_230208_o0_e0'
-#     ref = 's2_cw_z_230222_o0_e1'
-#     img_dims = (64, 64)
-#     folder = 'forward'
-#     model = "svmmodel_20230308"
-#     ft_type = FeatureType.RAW
-#     model_params = dict(ref=ref, qry=qry, img_dims=img_dims, folder=folder, database_path=dbp, ft_type=ft_type)
-#     #test = SVMModelProcessor(model_dir).generate_model(dbp, qry, ref, img_dims, folder, ft_type).save_model(check_exists=True)
-
-#     # These are all valid methods to load a model:
-#     test = SVMModelProcessor(model_dir, model=model) # init and load by name
-#     #test = SVMModelProcessor(model_dir, model=model_params) # init and load by params match
-#     #test = SVMModelProcessor(model_dir).load_model(model) # init, and then load by name
-#     #test = SVMModelProcessor(model_dir).load_model_params(model_params) # init, and then load by params match
-
-#     # Generate fake distance vector:
-#     dvc = np.random.rand(100)*300 + 600
-#     dvc[20:25] = [300, 250, 100, 220, 320]
-#     (state, zval, [factor1, factor2]) = test.predict(dvc)
-#     print((state, zval, [factor1, factor2]))
-
-#     test.generate_svm_mat()
 
