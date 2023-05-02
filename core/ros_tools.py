@@ -209,16 +209,16 @@ class Heartbeat:
     - Create a listen point for diagnosing which nodes have failed
         - If node fails, heartbeat will stop
     '''
-    def __init__(self, node_name, namespace, node_state: NodeState, node_rate, hb_topic='/heartbeats'):
+    def __init__(self, node_name, namespace, node_rate, node_state=NodeState.INIT, hb_topic='/heartbeats'):
         '''
         Initialisation
 
         Inputs:
         - node_name:    string name of node as per ROS
         - namespace:    string namespace to be appended to heartbeat topic
-        - node_state:   int node state
         - node_rate:    float node ROS rate
-        - hb_topic:     string topic name for heartbeat to be published to
+        - node_state:   NodeState node state (default: NodeState.INIT)
+        - hb_topic:     string topic name for heartbeat to be published to (default: /heartbeats)
         Returns:
         None
         '''
@@ -265,7 +265,7 @@ class LogType(Enum):
     ERROR       = "[!ERROR!]"
     FATAL       = "[!!FATAL!!]"
 
-def roslogger(text, logtype, ros=False, throttle=0, no_stamp=False):
+def roslogger(text, logtype, throttle=0, ros=True, name=None, no_stamp=True):
     '''
     Print function helper
     For use with integration with ROS 
@@ -276,31 +276,38 @@ def roslogger(text, logtype, ros=False, throttle=0, no_stamp=False):
     - ros:      bool that swaps between rospy logging and print
     - throttle: number of seconds of pause between each message (rospy logging only)
     - no_stamp: bool to enable overwriting of generic rospy timestamp
+    - obj:      Object with any of the following attributes: 
+                    obj.logros (overrides ros)
+                    obj.logname (overrides name)
+                    obj.logstamp (overrides no_stamp)
 
     Returns:
     None
     '''
 
+    text = str(text) # just in case someone did something silly
+
+    if isinstance(name, str):
+        text = '[' + name + '] ' + text
+
     try:
         if ros: # if used inside of a running ROS node
             if no_stamp:
-                go_back = '\b' * 21
-            else:
-                go_back = ''
+                text = ('\b' * 21) + text + (' ' * np.max([21 - len(text), 0]))
             if logtype == LogType.DEBUG:
-                rospy.logdebug_throttle(throttle, go_back + text)
+                rospy.logdebug_throttle(throttle, text)
             elif logtype == LogType.INFO:
-                rospy.loginfo_throttle(throttle, go_back + text)
+                rospy.loginfo_throttle(throttle, text)
             elif logtype == LogType.WARN:
-                rospy.logwarn_throttle(throttle, go_back + text)
+                rospy.logwarn_throttle(throttle, text)
             elif logtype == LogType.ERROR:
-                rospy.logerr_throttle(throttle, go_back + text)
+                rospy.logerr_throttle(throttle, text)
             elif logtype == LogType.FATAL:
-                rospy.logfatal_throttle(throttle, go_back + text)
+                rospy.logfatal_throttle(throttle, text)
         else:
             raise Exception
     except:
-        print(logtype.value + " " + str(text))
+        print(logtype.value + " " + text)
 
 def yaw_from_q(q):
     '''
@@ -362,21 +369,38 @@ class ROS_Param:
 
         self.evaluation = evaluation
         self.value      = None
+        self.old_value  = None # in case we need to revert later
+        self.reverted   = False
+
         if rospy.has_param(self.name) and (not force):
             try:
-                check_value = self.evaluation(rospy.get_param(self.name, value))
-                self.value = check_value
+                check_value     = self.evaluation(rospy.get_param(self.name, value))
+                self.value      = check_value
+                self.old_value  = check_value
             except:
-                pass
+                self.set(self.value)
+                self.reverted   = False
         else:
             self.set(value)
 
+    def revert(self):
+        self.set(self.old_value)
+        self.reverted   = True
+
     def update(self):
-        check_value     = rospy.get_param(self.name, self.value)
+        if self.reverted:
+            print('...')
+            self.reverted = False #?
+            return
+        check_value         = rospy.get_param(self.name, self.value)
         try:
-            self.value  = self.evaluation(check_value)
-            return (True, check_value)
+            new_value       = self.evaluation(check_value) # separate clause that may trigger exception
+            self.old_value  = self.value
+            self.value      = new_value
+            return (True, self.value)
         except:
+            self.set(self.value)
+            self.reverted   = False
             return (False, check_value)
 
     def _get_server(self):
@@ -403,10 +427,11 @@ class ROS_Param:
         if self.name in self.updates_queued:
             self.updates_queued.remove(self.name)
             try:
-                check_value = self.evaluation(rospy.get_param(self.name, self.value))
-                self.value = check_value
+                check_value     = self.evaluation(rospy.get_param(self.name, self.value))
+                self.old_value  = self.value
+                self.value      = check_value
             except:
-                pass
+                self.set(self.value)
         return self.value
 
     def set(self, value):
@@ -423,22 +448,177 @@ class ROS_Param:
         self.value = self.evaluation(value)
 
 class ROS_Param_Server:
+    '''
+    ROS Parameter Server Class
+    Purpose:
+    - Wrapper class that for ROS_Param that manages and handles dynamic updates to ROS_Param instances
+    '''
     def __init__(self):
+        '''
+        Initialisation
+
+        Inputs:
+        None
+        Returns:
+        None
+        '''
         self.updates_possible   = []
         self.params             = {}
 
     def add(self, name, value, evaluation, force=False):
+        '''
+        Add new ROS_Param
+
+        Inputs:
+        - name:         string name of parameter to be used on parameter server
+        - value:        default value of parameter if unset on parameter server
+        - evaluation:   handle to method to check value type
+        - force:        bool to force update of value on parameter server with input value
+        Returns:
+        Generated ROS_Param
+        '''
         self.params[name] = ROS_Param(name, value, evaluation, force, server=self)
         self.updates_possible.append(name)
         return self.params[name]
 
     def update(self, name):
+        '''
+        Update specified parameter / ROS_Param
+
+        Inputs:
+        - name:         string name of parameter to be used on parameter server
+        Returns:
+        None 
+        '''
         update_status = self.params[name].update()
         if not update_status[0]:
             roslogger("Bad parameter server value. Overriding with last safe value. Parameter: %s [Bad: %s, Replaced: %s]." 
                       % (str(name), str(update_status[1]), str(self.params[name].value)))
 
     def exists(self, name):
+        '''
+        Check if specified parameter / ROS_Param exists on server
+
+        Inputs:
+        - name:         string name of parameter to be used on parameter server
+        Returns:
+        bool True or False if exists 
+
+        '''
         if name in self.updates_possible:
             return True
         return False
+    
+class ROS_Publisher:
+    '''
+    ROS Publisher Container Class
+    Purpose:
+    - Wrapper class for ROS Publishers
+    '''
+    def __init__(self, topic, data_class, queue_size=1, latch=False, server=None):
+        '''
+        Initialisation
+
+        Inputs:
+        - topic:        string topic
+        - data_class:   ROS data class
+        - queue_size:   integer number of messages to store for publishing
+        - latch:        bool True/False
+        Returns:
+        None
+        '''
+        self.topic      = topic
+        self.data_class = data_class
+        self.queue_size = queue_size
+        self.latch      = latch
+        self.server     = server
+        self.last_t     = -1
+
+        self.publisher  = rospy.Publisher(self.topic, self.data_class, queue_size=self.queue_size, latch=self.latch)
+    
+    def publish(self, msg):
+        '''
+        Helper for publishing
+
+        Inputs:
+        - msg:  ROS data class
+        Returns:
+        bool True/False for success / fail on publishing
+
+        '''
+        try:
+            self.publisher.publish(msg)
+            self.last_t = rospy.Time.now().to_sec()
+            return True
+        except:
+            return False
+        
+class ROS_Home:
+    '''
+    ROS Container Class
+    Purpose:
+    - Wrapper class for ROS wrappers
+    '''
+    def __init__(self, node_name, namespace, node_rate, node_state=NodeState.INIT, hb_topic='/heartbeats', logros=True, logstamp=True):
+        '''
+        Initialisation
+
+        Inputs:
+        - node_name:    string name of node as per ROS
+        - namespace:    string namespace to be appended to heartbeat topic
+        - node_state:   NodeState enum type
+        - node_rate:    float node ROS rate
+        - hb_topic:     string topic name for heartbeat to be published to (default: /heartbeats)
+        - logros:       bool whether or not to use rospy logging (default: True)
+        - logstamp:     bool whether or not to override rospy stamp (default: True)
+        Returns:
+        None
+        '''
+        self.logros     = logros
+        self.logstamp   = logstamp
+
+        self.node_name  = node_name 
+        self.namespace  = namespace 
+        self.node_rate  = node_rate 
+        self.hb_topic   = hb_topic
+
+        self.pubs       = {}
+
+        self.logros     = logros 
+        self.logstamp   = logstamp
+
+        self.params     = ROS_Param_Server()
+
+        self.hb         = Heartbeat(self.node_name, self.namespace, self.node_rate, node_state=node_state, hb_topic=self.hb_topic)
+
+    def set_state(self, state: NodeState):
+        '''
+        Set heartbeat node_state
+
+        Inputs:
+        - state:    NodeState enum type
+        Returns:
+        None
+        '''
+
+        self.hb.set_state(state)
+
+    def add_pub(self, topic, data_class, queue_size=1, latch=False):
+        '''
+        Add new ROS_Publisher
+
+        Inputs:
+        - topic:        string topic
+        - data_class:   ROS data class
+        - queue_size:   integer number of messages to store for publishing
+        - latch:        bool True/False
+        Returns:
+        Generated ROS_Publisher
+        '''
+
+        self.pubs[topic] = ROS_Publisher(topic, data_class, queue_size, latch, server=self)
+        return self.pubs[topic]
+    
+
+
+    
