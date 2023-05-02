@@ -6,7 +6,7 @@ def grey2dToColourMap(matrix, colourmap=cv2.COLORMAP_JET, dims=None):
     max_val = np.max(matrix)
     matnorm = (((matrix - min_val) / (max_val - min_val)) * 255).astype(np.uint8)
     if not (dims is None):
-        matnorm = cv2.resize(matnorm, dims)
+        matnorm = cv2.resize(matnorm, dims, interpolation=cv2.INTER_AREA)
     mat_rgb = cv2.applyColorMap(matnorm, colourmap)
     return mat_rgb
 
