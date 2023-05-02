@@ -30,7 +30,7 @@ class Timer:
 
     def show(self, name=None, thresh=0.001):
         times = self.calc(thresh)
-        string = str(times).replace(' ','')
+        string = str(["%8.4f" % i for i in times]).replace(' ','')
         if not (name is None):
             string = "[" + name + "] " + string
         self.print(string)
