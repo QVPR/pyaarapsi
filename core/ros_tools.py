@@ -209,7 +209,7 @@ class Heartbeat:
     - Create a listen point for diagnosing which nodes have failed
         - If node fails, heartbeat will stop
     '''
-    def __init__(self, node_name, namespace, node_rate, node_state=NodeState.INIT, hb_topic='/heartbeats'):
+    def __init__(self, node_name, namespace, node_rate, node_state=NodeState.INIT, hb_topic='/heartbeats', server=None, period=1):
         '''
         Initialisation
 
@@ -227,11 +227,15 @@ class Heartbeat:
         self.node_rate  = node_rate
         self.node_state = node_state.value
         self.hb_topic   = hb_topic
+        self.server     = server
 
         self.hb_msg     = Hb(node_name=self.node_name, node_rate=self.node_rate, node_state=self.node_state)
 
         self.hb_pub     = rospy.Publisher(self.namespace + self.hb_topic, Hb, queue_size=1)
-        self.hb_timer   = rospy.Timer(rospy.Duration(secs=1), self.heartbeat_cb)
+        if self.server is None:
+            self.hb_timer   = rospy.Timer(rospy.Duration(secs=period), self.heartbeat_cb)
+        else:
+            self.hb_timer   = rospy.Timer(rospy.Duration(secs=period), self.heartbeat_server_cb)
 
     def set_state(self, state: NodeState):
         '''
@@ -247,11 +251,22 @@ class Heartbeat:
 
     def heartbeat_cb(self, event):
         '''
-        Heartbeat timer callback
+        Heartbeat timer callback; no server
 
         Triggers publish of new heartbeat message
         '''
         self.hb_msg.header.stamp = rospy.Time.now()
+        self.hb_pub.publish(self.hb_msg)
+
+    def heartbeat_server_cb(self, event):
+        '''
+        Heartbeat timer callback; with server
+
+        Triggers publish of new heartbeat message
+        '''
+        self.hb_msg.header.stamp = rospy.Time.now()
+        self.hb_msg.topics = list(self.server.pubs.keys())
+        self.hb_msg.periods = [self.server.pubs[i].period for i in self.server.pubs.keys()]
         self.hb_pub.publish(self.hb_msg)
 
 class LogType(Enum):
@@ -533,6 +548,7 @@ class ROS_Publisher:
         self.latch      = latch
         self.server     = server
         self.last_t     = -1
+        self.period     = -1
 
         self.publisher  = rospy.Publisher(self.topic, self.data_class, queue_size=self.queue_size, latch=self.latch)
     
@@ -548,7 +564,10 @@ class ROS_Publisher:
         '''
         try:
             self.publisher.publish(msg)
-            self.last_t = rospy.Time.now().to_sec()
+            now = rospy.Time.now().to_sec()
+            if not self.last_t == -1:
+                self.period = now - self.last_t
+            self.last_t = now
             return True
         except:
             return False
@@ -589,7 +608,7 @@ class ROS_Home:
 
         self.params     = ROS_Param_Server()
 
-        self.hb         = Heartbeat(self.node_name, self.namespace, self.node_rate, node_state=node_state, hb_topic=self.hb_topic)
+        self.hb         = Heartbeat(self.node_name, self.namespace, self.node_rate, node_state=node_state, hb_topic=self.hb_topic, server=self)
 
     def set_state(self, state: NodeState):
         '''
