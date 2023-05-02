@@ -13,6 +13,18 @@ class FeatureType(Enum):
     HYBRIDNET           = 4
     ROLLNORM            = 5
 
+class ViewMode(Enum):
+    FORWARD  	        = 0
+    FORWARDRIGHT 	    = 1
+    RIGHT 		        = 2
+    BACKRIGHT 	        = 3
+    BACK 		        = 4
+    BACKLEFT 	        = 5
+    LEFT 		        = 6
+    FORWARDLEFT 	    = 7
+    PANORAMA 	        = 8
+    forward             = 9
+
 class Tolerance_Mode(Enum):
     METRE_CROW_TRUE     = 0
     METRE_CROW_MATCH    = 1
@@ -173,6 +185,8 @@ def patchNormaliseImage(img, patchLength):
 def rollNormaliseImage(img, kernel_size):
 # take input image and use a rolling kernel to noramlise
 # returns: rolling-kernel-normalised image
+# TODO: pad with average value of image to fix edge artefacts
+# TODO: reduce square artefacts by transitioning to circular average region
 
     img1            = img.astype(float)
     img2            = img1.copy()
