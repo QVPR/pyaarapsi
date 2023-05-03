@@ -6,22 +6,23 @@ import os
 import datetime
 from pathlib import Path
 from ..core.enum_tools import enum_name
-from ..core.ros_tools import LogType, roslogger, process_bag
+from ..core.ros_tools import LogType, process_bag
 from ..vpr_classes import NetVLAD_Container, HybridNet_Container
 from ..core.file_system_tools import scan_directory
 from .imageprocessor_helpers import *
 
 class VPRImageProcessor: # main ROS class
-    def __init__(self, bag_dbp=None, npz_dbp=None, dataset=None, try_gen=True, ros=False, init_netvlad=False, init_hybridnet=False, cuda=False, use_tqdm=False, autosave=False):
+    def __init__(self, bag_dbp=None, npz_dbp=None, dataset=None, try_gen=True, init_netvlad=False, init_hybridnet=False, cuda=False, use_tqdm=False, autosave=False, printer=print):
         self.npz_dbp        = npz_dbp
         self.bag_dbp        = bag_dbp
         self.dataset_ready  = False
-        self.ros            = ros
         self.cuda           = cuda
         self.use_tqdm       = use_tqdm
         self.autosave       = autosave
         self.init_netvlad   = init_netvlad
         self.init_hybridnet = init_hybridnet
+
+        self.print          = printer
 
         if self.init_netvlad:
             self.netvlad    = NetVLAD_Container(cuda=self.cuda, ngpus=int(self.cuda), logger=lambda x: self.print(x, LogType.DEBUG))
@@ -51,10 +52,10 @@ class VPRImageProcessor: # main ROS class
         self.bag_dbp        = bag_dbp
 
         # generate:
-        rosbag_dict         = process_bag(bag_dbp + '/' + bag_name, sample_rate, odom_topic, img_topics, printer=lambda x: roslogger(x, LogType.INFO, ros=self.ros), use_tqdm=self.use_tqdm)
-        roslogger('Performing feature extraction...', LogType.INFO, ros=self.ros)
+        rosbag_dict         = process_bag(bag_dbp + '/' + bag_name, sample_rate, odom_topic, img_topics, printer=self.print, use_tqdm=self.use_tqdm)
+        self.print('Performing feature extraction...', LogType.INFO)
         feature_vector_dict = {enum_name(ft_type): self.getFeat(list(rosbag_dict[img_topics[0]]), ft_type, img_dims, use_tqdm=self.use_tqdm) for ft_type in ft_types}
-        roslogger('Done.', LogType.INFO, ros=self.ros)
+        self.print('Done.', LogType.INFO)
 
         # Create dataset dictionary and add feature vectors
         params_dict         = dict( bag_name=bag_name, npz_dbp=npz_dbp, bag_dbp=bag_dbp, \
@@ -191,9 +192,6 @@ class VPRImageProcessor: # main ROS class
         if not allow_false:
             raise Exception('Dataset failed to load.')
         return False
-
-    def print(self, text, logtype):
-        roslogger(text, logtype, self.ros)
         
     def getFeat(self, imgs, fttype_in, dims, use_tqdm=False):
     # Get features from imgs, using VPRImageProcessor's set image dimensions.
