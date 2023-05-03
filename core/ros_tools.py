@@ -9,9 +9,27 @@ from tqdm.auto import tqdm
 
 from geometry_msgs.msg import Quaternion
 from sensor_msgs.msg import Image, CompressedImage
+
+from aarapsi_robot_pack.msg import ImageLabelStamped, CompressedImageLabelStamped, ImageOdom, CompressedImageOdom, \
+                                   ImageDetails, CompressedImageDetails, MonitorDetails, CompressedMonitorDetails # Our custom msg structures
 from aarapsi_robot_pack.msg import Heartbeat as Hb
 
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
+
+def get_ROS_message_types_dict(compress=True):
+    '''
+    Helper to allow nodes to easily switch between compressed and uncompressed message structures
+    '''
+    _compress_on = {'topic': "/compressed", 'image': CompressedImage, 'label': CompressedImageLabelStamped, 
+                    'img_dets': CompressedImageDetails, 'mon_dets': CompressedMonitorDetails, 
+                    'data': CompressedImageOdom}
+    _compress_off = {'topic': "", 'image': Image, 'label': ImageLabelStamped, 
+                     'img_dets': ImageDetails, 'mon_dets': MonitorDetails,
+                     'data': ImageOdom}
+    if compress == True:
+        return _compress_on
+    else: 
+        return _compress_off
 
 def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, use_tqdm=True):
     '''
@@ -266,7 +284,8 @@ class Heartbeat:
         '''
         self.hb_msg.header.stamp = rospy.Time.now()
         self.hb_msg.topics = list(self.server.pubs.keys())
-        self.hb_msg.periods = [self.server.pubs[i].period for i in self.server.pubs.keys()]
+        now = rospy.Time.now().to_sec()
+        self.hb_msg.periods = [round(self.server.pubs[i].last_t - now) for i in self.server.pubs.keys()]
         self.hb_pub.publish(self.hb_msg)
 
 class LogType(Enum):
@@ -283,7 +302,10 @@ class LogType(Enum):
 def roslogger(text, logtype, throttle=0, ros=True, name=None, no_stamp=True):
     '''
     Print function helper
-    For use with integration with ROS 
+    For use with integration with ROS
+        This function seeks to exploit rospy's colouring and logging scheme, but add
+        functionality such that a user can add a prefix, hide the stamp, and switch 
+        quickly to work outside of a ROS node.
 
     Inputs:
     - text:     text string to be printed, must be pre-formatted (can't be done inside roslogger)
@@ -459,6 +481,8 @@ class ROS_Param:
         Returns:
         None
         '''
+        if value is None:
+            raise Exception("Cannot set %s to NoneType. This error typically raises when a parameter is expected to be loaded onto the parameter server, but hasn't been (or isn't accessible)." % self.name)
         rospy.set_param(self.name, value)
         self.value = self.evaluation(value)
 
