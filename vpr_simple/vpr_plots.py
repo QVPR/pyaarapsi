@@ -159,7 +159,7 @@ def get_contour_data(X, Y, Z, levels):
 ##################################################################
 #### Contour Figure: do and update
 
-def doCntrFigBokeh(nmrc, odom_in):
+def doCntrFigBokeh():
 # Set up contour figure
 
     fig_cntr        = figure(title="SVM Contour", width=500, height=500, \
@@ -181,61 +181,59 @@ def doCntrFigBokeh(nmrc, odom_in):
 
     return {'fig': fig_cntr, 'img': img_plotted, 'in_y': in_yes_plotted, 'out_y': out_yes_plotted, 'in_n': in_no_plotted, 'out_n': out_no_plotted}
 
-def updateCntrFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
+def updateCntrFigBokeh(doc_frame, svm_field_msg, state, compress, bridge, new_field):
 
-    xlims = (np.min(nmrc.svm_field_msg.data.xlim), np.max(nmrc.svm_field_msg.data.xlim))
-    ylims = (np.min(nmrc.svm_field_msg.data.ylim), np.max(nmrc.svm_field_msg.data.ylim))
+    xlims = (np.min(svm_field_msg.data.xlim), np.max(svm_field_msg.data.xlim))
+    ylims = (np.min(svm_field_msg.data.ylim), np.max(svm_field_msg.data.ylim))
 
-    f1_clip = np.clip(((nmrc.state.factors[0]-xlims[0])/(xlims[1]-xlims[0]))*100, 0, 100)
-    f2_clip = np.clip(((nmrc.state.factors[1]-ylims[0])/(ylims[1]-ylims[0]))*100, 0, 100)
+    f1_clip = np.clip(((state.factors[0]-xlims[0])/(xlims[1]-xlims[0]))*100, 0, 100)
+    f2_clip = np.clip(((state.factors[1]-ylims[0])/(ylims[1]-ylims[0]))*100, 0, 100)
 
     to_stream = dict(x=[f1_clip], y=[f2_clip])
 
     data_to_add = ''
-    if nmrc.state.mStateBin:
+    if state.mStateBin:
         data_to_add = 'in'
     else:
         data_to_add = 'out'
-    if nmrc.state.data.state == 2:
+    if state.data.state == 2:
         data_to_add += '_y'
-    elif nmrc.state.data.state == 1:
+    elif state.data.state == 1:
         data_to_add += '_n'
 
-    nmrc.fig_cntr_handles[data_to_add].data_source.stream(to_stream, rollover = 50)
+    doc_frame.fig_cntr_handles[data_to_add].data_source.stream(to_stream, rollover = 50)
 
-    if not nmrc.new_field:
+    if not new_field:
         return
     
-    ros_msg_img = nmrc.svm_field_msg.image
-    if nmrc.COMPRESS_IN.get():
-        cv_msg_img = nmrc.bridge.compressed_imgmsg_to_cv2(ros_msg_img, "passthrough")
+    ros_msg_img = svm_field_msg.image
+    if compress:
+        cv_msg_img = bridge.compressed_imgmsg_to_cv2(ros_msg_img, "passthrough")
     else:
-        cv_msg_img = nmrc.bridge.imgmsg_to_cv2(ros_msg_img, "passthrough")
+        cv_msg_img = bridge.imgmsg_to_cv2(ros_msg_img, "passthrough")
 
     # process image from three layer (rgb) into four layer (rgba) uint8:
     img_rgba = np.array(np.dstack((np.flipud(np.flip(cv_msg_img,2)), np.ones((1000,1000))*255)), dtype=np.uint8)
     # collapse into uint32:
     img_uint32 = img_rgba.view(dtype=np.uint32).reshape(img_rgba.shape[:-1])
 
-    nmrc.fig_cntr_handles['img'].data_source.data = dict(x=[0], y=[0], dw=[100], \
+    doc_frame.fig_cntr_handles['img'].data_source.data = dict(x=[0], y=[0], dw=[100], \
                                                          dh=[100], image=[img_uint32.copy()])
     
     # clear old data:
     for key in ['in_y', 'out_y', 'in_n', 'out_n']:
-        nmrc.fig_cntr_handles[key].data_source.data = dict(x=[], y=[])
+        doc_frame.fig_cntr_handles[key].data_source.data = dict(x=[], y=[])
 
-    nmrc.fig_cntr_handles['fig'].title.text         = nmrc.svm_field_msg.data.title
-    nmrc.fig_cntr_handles['fig'].xaxis.axis_label   = nmrc.svm_field_msg.data.xlab
-    nmrc.fig_cntr_handles['fig'].yaxis.axis_label   = nmrc.svm_field_msg.data.ylab
-    nmrc.fig_cntr_handles['fig'].x_range.update(start=0, end=100, bounds=(0, 100))
-    nmrc.fig_cntr_handles['fig'].y_range.update(start=0, end=100, bounds=(0, 100))
-
-    nmrc.new_field = False
+    doc_frame.fig_cntr_handles['fig'].title.text         = svm_field_msg.data.title
+    doc_frame.fig_cntr_handles['fig'].xaxis.axis_label   = svm_field_msg.data.xlab
+    doc_frame.fig_cntr_handles['fig'].yaxis.axis_label   = svm_field_msg.data.ylab
+    doc_frame.fig_cntr_handles['fig'].x_range.update(start=0, end=100, bounds=(0, 100))
+    doc_frame.fig_cntr_handles['fig'].y_range.update(start=0, end=100, bounds=(0, 100))
 
 ##################################################################
 #### Linear & Angular Vector Figure: do and update
 
-def doXYWVFigBokeh(nmrc, odom_in):
+def doXYWVFigBokeh(odom_in):
 # Set up distance vector figure
 
     fig_xywv    = figure(title="Linear & Angular Vectors", width=500, height=250, \
@@ -251,17 +249,17 @@ def doXYWVFigBokeh(nmrc, odom_in):
 
     return {'fig': fig_xywv, 'rw': rw_plotted, 'rwc': 1}
 
-def updateXYWVFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
+def updateXYWVFigBokeh(doc_frame, mInd, odom_in):
 # Update DVec figure with new data (match->mInd, true->tInd)
 # Use old handles (mat, tru) and crunched distance vector (dvc)
-    new_yaw_data = dict(x=[nmrc.fig_xywv_handles['rwc']], y=[np.round(odom_in['position']['yaw'][mInd],3)])
-    nmrc.fig_xywv_handles['rwc'] = (nmrc.fig_xywv_handles['rwc'] + 1) % len(odom_in['position']['x'])
-    nmrc.fig_xywv_handles['rw'].data_source.stream(new_yaw_data, rollover=len(odom_in['position']['x']))
+    new_yaw_data = dict(x=[doc_frame.fig_xywv_handles['rwc']], y=[np.round(odom_in['position']['yaw'][mInd],3)])
+    doc_frame.fig_xywv_handles['rwc'] = (doc_frame.fig_xywv_handles['rwc'] + 1) % len(odom_in['position']['x'])
+    doc_frame.fig_xywv_handles['rw'].data_source.stream(new_yaw_data, rollover=len(odom_in['position']['x']))
 
 ##################################################################
 #### Distance Vector Figure: do and update
 
-def doDVecFigBokeh(nmrc, odom_in):
+def doDVecFigBokeh(odom_in):
 # Set up distance vector figure
 
     fig_dvec    = figure(title="Distance Vector", width=500, height=250, \
@@ -280,22 +278,22 @@ def doDVecFigBokeh(nmrc, odom_in):
 
     return {'fig': fig_dvec, 'spd': spd_plotted, 'dvc': dvc_plotted, 'mat': mat_plotted, 'tru': tru_plotted}
 
-def updateDVecFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
+def updateDVecFigBokeh(doc_frame, mInd, tInd, dvc, odom_in):
 # Update DVec figure with new data (match->mInd, true->tInd)
 # Use old handles (mat, tru) and crunched distance vector (dvc)
     spd = cdist(np.transpose(np.matrix([odom_in['position']['x'],odom_in['position']['y']])), \
         np.matrix([odom_in['position']['x'][mInd], odom_in['position']['y'][mInd]]))
     spd_max = np.max(spd[:])
     dvc_max = np.max(dvc[:])
-    nmrc.fig_dvec_handles['spd'].data_source.data = {'x': list(range(len(spd-1))), 'y': spd/spd_max}
-    nmrc.fig_dvec_handles['dvc'].data_source.data = {'x': list(range(len(dvc-1))), 'y': dvc/dvc_max}
-    nmrc.fig_dvec_handles['mat'].data_source.data = {'x': [mInd], 'y': dvc[mInd]/dvc_max}
-    nmrc.fig_dvec_handles['tru'].data_source.data = {'x': [tInd], 'y': dvc[tInd]/dvc_max}
+    doc_frame.fig_dvec_handles['spd'].data_source.data = {'x': list(range(len(spd-1))), 'y': spd/spd_max}
+    doc_frame.fig_dvec_handles['dvc'].data_source.data = {'x': list(range(len(dvc-1))), 'y': dvc/dvc_max}
+    doc_frame.fig_dvec_handles['mat'].data_source.data = {'x': [mInd], 'y': dvc[mInd]/dvc_max}
+    doc_frame.fig_dvec_handles['tru'].data_source.data = {'x': [tInd], 'y': dvc[tInd]/dvc_max}
 
 ##################################################################
 #### Filtered Distance Vector Figure: do and update
 
-def doFDVCFigBokeh(nmrc, odom_in):
+def doFDVCFigBokeh(odom_in):
 # Set up distance vector figure
 
     fig_dvec    = figure(title="Filtered Distance Vector", width=500, height=250, \
@@ -313,7 +311,7 @@ def doFDVCFigBokeh(nmrc, odom_in):
 
     return {'fig': fig_dvec, 'dvc': dvc_plotted, 'mat': mat_plotted, 'tru': tru_plotted}
 
-def updateFDVCFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
+def updateFDVCFigBokeh(doc_frame, mInd, tInd, dvc, odom_in):
 # Update DVec figure with new data (match->mInd, true->tInd)
 # Use old handles (mat, tru) and crunched distance vector (dvc)
     spd = cdist(np.transpose(np.matrix([odom_in['position']['x'],odom_in['position']['y']])), \
@@ -323,15 +321,15 @@ def updateFDVCFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
     spd_norm = np.array(spd).flatten()/spd_max
     dvc_norm = np.array(dvc).flatten()/dvc_max
     spd_x_dvc = (0.5*spd_norm**2 + 0.5*dvc_norm)
-    nmrc.fig_fdvc_handles['dvc'].data_source.data = {'x': list(range(len(dvc-1))), 'y': spd_x_dvc}
-    nmrc.fig_fdvc_handles['mat'].data_source.data = {'x': [mInd], 'y': [spd_x_dvc[mInd]]}
-    nmrc.fig_fdvc_handles['tru'].data_source.data = {'x': [tInd], 'y': [spd_x_dvc[tInd]]}
+    doc_frame.fig_fdvc_handles['dvc'].data_source.data = {'x': list(range(len(dvc-1))), 'y': spd_x_dvc}
+    doc_frame.fig_fdvc_handles['mat'].data_source.data = {'x': [mInd], 'y': [spd_x_dvc[mInd]]}
+    doc_frame.fig_fdvc_handles['tru'].data_source.data = {'x': [tInd], 'y': [spd_x_dvc[tInd]]}
 
 
 ##################################################################
 #### Odometry Figure: do and update
 
-def doOdomFigBokeh(nmrc, odom_in):
+def doOdomFigBokeh(odom_in):
 # Set up odometry figure
 
     xlims = (np.min(odom_in['position']['x']), np.max(odom_in['position']['x']))
@@ -368,7 +366,7 @@ def doOdomFigBokeh(nmrc, odom_in):
 
     return {'fig': fig_odom, 'ref': ref_plotted, 'var': var_plotted, 'seg': seg_plotted, 'mat': mat_plotted, 'tru': tru_plotted}
 
-def updateOdomFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
+def updateOdomFigBokeh(doc_frame, mInd, tInd, odom_in):
 # Update odometryfigure with new data (match->mInd, true->tInd)
 # Use old handles (reference, match, true)
     # Stream/append new value for "match" (estimate) and "true" (correct) odometry:
@@ -390,16 +388,16 @@ def updateOdomFigBokeh(nmrc, mInd, tInd, dvc, odom_in):
         # Bokeh gets upset because we have discrete data that we are streaming that is duplicate
         warnings.simplefilter("ignore")
         
-        nmrc.fig_odom_handles['tru'].data_source.stream(new_tru_data, rollover=1)
-        nmrc.fig_odom_handles['var'].data_source.stream(new_var_data, rollover=2*num_points)
+        doc_frame.fig_odom_handles['tru'].data_source.stream(new_tru_data, rollover=1)
+        doc_frame.fig_odom_handles['var'].data_source.stream(new_var_data, rollover=2*num_points)
 
-        nmrc.fig_odom_handles['seg'].data_source.stream(new_mod_data, rollover=num_points)
-        nmrc.fig_odom_handles['mat'].data_source.stream(new_mat_data, rollover=num_points)
+        doc_frame.fig_odom_handles['seg'].data_source.stream(new_mod_data, rollover=num_points)
+        doc_frame.fig_odom_handles['mat'].data_source.stream(new_mat_data, rollover=num_points)
 
 ##################################################################
 #### SVM Metrics Figure: do and update
 
-def doSVMMFigBokeh(nmrc, odom_in):
+def doSVMMFigBokeh(odom_in):
 # Set up SVM Metrics Figure
 
     fig_svmm    = figure(title="SVM Metrics", width=500, height=250, \
@@ -418,15 +416,15 @@ def doSVMMFigBokeh(nmrc, odom_in):
 
     return {'fig': fig_svmm, 'c': 1, 'f1': f1_plotted, 'f2': f2_plotted, 'pr': pr_plotted, 'zv': zv_plotted}
 
-def updateSVMMFigBokeh(nmrc, state, odom_in):
+def updateSVMMFigBokeh(doc_frame, state, odom_in):
 # Update SVM Metrics Figure
-    new_f1 = dict(x=[nmrc.fig_svmm_handles['c']], y=[np.round(state.factors[0], 3)])
-    new_f2 = dict(x=[nmrc.fig_svmm_handles['c']], y=[np.round(state.factors[1], 3)])
-    new_pr = dict(x=[nmrc.fig_svmm_handles['c']], y=[np.round(state.prob,       3)])
-    new_zv = dict(x=[nmrc.fig_svmm_handles['c']], y=[np.round(state.mState,     3)])
-    nmrc.fig_svmm_handles['c'] = (nmrc.fig_svmm_handles['c'] + 1) % len(odom_in['position']['x'])
+    new_f1 = dict(x=[doc_frame.fig_svmm_handles['c']], y=[np.round(state.factors[0], 3)])
+    new_f2 = dict(x=[doc_frame.fig_svmm_handles['c']], y=[np.round(state.factors[1], 3)])
+    new_pr = dict(x=[doc_frame.fig_svmm_handles['c']], y=[np.round(state.prob,       3)])
+    new_zv = dict(x=[doc_frame.fig_svmm_handles['c']], y=[np.round(state.mState,     3)])
+    doc_frame.fig_svmm_handles['c'] = (doc_frame.fig_svmm_handles['c'] + 1) % len(odom_in['position']['x'])
 
-    nmrc.fig_svmm_handles['f1'].data_source.stream(new_f1, rollover=len(odom_in['position']['x']))
-    nmrc.fig_svmm_handles['f2'].data_source.stream(new_f2, rollover=len(odom_in['position']['x']))
-    nmrc.fig_svmm_handles['pr'].data_source.stream(new_pr, rollover=len(odom_in['position']['x']))
-    nmrc.fig_svmm_handles['zv'].data_source.stream(new_zv, rollover=len(odom_in['position']['x']))
+    doc_frame.fig_svmm_handles['f1'].data_source.stream(new_f1, rollover=len(odom_in['position']['x']))
+    doc_frame.fig_svmm_handles['f2'].data_source.stream(new_f2, rollover=len(odom_in['position']['x']))
+    doc_frame.fig_svmm_handles['pr'].data_source.stream(new_pr, rollover=len(odom_in['position']['x']))
+    doc_frame.fig_svmm_handles['zv'].data_source.stream(new_zv, rollover=len(odom_in['position']['x']))
