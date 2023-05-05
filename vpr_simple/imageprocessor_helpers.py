@@ -6,7 +6,6 @@ from tqdm.auto import tqdm
 
 # For image processing type
 class FeatureType(Enum):
-    NONE                = 0
     RAW                 = 1
     PATCHNORM           = 2
     NETVLAD             = 3
