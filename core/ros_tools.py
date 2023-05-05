@@ -49,6 +49,10 @@ def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, us
     Returns:
     dict
     '''
+
+    if not bag_path.endswith('.bag'):
+        bag_path += '.bag'
+
     topic_list = [odom_topic] + img_topics
     # Read rosbag
     data = rip_bag(bag_path, sample_rate, topic_list, printer=printer, use_tqdm=use_tqdm)

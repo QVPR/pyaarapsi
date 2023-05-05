@@ -62,9 +62,6 @@ class VPRImageProcessor: # main ROS class
         self.npz_dbp        = npz_dbp
         self.bag_dbp        = bag_dbp
 
-        if not bag_name.endswith('.bag'):
-            bag_name += '.bag'
-
         # generate:
         rosbag_dict         = process_bag(bag_dbp + '/' + bag_name, sample_rate, odom_topic, img_topics, printer=self.print, use_tqdm=self.use_tqdm)
         self.print('Performing feature extraction...', LogType.INFO)
@@ -154,9 +151,9 @@ class VPRImageProcessor: # main ROS class
         datasets = self._get_datasets(dir)
         self.dataset = {}
         sub_params = copy.deepcopy(dataset_params)
-        sub_params['ft_types'] = dataset_params['ft_types'][0]
+        sub_params['ft_types'] = [dataset_params['ft_types'][0]]
         for name in datasets:
-            if datasets[name]['params'] == sub_params:
+            if dict(datasets[name]['params']) == sub_params:
                 self._load(name)
                 break
         if self.dataset_ready:
@@ -171,17 +168,7 @@ class VPRImageProcessor: # main ROS class
             return False
     
     def swap(self, dataset_params, generate=False, allow_false=True):
-        # TODO
-        datasets = self._get_datasets(self.npz_dbp)
-        for name in datasets:
-            if datasets[name]['params'] == dataset_params:
-                try:
-                    self._load(name)
-                    return True
-                except:
-                    self._fix(name)
-        if generate:
-            self.generate_dataset(**dataset_params)
+        if self.load_dataset(dataset_params, try_gen=generate):
             return True
         if not allow_false:
             raise Exception('Dataset failed to load.')
@@ -231,8 +218,8 @@ class VPRImageProcessor: # main ROS class
             return datasets
         for entry in entry_list:
             if entry.is_file() and entry.name.startswith('dataset'):
-                loaded_dataset = dict(np.load(entry.path, allow_pickle=True))
-                datasets[os.path.splitext(entry.name)[0]] = loaded_dataset
+                raw_npz = dict(np.load(entry.path, allow_pickle=True))
+                datasets[os.path.splitext(entry.name)[0]] = dict(params=raw_npz['params'].item())
         return datasets
     
     def _fix(self, dataset_name):

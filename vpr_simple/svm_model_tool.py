@@ -261,8 +261,8 @@ class SVMModelProcessor: # main ROS class
         entry_list = os.scandir(dir+"/params/")
         for entry in entry_list:
             if entry.is_file() and entry.name.startswith('svmmodel'):
-                loaded_model = dict(np.load(entry.path, allow_pickle=True))
-                models[os.path.splitext(entry.name)[0]] = loaded_model
+                raw_npz = dict(np.load(entry.path, allow_pickle=True))
+                models[os.path.splitext(entry.name)[0]] = dict(params=raw_npz['params'].item())
         return models
 
     def _make(self):
