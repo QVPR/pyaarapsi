@@ -15,6 +15,8 @@ from aarapsi_robot_pack.msg import ImageLabelStamped, CompressedImageLabelStampe
 from aarapsi_robot_pack.msg import Heartbeat as Hb
 
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
+from .helper_tools import formatException
+from .enum_tools import enum_name
 
 def get_ROS_message_types_dict(compress=True):
     '''
@@ -109,7 +111,7 @@ def rip_bag(bag_path, sample_rate, topics_in, printer=print, use_tqdm=True):
     num_rows       = 0
 
     # Read rosbag
-    printer("Ripping through rosbag ...")
+    printer("Ripping through rosbag, processing topics: %s" % str(topics[1:]))
 
     row = [None] * num_topics
     with rosbag.Bag(bag_path, 'r') as ros_bag:
@@ -299,7 +301,7 @@ class LogType(Enum):
     ERROR       = "[!ERROR!]"
     FATAL       = "[!!FATAL!!]"
 
-def roslogger(text, logtype, throttle=0, ros=True, name=None, no_stamp=True):
+def roslogger(text, logtype=LogType.INFO, throttle=0, ros=True, name=None, no_stamp=True):
     '''
     Print function helper
     For use with integration with ROS
@@ -345,6 +347,25 @@ def roslogger(text, logtype, throttle=0, ros=True, name=None, no_stamp=True):
             raise Exception
     except:
         print(logtype.value + " " + text)
+
+def init_node(mrc, node_name, namespace, rate_num, anon, log_level, order_id=None, throttle=30, colour=True):
+
+    rospy.init_node(node_name, anonymous=anon, log_level=log_level)
+    mrc.namespace   = namespace
+    mrc.node_name   = node_name
+    mrc.nodespace   = mrc.namespace + '/' + mrc.node_name
+    mrc.ROS_HOME    = ROS_Home(mrc.node_name, mrc.namespace, rate_num)
+
+    if not order_id is None:
+        launch_step = rospy.get_param(mrc.namespace + '/launch_step')
+        while (launch_step < order_id) and (not rospy.is_shutdown()):
+            roslogger('%s waiting in line, position %s.' % (str(mrc.node_name), str(order_id)), LogType.DEBUG, throttle=throttle, ros=True)
+            rospy.sleep(0.2)
+            launch_step = rospy.get_param(mrc.namespace + '/launch_step')
+    if colour:
+        roslogger('\033[96mStarting %s node.\033[0m' % (mrc.node_name), ros=True)
+    else:
+        roslogger('Starting %s node.' % (mrc.node_name), ros=True)
 
 def yaw_from_q(q):
     '''
@@ -394,6 +415,9 @@ class ROS_Param:
         None
         '''
 
+        if value is None and force:
+            raise Exception("Can't force a NoneType value!")
+
         self.name       = name
         self.server     = server
 
@@ -406,39 +430,28 @@ class ROS_Param:
 
         self.evaluation = evaluation
         self.value      = None
-        self.old_value  = None # in case we need to revert later
-        self.reverted   = False
+        self.old        = None
 
-        if rospy.has_param(self.name) and (not force):
-            try:
-                check_value     = self.evaluation(rospy.get_param(self.name, value))
-                self.value      = check_value
-                self.old_value  = check_value
-            except:
-                self.set(self.value)
-                self.reverted   = False
-        else:
+        if (not rospy.has_param(self.name)) or (force):
+            # If either the parameter doesn't exist, or we want to focus the
+            # parameter server to have the inputted value:
             self.set(value)
+        else:
+            self.value  = self.evaluation(rospy.get_param(self.name))
 
     def revert(self):
-        self.set(self.old_value)
-        self.reverted   = True
+        if self.old is None:
+            raise Exception('No old value to revert to.')
+        self.set_param(self.old)
+        self.value = self.old
+        self.old = None
 
     def update(self):
-        if self.reverted:
-            print('...')
-            self.reverted = False #?
-            return
-        check_value         = rospy.get_param(self.name, self.value)
         try:
-            new_value       = self.evaluation(check_value) # separate clause that may trigger exception
-            self.old_value  = self.value
-            self.value      = new_value
-            return (True, self.value)
+            return self.set(rospy.get_param(self.name))
         except:
-            self.set(self.value)
-            self.reverted   = False
-            return (False, check_value)
+            roslogger(formatException())
+            return False
 
     def _get_server(self):
         '''
@@ -464,9 +477,7 @@ class ROS_Param:
         if self.name in self.updates_queued:
             self.updates_queued.remove(self.name)
             try:
-                check_value     = self.evaluation(rospy.get_param(self.name, self.value))
-                self.old_value  = self.value
-                self.value      = check_value
+                self.value = self.evaluation(rospy.get_param(self.name))
             except:
                 self.set(self.value)
         return self.value
@@ -482,9 +493,24 @@ class ROS_Param:
         None
         '''
         if value is None:
-            raise Exception("Cannot set %s to NoneType. This error typically raises when a parameter is expected to be loaded onto the parameter server, but hasn't been (or isn't accessible)." % self.name)
-        rospy.set_param(self.name, value)
-        self.value = self.evaluation(value)
+            raise Exception("Cannot set %s to NoneType." % self.name)
+        try:
+            check_value = self.evaluation(value)
+            if not (check_value == self.value):
+                self.old    = self.value
+                self.value  = check_value
+                self.set_param(self.value)
+                return True
+            return False
+        except:
+            self.set_param(self.value)
+            return False
+        
+    def set_param(self, value):
+        if issubclass(type(value), Enum):
+            rospy.set_param(self.name, enum_name(value))
+        else:
+            rospy.set_param(self.name, value)
 
 class ROS_Param_Server:
     '''
@@ -530,9 +556,10 @@ class ROS_Param_Server:
         None 
         '''
         update_status = self.params[name].update()
-        if not update_status[0]:
-            roslogger("Bad parameter server value. Overriding with last safe value. Parameter: %s [Bad: %s, Replaced: %s]." 
-                      % (str(name), str(update_status[1]), str(self.params[name].value)))
+        if not update_status:
+            roslogger("Bad parameter server value for %s. Remaining with last safe value, %s." 
+                      % (str(name), str(self.params[name].value)))
+        return update_status
 
     def exists(self, name):
         '''
