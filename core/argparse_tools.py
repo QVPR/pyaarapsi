@@ -80,24 +80,6 @@ def check_positive_two_int_tuple(value):
     if not (ivalue[0] > 0 and ivalue[1] > 0):
         raise ap.ArgumentTypeError(error_text)
     return ivalue
-
-def check_str_list(value):
-    error_text = "%s is an invalid string list." % (str(value))
-    if isinstance(value, list):
-        if len(value) > 1:
-            if isinstance(value[0], str):
-                return value
-            raise ap.ArgumentTypeError(error_text)
-        elif len(value) == 1:
-            value = value[0]
-        else:
-            raise ap.ArgumentTypeError(error_text)
-    try:
-        str_value = str(value) # force to string
-        str_value_list = str_value.replace('(','').replace(')','').replace('[','').replace(']','').replace(' ', '').split(',')
-        return str_value_list
-    except:
-        raise ap.ArgumentTypeError(error_text)
     
 def check_valid_ip(value):
     error_text = "%s is an invalid ip address." % (str(value))
@@ -121,26 +103,63 @@ def check_string(value):
     return str_value
 
 def check_string_list(value):
-    str_value = str(value)
-    str_list  = str_value.replace('(','').replace(')','').replace('[','').replace(']','').translate(str.maketrans('', '', string.whitespace)).split(',')
-    for i in range(len(str_list)):
-        str_list[i] = check_string(str_list[i])
-    return str_list
+    error_text = "%s is an invalid string list." % (str(value))
+    try:
+        if isinstance(value, list):
+            return [str(i) for i in value]
+        return str(value).replace('(','').replace(')','').replace('[','').replace(']','').translate(str.maketrans('', '', string.whitespace)).split(',')
+    except:
+        raise ap.ArgumentTypeError(error_text)
 
+def check_enum_list(value, enum, skip=[None]):
+    error_text = "%s is an invalid (or not accepted) list of identifiers within the enumeration %s" % (str(value), str(enum))
+    if isinstance(value, enum):
+        value = [value]
+    try:
+        if not isinstance(value, list):
+            value = str(value).replace('(','').replace(')','').replace('[','').replace(']','').translate(str.maketrans('', '', string.whitespace)).split(',')
+        all_good = True
+        for i in value:
+            if not (isinstance(i, enum) and not (i in skip)):
+                all_good = False
+                break
+        if all_good:
+            return value # already enum list, done
+        
+        # get enum information to compare against:
+        enum_ids, enum_names = enum_value_options(enum, skip)
+        enum_ids_str         = [str(i) for i in enum_ids]
+        enum_names_str       = enum_names.replace('(','').replace(')','').replace('[','').replace(']','').translate(str.maketrans('', '', string.whitespace)).split(',')
+
+        # at this point, we should have a list of strings.
+        str_list = []
+        for i in value:
+            if i in enum_ids_str:
+                str_list.append(enum[enum_names_str[enum_ids_str.index(i)]])
+            elif i in enum_names_str:
+                str_list.append(enum[enum_names_str[enum_names_str.index(i)]])
+        return str_list
+    except:
+        pass
+    raise ap.ArgumentTypeError(error_text)
+        
 def check_enum(value, enum, skip=[None]):
     error_text = "%s is an invalid (or not accepted) identifier within the enumeration %s" % (str(value), str(enum))
     if isinstance(value, enum) and not (value in skip):
         return value
-    str_value = str(value)
-    enum_ids, enum_names = enum_value_options(enum, skip)
-    enum_ids_str = [str(i) for i in enum_ids]
-    enum_names_str = enum_names.replace('(','').replace(')','').replace('[','').replace(']','').translate(str.maketrans('', '', string.whitespace)).split(',')
-    if str_value in enum_ids_str:
-        index = enum_ids_str.index(str_value)
-        #print("yes - id", index)
-        return enum[enum_names_str[index]]
-    if str_value in enum_names_str:
-        index = enum_names_str.index(str_value)
-        #print("yes - name", index)
-        return enum[enum_names_str[index]]
+    try:
+        str_value = str(value)
+        enum_ids, enum_names = enum_value_options(enum, skip)
+        enum_ids_str = [str(i) for i in enum_ids]
+        enum_names_str = enum_names.replace('(','').replace(')','').replace('[','').replace(']','').translate(str.maketrans('', '', string.whitespace)).split(',')
+        if str_value in enum_ids_str:
+            index = enum_ids_str.index(str_value)
+            #print("yes - id", index)
+            return enum[enum_names_str[index]]
+        if str_value in enum_names_str:
+            index = enum_names_str.index(str_value)
+            #print("yes - name", index)
+            return enum[enum_names_str[index]]
+    except:
+        pass
     raise ap.ArgumentTypeError(error_text)
