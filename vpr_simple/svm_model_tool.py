@@ -23,43 +23,52 @@ from sklearn.preprocessing import StandardScaler
 
 from ..core.enum_tools import enum_name
 from ..core.file_system_tools import scan_directory
-from ..core.ros_tools import LogType, roslogger
-from ..vpr_simple.vpr_feature_tool import VPRImageProcessor
+#from ..vpr_simple.vpr_feature_tool import VPRImageProcessor
+from ..vpr_simple.new_vpr_feature_tool import VPRImageProcessor
 from ..vpred import *
 
 class SVMModelProcessor: # main ROS class
-    def __init__(self, models_dir, model=None, try_gen=True, ros=False):
-        self.models_dir     = models_dir
+    def __init__(self, model_params: dict, try_gen=True, ros=False, init_hybridnet=False, init_netvlad=False, cuda=False, autosave=False, printer=print):
+
+        if not isinstance(model_params, dict):
+            raise Exception("Model type not supported; must be of type dict")
+        self.print          = printer
+        self.models_dir     = model_params['svm_dbp']
+        self.cal_qry_params = model_params['qry']
+        self.cal_ref_params = model_params['ref']
         self.model_ready    = False
         self.ros            = ros
-        # for making new models:
-        self.cal_qry_ip     = VPRImageProcessor(ros=self.ros) # all else defaults to False or None which we want :)
-        self.cal_ref_ip     = VPRImageProcessor(ros=self.ros) # all else defaults to False or None which we want :)
 
-        if not (model is None):
-            if isinstance(model, str):
-                self.print("[SVMModelProcessor] Loading model by name...", LogType.INFO)
-                self.load_model(model)
-            elif isinstance(model, dict):
-                self.print("[SVMModelProcessor] Loading model from parameters...", LogType.INFO)
-                self.load_model_params(model)
-                if try_gen and (not self.model_ready):
-                    self.print("[SVMModelProcessor] Load failed, attempting to generate model from parameters...", LogType.INFO)
-                    self.generate_model(**model)
-            else:
-                raise Exception("Model type not supported. Valid types: str, dict")
-            if not self.model_ready:
-                raise Exception("Model load failed.")
-            self.print("[SVMModelProcessor] Model Ready.", LogType.INFO)
+        # for making new models (prep but don't load anything yet)
+        self.cal_qry_ip     = VPRImageProcessor(bag_dbp=model_params['bag_dbp'], npz_dbp=model_params['npz_dbp'], dataset=None, try_gen=try_gen, \
+                                                    init_hybridnet=init_hybridnet, init_netvlad=init_netvlad, cuda=cuda, autosave=autosave, printer=printer)
+        self.cal_ref_ip     = VPRImageProcessor(bag_dbp=model_params['bag_dbp'], npz_dbp=model_params['npz_dbp'], dataset=None, try_gen=try_gen, \
+                                                    init_hybridnet=False, init_netvlad=False, cuda=cuda, autosave=autosave, printer=printer)
+        self.cal_ref_ip.pass_nns(self.cal_qry_ip)
 
-    def generate_model(self, database_path, qry, ref, img_dims, view, ft_type, save=True):
+        self.print("[SVMModelProcessor] Loading model from parameters...")
+        self.load_model(model_params)
+
+        if try_gen and (not self.model_ready):
+            self.print("[SVMModelProcessor] Load failed, attempting to generate model from parameters...")
+            self.generate_model(**model_params)
+
+        if not self.model_ready:
+            raise Exception("Model load failed.")
+        self.print("[SVMModelProcessor] Model Ready.")
+            
+
+    def generate_model(self, ref, qry, bag_dbp, npz_dbp, svm_dbp, save=True):
+        assert ref['img_dims'] == qry['img_dims'], "Reference and query metadata must be the same."
+        assert ref['ft_types'] == qry['ft_types'], "Reference and query metadata must be the same."
         # store for access in saving operation:
-        self.database_path      = database_path
-        self.cal_qry_dataset    = qry
-        self.cal_ref_dataset    = ref 
-        self.img_dims           = img_dims
-        self.view               = view
-        self.feat_type          = ft_type
+        self.bag_dbp            = bag_dbp
+        self.npz_dbp            = npz_dbp
+        self.svm_dbp            = svm_dbp
+        self.cal_qry_params     = qry
+        self.cal_ref_params     = ref 
+        self.img_dims           = ref['img_dims']
+        self.feat_type          = ref['ft_types'][0]
         self.model_ready        = False
 
         # generate:
@@ -78,13 +87,13 @@ class SVMModelProcessor: # main ROS class
         if dir is None:
             dir = self.models_dir
         if not self.model_ready:
-            raise Exception("Model not loaded in system. Either call 'generate_model' or 'load_model(_params)' before using this method.")
+            raise Exception("Model not loaded in system. Either call 'generate_model' or 'load_model' before using this method.")
         Path(dir).mkdir(parents=False, exist_ok=True)
         Path(dir+"/params").mkdir(parents=False, exist_ok=True)
         if check_exists:
             existing_file = self._check(dir)
             if existing_file:
-                self.print("[save_model] File exists with identical parameters: %s", LogType.INFO)
+                self.print("[save_model] File exists with identical parameters: %s")
                 return self
         
         # Ensure file name is of correct format, generate if not provided
@@ -108,12 +117,12 @@ class SVMModelProcessor: # main ROS class
         full_param_path = dir + "/params/" + file_name
         np.savez(full_file_path, **self.model)
         np.savez(full_param_path, params=self.model['params']) # save whole dictionary to preserve key object types
-        self.print("[save_model] Saved file, params to %s, %s" % (full_file_path, full_param_path), LogType.INFO)
+        self.print("[save_model] Saved file, params to %s, %s" % (full_file_path, full_param_path))
         return self
 
-    def load_model_params(self, model_params, dir=None):
+    def load_model(self, model_params, dir=None):
     # load via search for param match
-        self.print("[load_model_params] Loading model.", LogType.DEBUG)
+        self.print("[load_model] Loading model.")
         self.model_ready = False
         if dir is None:
             dir = self.models_dir
@@ -121,23 +130,6 @@ class SVMModelProcessor: # main ROS class
         self.model = {}
         for name in models:
             if models[name]['params'] == model_params:
-                try:
-                    self._load(name)
-                    break
-                except:
-                    self._fix(name)
-        return self
-
-    def load_model(self, model_name, dir=None):
-    # load via string matching name of model file
-        self.print("[load_model] Loading %s" % (model_name), LogType.DEBUG)
-        self.model_ready = False
-        if dir is None:
-            dir = self.models_dir
-        models = self._get_models(dir)
-        self.model = {}
-        for name in models:
-            if name == model_name:
                 try:
                     self._load(name)
                     break
@@ -163,7 +155,7 @@ class SVMModelProcessor: # main ROS class
     
     def predict(self, dvc):
         if not self.model_ready:
-            raise Exception("Model not loaded in system. Either call 'generate_model' or 'load_model(_params)' before using this method.")
+            raise Exception("Model not loaded in system. Either call 'generate_model' or 'load_model' before using this method.")
         sequence        = (dvc - self.model['model']['rmean']) / self.model['model']['rstd'] # normalise using parameters from the reference set
         factor1_qry     = find_va_factor(np.c_[sequence])[0]
         factor2_qry     = find_grad_factor(np.c_[sequence])[0]
@@ -214,31 +206,27 @@ class SVMModelProcessor: # main ROS class
 
     def _load_cal_data(self):
         # Process calibration data (only needs to be done once)
-        self.print("Loading calibration query data set...", LogType.DEBUG)
-        if not self.cal_qry_ip.npzLoader(self.database_path, self.cal_qry_dataset, img_dims=self.img_dims): # dims is needed bc cal_xxx_ip initialised without specifying.
+        self.print("Loading calibration query data set...")
+        if not self.cal_qry_ip.load_dataset(self.cal_qry_params, try_gen=True):
             raise Exception('Query load failed.')
-        self.print("Loading calibration reference data set...", LogType.DEBUG)
-        if not self.cal_ref_ip.npzLoader(self.database_path, self.cal_ref_dataset, img_dims=self.img_dims): # dims is needed bc cal_xxx_ip initialised without specifying.
+        self.print("Loading calibration reference data set...")
+        if not self.cal_ref_ip.load_dataset(self.cal_ref_params, try_gen=True):
             raise Exception('Reference load failed.')
 
-    def _clean_cal_data(self):
+    def _calibrate(self):
         # Goals: 
         # 1. Reshape calref to match length of calqry
         # 2. Reorder calref to match 1:1 indices with calqry
-        calqry_xy = np.transpose(np.stack((self.odom_calqry['position']['x'],self.odom_calqry['position']['y'])))
-        calref_xy = np.transpose(np.stack((self.odom_calref['position']['x'],self.odom_calref['position']['y'])))
+        calqry_xy = np.transpose(np.stack((self.cal_qry_ip.dataset['dataset']['px'], self.cal_qry_ip.dataset['dataset']['py'])))
+        calref_xy = np.transpose(np.stack((self.cal_ref_ip.dataset['dataset']['px'], self.cal_ref_ip.dataset['dataset']['py'])))
         match_mat = np.sum((calqry_xy[:,np.newaxis] - calref_xy)**2, 2)
         match_min = np.argmin(match_mat, 1) # should have the same number of rows as calqry (but as a vector)
         calref_xy = calref_xy[match_min, :]
-        self.features_calref = self.features_calref[match_min, :]
-        self.actual_match_cal = np.arange(len(self.features_calqry))
 
-    def _calibrate(self):
-        self.features_calqry                = np.array(self.cal_qry_ip.SET_DICT['img_feats'][enum_name(self.feat_type)][enum_name(self.view)])
-        self.features_calref                = np.array(self.cal_ref_ip.SET_DICT['img_feats'][enum_name(self.feat_type)][enum_name(self.view)])
-        self.odom_calqry                    = self.cal_qry_ip.SET_DICT['odom']
-        self.odom_calref                    = self.cal_ref_ip.SET_DICT['odom']
-        self._clean_cal_data()
+        self.features_calqry  = np.array(self.cal_qry_ip.dataset['dataset'][enum_name(self.feat_type)])
+        self.features_calref  = np.array(self.cal_ref_ip.dataset['dataset'][enum_name(self.feat_type)])
+        self.features_calref  = self.features_calref[match_min, :]
+        self.actual_match_cal = np.arange(len(self.features_calqry))
         self.Scal, self.rmean, self.rstd    = create_normalised_similarity_matrix(self.features_calref, self.features_calqry)
 
     def _train(self):
@@ -268,17 +256,13 @@ class SVMModelProcessor: # main ROS class
         [precision, recall, num_tp, num_fp, num_tn, num_fn] = \
             find_prediction_performance_metrics(self.y_pred_cal, self.y_cal, verbose=False)
         self.print('Performance of prediction on calibration set:\nTP={0}, TN={1}, FP={2}, FN={3}\nprecision={4:3.1f}% recall={5:3.1f}%\n' \
-                   .format(num_tp,num_tn,num_fp,num_fn,precision*100,recall*100), LogType.INFO)
+                   .format(num_tp,num_tn,num_fp,num_fn,precision*100,recall*100))
 
     def _get_models(self, dir=None):
         if dir is None:
             dir = self.models_dir
         models = {}
-        try:
-            entry_list = os.scandir(dir+"/params/")
-        except FileNotFoundError:
-            self.print("Error: directory invalid.", LogType.ERROR)
-            return models
+        entry_list = os.scandir(dir+"/params/")
         for entry in entry_list:
             if entry.is_file() and entry.name.startswith('svmmodel'):
                 loaded_model = dict(np.load(entry.path, allow_pickle=True))
@@ -286,9 +270,8 @@ class SVMModelProcessor: # main ROS class
         return models
 
     def _make(self):
-        params_dict         = dict(ref=self.cal_ref_dataset, qry=self.cal_qry_dataset, \
-                                    img_dims=self.img_dims, view=self.view, \
-                                    database_path=self.database_path, ft_type=self.feat_type)
+        params_dict         = dict(ref=self.cal_ref_params, qry=self.cal_qry_params, \
+                                    npz_dbp=self.npz_dbp, bag_dbp=self.bag_dbp, svm_dbp=self.svm_dbp)
         model_dict          = dict(svm=self.svm_model, scaler=self.scaler, rstd=self.rstd, rmean=self.rmean, factors=[self.factor1_cal, self.factor2_cal])
         del self.model
         self.model          = dict(params=params_dict, model=model_dict)
@@ -297,15 +280,15 @@ class SVMModelProcessor: # main ROS class
     def _fix(self, model_name):
         if not model_name.endswith('.npz'):
             model_name = model_name + '.npz'
-        self.print("Bad dataset state detected, performing cleanup...", LogType.WARN)
+        self.print("Bad dataset state detected, performing cleanup...")
         try:
             os.remove(self.models_dir + '/' + model_name)
-            self.print("Purged: %s" % (self.models_dir + '/' + model_name), LogType.WARN)
+            self.print("Purged: %s" % (self.models_dir + '/' + model_name))
         except:
             pass
         try:
             os.remove(self.models_dir + '/params/' + model_name)
-            self.print("Purged: %s" % (self.models_dir + '/params/' + model_name), LogType.WARN)
+            self.print("Purged: %s" % (self.models_dir + '/params/' + model_name))
         except:
             pass
 
@@ -317,7 +300,4 @@ class SVMModelProcessor: # main ROS class
         del self.model
         self.model = dict(model=raw_model['model'].item(), params=raw_model['params'].item())
         self.model_ready = True
-
-    def print(self, text, logtype):
-        roslogger(text, logtype, self.ros)
 

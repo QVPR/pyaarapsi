@@ -26,17 +26,17 @@ class VPRImageProcessor: # main ROS class
 
         if self.init_netvlad:
             self.netvlad    = NetVLAD_Container(cuda=self.cuda, ngpus=int(self.cuda), logger=lambda x: self.print(x, LogType.DEBUG))
+        else:
+            self.netvlad    = None
 
         if self.init_hybridnet:
             self.hybridnet  = HybridNet_Container(cuda=self.cuda, logger=lambda x: self.print(x, LogType.DEBUG))
+        else:
+            self.hybridnet  = None
 
         if (not dataset is None) and (not self.npz_dbp is None):
-            if isinstance(dataset, str):
-                self.load_dataset(dataset)
-            elif isinstance(dataset, dict):
-                self.load_dataset_params(dataset)
-                if try_gen and (not self.dataset_ready):
-                    self.generate_dataset(**dataset)
+            if isinstance(dataset, dict):
+                self.load_dataset(dataset, try_gen=try_gen)
             else:
                 raise Exception("Dataset type not supported. Valid types: str, dict")
             if not self.dataset_ready:
@@ -45,11 +45,24 @@ class VPRImageProcessor: # main ROS class
         else:
             self.print("[VPRImageProcessor] Initialised, no dataset loaded.", LogType.INFO)
 
-    def generate_dataset(self, bag_name, npz_dbp, bag_dbp, sample_rate, odom_topic, img_topics, img_dims, ft_types, filters={}):
+    def pass_nns(self, vpr_image_proc, netvlad=True, hybridnet=True):
+        if (not self.netvlad is None) and netvlad:
+            self.netvlad.destroy()
+            self.netvlad = vpr_image_proc.netvlad
+            self.init_netvlad = True
+        if (not self.hybridnet is None) and hybridnet:
+            self.hybridnet.destroy()
+            self.hybridnet = vpr_image_proc.hybridnet
+            self.init_hybridnet = True
+
+    def generate_dataset(self, npz_dbp, bag_dbp, bag_name, sample_rate, odom_topic, img_topics, img_dims, ft_types, filters={}):
         # store for access in saving operation:
         self.dataset_ready  = False
         self.npz_dbp        = npz_dbp
         self.bag_dbp        = bag_dbp
+
+        if not bag_name.endswith('.bag'):
+            bag_name += '.bag'
 
         # generate:
         rosbag_dict         = process_bag(bag_dbp + '/' + bag_name, sample_rate, odom_topic, img_topics, printer=self.print, use_tqdm=self.use_tqdm)
@@ -58,8 +71,7 @@ class VPRImageProcessor: # main ROS class
         self.print('Done.', LogType.INFO)
 
         # Create dataset dictionary and add feature vectors
-        params_dict         = dict( bag_name=bag_name, npz_dbp=npz_dbp, bag_dbp=bag_dbp, \
-                                    odom_topic=odom_topic, img_topics=img_topics, \
+        params_dict         = dict( bag_name=bag_name, odom_topic=odom_topic, img_topics=img_topics, \
                                     sample_rate=sample_rate, ft_types=ft_types, img_dims=img_dims, filters=filters)
         dataset_dict        = dict( time=rosbag_dict['t'], \
                                     px=rosbag_dict['px'], py=rosbag_dict['py'], pw=rosbag_dict['pw'], \
@@ -80,7 +92,7 @@ class VPRImageProcessor: # main ROS class
         if dir is None:
             dir = self.npz_dbp
         if not self.dataset_ready:
-            raise Exception("Dataset not loaded in system. Either call 'generate_dataset' or 'load_dataset(_params)' before using this method.")
+            raise Exception("Dataset not loaded in system. Either call 'generate_dataset' or 'load_dataset' before using this method.")
         Path(dir).mkdir(parents=False, exist_ok=True)
         Path(dir+"/params").mkdir(parents=False, exist_ok=True)
         
@@ -126,55 +138,36 @@ class VPRImageProcessor: # main ROS class
     def extend_dataset(self, new_ft_type, save=False):
         new_params = self.dataset['params']
         new_params['ft_types'] = new_ft_type
-        if not self.load_dataset_params(new_params):
+        if not self.load_dataset(new_params):
             new_dataset = self.generate_dataset(**new_params, load=False)
         self.dataset[enum_name(new_ft_type)] = copy.deepcopy(new_dataset[enum_name(new_ft_type)])
         if save:
             self.save_dataset(check_exists=True)
 
-    def load_dataset_params(self, dataset_params, dir=None):
+    def load_dataset(self, dataset_params, dir=None, try_gen=False):
     # load via search for param match
         self.dataset_ready = False
-        self.print("[load_dataset_params] Loading dataset.", LogType.DEBUG)
+        self.print("[load_dataset] Loading dataset.", LogType.DEBUG)
         if dir is None:
             dir = self.npz_dbp
         datasets = self._get_datasets(dir)
         self.dataset = {}
         sub_params = copy.deepcopy(dataset_params)
-        for c, ft_type in enumerate(dataset_params['ft_types']):
-            sub_params['ft_types'] = [ft_type]
-            for name in datasets:
-                if datasets[name]['params'] == sub_params:
-                    try:
-                        if not self.dataset_ready:
-                            self._load(name)
-                        else:
-                            self._extend(name, ft_type)
-                        if c == len(dataset_params['ft_types']) - 1:
-                            return True
-                    except:
-                        self._fix(name)
-                        return False
-                else:
-                    self.extend_dataset
-        return False
-
-    def load_dataset(self, dataset_name, dir=None):
-    # load via string matching name of dataset file
-        self.dataset_ready = False
-        self.print("[load_dataset] Loading %s" % (dataset_name), LogType.DEBUG)
-        if dir is None:
-            dir = self.npz_dbp
-        datasets = self._get_datasets(dir)
-        self.dataset = {}
+        sub_params['ft_types'] = dataset_params['ft_types'][0]
         for name in datasets:
-            if name == dataset_name:
-                try:
-                    self._load(name)
-                    True
-                except:
-                    self._fix(name)
-        return False
+            if datasets[name]['params'] == sub_params:
+                self._load(name)
+                break
+        if self.dataset_ready:
+            if len(dataset_params['ft_types']) > 1:
+                for ft_type in dataset_params['ft_types'][1:]:
+                    self.extend_dataset(ft_type)
+            return True
+        else: 
+            if try_gen:
+                self.generate_dataset(self.npz_dbp, self.bag_dbp, **dataset_params)
+                return True
+            return False
     
     def swap(self, dataset_params, generate=False, allow_false=True):
         # TODO
@@ -207,8 +200,6 @@ class VPRImageProcessor: # main ROS class
             fttypes = fttype_in
         if not all([isinstance(fttype, FeatureType) for fttype in fttypes]):
             raise Exception("[getFeat] fttype_in provided contains elements that are not of type FeatureType")
-        if any([fttype == FeatureType.NONE for fttype in fttypes]):
-            raise Exception("[getFeat] fttype_in provided contains at least one FeatureType.NONE")
         if any([fttype == FeatureType.HYBRIDNET for fttype in fttypes]) and not self.init_hybridnet:
             raise Exception("[getFeat] FeatureType.HYBRIDNET provided but VPRImageProcessor not initialised with init_hybridnet=True")
         if any([fttype == FeatureType.NETVLAD for fttype in fttypes]) and not self.init_netvlad:
