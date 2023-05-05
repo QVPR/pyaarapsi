@@ -233,12 +233,12 @@ def updateCntrFigBokeh(doc_frame, svm_field_msg, state, compress, bridge, new_fi
 ##################################################################
 #### Linear & Angular Vector Figure: do and update
 
-def doXYWVFigBokeh(odom_in):
+def doXYWVFigBokeh(num_points):
 # Set up distance vector figure
 
     fig_xywv    = figure(title="Linear & Angular Vectors", width=500, height=250, \
                             x_axis_label = 'Index', y_axis_label = 'Value', \
-                            x_range = (0, len(odom_in['position']['x'])))#, y_range = (0, 1.2))
+                            x_range = (0, num_points))#, y_range = (0, 1.2))
     fig_xywv    = disable_toolbar(fig_xywv)
     rw_plotted  = fig_xywv.circle(x=[], y=[], color="black", size=3, legend_label="Yaw Vector") # distance vector
 
@@ -249,22 +249,22 @@ def doXYWVFigBokeh(odom_in):
 
     return {'fig': fig_xywv, 'rw': rw_plotted, 'rwc': 1}
 
-def updateXYWVFigBokeh(doc_frame, mInd, odom_in):
+def updateXYWVFigBokeh(doc_frame, mInd, px, py, pw):
 # Update DVec figure with new data (match->mInd, true->tInd)
 # Use old handles (mat, tru) and crunched distance vector (dvc)
-    new_yaw_data = dict(x=[doc_frame.fig_xywv_handles['rwc']], y=[np.round(odom_in['position']['yaw'][mInd],3)])
-    doc_frame.fig_xywv_handles['rwc'] = (doc_frame.fig_xywv_handles['rwc'] + 1) % len(odom_in['position']['x'])
-    doc_frame.fig_xywv_handles['rw'].data_source.stream(new_yaw_data, rollover=len(odom_in['position']['x']))
+    new_yaw_data = dict(x=[doc_frame.fig_xywv_handles['rwc']], y=[np.round(pw[mInd],3)])
+    doc_frame.fig_xywv_handles['rwc'] = (doc_frame.fig_xywv_handles['rwc'] + 1) % doc_frame.num_points
+    doc_frame.fig_xywv_handles['rw'].data_source.stream(new_yaw_data, rollover=doc_frame.num_points)
 
 ##################################################################
 #### Distance Vector Figure: do and update
 
-def doDVecFigBokeh(odom_in):
+def doDVecFigBokeh(num_points):
 # Set up distance vector figure
 
     fig_dvec    = figure(title="Distance Vector", width=500, height=250, \
                             x_axis_label = 'Index', y_axis_label = 'Distance', \
-                            x_range = (0, len(odom_in['position']['x'])), y_range = (0, 1.2))
+                            x_range = (0, num_points), y_range = (0, 1.2))
     fig_dvec    = disable_toolbar(fig_dvec)
     spd_plotted = fig_dvec.line([],   [], color="orange",           legend_label="Spatial Separation") # Distance from match
     dvc_plotted = fig_dvec.line([],   [], color="black",            legend_label="Distance Vector") # distance vector
@@ -278,11 +278,11 @@ def doDVecFigBokeh(odom_in):
 
     return {'fig': fig_dvec, 'spd': spd_plotted, 'dvc': dvc_plotted, 'mat': mat_plotted, 'tru': tru_plotted}
 
-def updateDVecFigBokeh(doc_frame, mInd, tInd, dvc, odom_in):
+def updateDVecFigBokeh(doc_frame, mInd, tInd, dvc, px, py):
 # Update DVec figure with new data (match->mInd, true->tInd)
 # Use old handles (mat, tru) and crunched distance vector (dvc)
-    spd = cdist(np.transpose(np.matrix([odom_in['position']['x'],odom_in['position']['y']])), \
-        np.matrix([odom_in['position']['x'][mInd], odom_in['position']['y'][mInd]]))
+    spd = cdist(np.transpose(np.matrix([px,py])), \
+        np.matrix([px[mInd], py[mInd]]))
     spd_max = np.max(spd[:])
     dvc_max = np.max(dvc[:])
     doc_frame.fig_dvec_handles['spd'].data_source.data = {'x': list(range(len(spd-1))), 'y': spd/spd_max}
@@ -293,12 +293,12 @@ def updateDVecFigBokeh(doc_frame, mInd, tInd, dvc, odom_in):
 ##################################################################
 #### Filtered Distance Vector Figure: do and update
 
-def doFDVCFigBokeh(odom_in):
+def doFDVCFigBokeh(num_points):
 # Set up distance vector figure
 
     fig_dvec    = figure(title="Filtered Distance Vector", width=500, height=250, \
                             x_axis_label = 'Index', y_axis_label = 'Distance', \
-                            x_range = (0, len(odom_in['position']['x'])), y_range = (0, 1.2))
+                            x_range = (0, num_points), y_range = (0, 1.2))
     fig_dvec    = disable_toolbar(fig_dvec)
     dvc_plotted = fig_dvec.line([],   [], color="black",            legend_label="Filtered Distance Vector") # distance vector
     mat_plotted = fig_dvec.circle([], [], color="red",     size=7,  legend_label="Selected") # matched image (lowest distance)
@@ -311,11 +311,11 @@ def doFDVCFigBokeh(odom_in):
 
     return {'fig': fig_dvec, 'dvc': dvc_plotted, 'mat': mat_plotted, 'tru': tru_plotted}
 
-def updateFDVCFigBokeh(doc_frame, mInd, tInd, dvc, odom_in):
+def updateFDVCFigBokeh(doc_frame, mInd, tInd, dvc, px, py):
 # Update DVec figure with new data (match->mInd, true->tInd)
 # Use old handles (mat, tru) and crunched distance vector (dvc)
-    spd = cdist(np.transpose(np.matrix([odom_in['position']['x'],odom_in['position']['y']])), \
-        np.matrix([odom_in['position']['x'][mInd], odom_in['position']['y'][mInd]]))
+    spd = cdist(np.transpose(np.matrix([px,py])), \
+        np.matrix([px[mInd], py[mInd]]))
     spd_max = np.max(spd[:])
     dvc_max = np.max(dvc[:])
     spd_norm = np.array(spd).flatten()/spd_max
@@ -329,11 +329,11 @@ def updateFDVCFigBokeh(doc_frame, mInd, tInd, dvc, odom_in):
 ##################################################################
 #### Odometry Figure: do and update
 
-def doOdomFigBokeh(odom_in):
+def doOdomFigBokeh(px, py):
 # Set up odometry figure
 
-    xlims = (np.min(odom_in['position']['x']), np.max(odom_in['position']['x']))
-    ylims = (np.min(odom_in['position']['y']), np.max(odom_in['position']['y'] * 1.1))
+    xlims = (np.min(px), np.max(px))
+    ylims = (np.min(py), np.max(py * 1.1))
     xrang = xlims[1] - xlims[0]
     yrang = ylims[1] - ylims[0]
 
@@ -349,7 +349,7 @@ def doOdomFigBokeh(odom_in):
     fig_odom.cross(x=[xlims[1]*2], y=[ylims[1]*2], color="red", legend_label="Match", size=14)
     fig_odom.circle( x=[xlims[1]*2], y=[ylims[1]*2], color="green", legend_label="True", size=4,)
     
-    ref_plotted = fig_odom.line(   x=odom_in['position']['x'], y=odom_in['position']['y'], color="blue", \
+    ref_plotted = fig_odom.line(   x=px, y=py, color="blue", \
                                    alpha=0.5, line_dash='dotted')
     var_plotted = fig_odom.circle( x=[], y=[], color="blue", size=[], alpha=0.1)
     seg_plotted = fig_odom.segment(x0=[], y0=[], x1=[], y1=[], line_color="black", line_width=1, alpha=[])
@@ -366,20 +366,19 @@ def doOdomFigBokeh(odom_in):
 
     return {'fig': fig_odom, 'ref': ref_plotted, 'var': var_plotted, 'seg': seg_plotted, 'mat': mat_plotted, 'tru': tru_plotted}
 
-def updateOdomFigBokeh(doc_frame, mInd, tInd, odom_in):
+def updateOdomFigBokeh(doc_frame, mInd, tInd, px, py):
 # Update odometryfigure with new data (match->mInd, true->tInd)
 # Use old handles (reference, match, true)
     # Stream/append new value for "match" (estimate) and "true" (correct) odometry:
-    num_points  = len(odom_in['position']['y'])
-    separation  = float(np.min([abs(mInd-tInd), (-abs(mInd-tInd)%num_points)],0) / (num_points / 2))
+    separation  = float(np.min([abs(mInd-tInd), (-abs(mInd-tInd) % doc_frame.num_points)],0) / (doc_frame.num_points / 2))
 
     new_alpha   = np.round(0.9 * separation,3)
     new_size    = np.round(4.0 * np.sqrt(20.0 * separation),3)
 
-    new_tru_data = dict(x=[np.round(odom_in['position']['x'][tInd],3)], y=[np.round(odom_in['position']['y'][tInd],3)])
+    new_tru_data = dict(x=[np.round(px[tInd],3)], y=[np.round(py[tInd],3)])
     new_var_data = dict(**new_tru_data, size=[new_size])
 
-    new_mat_data = dict(x=[np.round(odom_in['position']['x'][mInd],3)], y=[np.round(odom_in['position']['y'][mInd],3)], \
+    new_mat_data = dict(x=[np.round(px[mInd],3)], y=[np.round(py[mInd],3)], \
                         fill_alpha=[new_alpha], hatch_alpha=[new_alpha], line_alpha=[new_alpha])
     new_mod_data = dict(x0=new_mat_data['x'], y0=new_mat_data['y'], x1=new_tru_data['x'], y1=new_tru_data['y'], \
                         line_alpha=[0.05])
@@ -389,20 +388,20 @@ def updateOdomFigBokeh(doc_frame, mInd, tInd, odom_in):
         warnings.simplefilter("ignore")
         
         doc_frame.fig_odom_handles['tru'].data_source.stream(new_tru_data, rollover=1)
-        doc_frame.fig_odom_handles['var'].data_source.stream(new_var_data, rollover=2*num_points)
+        doc_frame.fig_odom_handles['var'].data_source.stream(new_var_data, rollover=2*doc_frame.num_points)
 
-        doc_frame.fig_odom_handles['seg'].data_source.stream(new_mod_data, rollover=num_points)
-        doc_frame.fig_odom_handles['mat'].data_source.stream(new_mat_data, rollover=num_points)
+        doc_frame.fig_odom_handles['seg'].data_source.stream(new_mod_data, rollover=doc_frame.num_points)
+        doc_frame.fig_odom_handles['mat'].data_source.stream(new_mat_data, rollover=doc_frame.num_points)
 
 ##################################################################
 #### SVM Metrics Figure: do and update
 
-def doSVMMFigBokeh(odom_in):
+def doSVMMFigBokeh(num_points):
 # Set up SVM Metrics Figure
 
     fig_svmm    = figure(title="SVM Metrics", width=500, height=250, \
                             x_axis_label = 'Index', y_axis_label = 'Value', \
-                            x_range = (0, len(odom_in['position']['x'])))
+                            x_range = (0, num_points))
     #fig_svmm    = disable_toolbar(fig_svmm)
     f1_plotted  = fig_svmm.circle(x=[], y=[], color="blue",  size=3, legend_label="Factor 1")
     f2_plotted  = fig_svmm.circle(x=[], y=[], color="red",   size=3, legend_label="Factor 2")
@@ -416,15 +415,15 @@ def doSVMMFigBokeh(odom_in):
 
     return {'fig': fig_svmm, 'c': 1, 'f1': f1_plotted, 'f2': f2_plotted, 'pr': pr_plotted, 'zv': zv_plotted}
 
-def updateSVMMFigBokeh(doc_frame, state, odom_in):
+def updateSVMMFigBokeh(doc_frame, state):
 # Update SVM Metrics Figure
     new_f1 = dict(x=[doc_frame.fig_svmm_handles['c']], y=[np.round(state.factors[0], 3)])
     new_f2 = dict(x=[doc_frame.fig_svmm_handles['c']], y=[np.round(state.factors[1], 3)])
     new_pr = dict(x=[doc_frame.fig_svmm_handles['c']], y=[np.round(state.prob,       3)])
     new_zv = dict(x=[doc_frame.fig_svmm_handles['c']], y=[np.round(state.mState,     3)])
-    doc_frame.fig_svmm_handles['c'] = (doc_frame.fig_svmm_handles['c'] + 1) % len(odom_in['position']['x'])
+    doc_frame.fig_svmm_handles['c'] = (doc_frame.fig_svmm_handles['c'] + 1) % doc_frame.num_points
 
-    doc_frame.fig_svmm_handles['f1'].data_source.stream(new_f1, rollover=len(odom_in['position']['x']))
-    doc_frame.fig_svmm_handles['f2'].data_source.stream(new_f2, rollover=len(odom_in['position']['x']))
-    doc_frame.fig_svmm_handles['pr'].data_source.stream(new_pr, rollover=len(odom_in['position']['x']))
-    doc_frame.fig_svmm_handles['zv'].data_source.stream(new_zv, rollover=len(odom_in['position']['x']))
+    doc_frame.fig_svmm_handles['f1'].data_source.stream(new_f1, rollover=doc_frame.num_points)
+    doc_frame.fig_svmm_handles['f2'].data_source.stream(new_f2, rollover=doc_frame.num_points)
+    doc_frame.fig_svmm_handles['pr'].data_source.stream(new_pr, rollover=doc_frame.num_points)
+    doc_frame.fig_svmm_handles['zv'].data_source.stream(new_zv, rollover=doc_frame.num_points)
