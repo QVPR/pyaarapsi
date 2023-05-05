@@ -2,6 +2,7 @@
 
 import numpy as np
 import copy
+import rospkg
 import os
 import datetime
 from pathlib import Path
@@ -13,8 +14,8 @@ from .imageprocessor_helpers import *
 
 class VPRImageProcessor: # main ROS class
     def __init__(self, bag_dbp=None, npz_dbp=None, dataset=None, try_gen=True, init_netvlad=False, init_hybridnet=False, cuda=False, use_tqdm=False, autosave=False, printer=print):
-        self.npz_dbp        = npz_dbp
-        self.bag_dbp        = bag_dbp
+        self.npz_dbp        = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + npz_dbp
+        self.bag_dbp        = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + bag_dbp
         self.dataset_ready  = False
         self.cuda           = cuda
         self.use_tqdm       = use_tqdm

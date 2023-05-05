@@ -2,14 +2,10 @@
 
 import numpy as np
 import os
-from enum import Enum
 from pathlib import Path
 import datetime
 
-try:
-    import rospy # used for printing
-except:
-    pass
+import rospkg
 
 import matplotlib
 matplotlib.use('Agg')
@@ -33,7 +29,7 @@ class SVMModelProcessor: # main ROS class
         if not isinstance(model_params, dict):
             raise Exception("Model type not supported; must be of type dict")
         self.print          = printer
-        self.models_dir     = model_params['svm_dbp']
+        self.models_dir     = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + model_params['svm_dbp']
         self.cal_qry_params = model_params['qry']
         self.cal_ref_params = model_params['ref']
         self.model_ready    = False
