@@ -17,7 +17,6 @@ patch_sklearn()
 from sklearn import svm
 from sklearn.preprocessing import StandardScaler
 
-from ..core.enum_tools import enum_name
 from ..core.file_system_tools import scan_directory
 #from ..vpr_simple.vpr_feature_tool import VPRImageProcessor
 from ..vpr_simple.new_vpr_feature_tool import VPRImageProcessor
@@ -219,8 +218,8 @@ class SVMModelProcessor: # main ROS class
         match_min = np.argmin(match_mat, 1) # should have the same number of rows as calqry (but as a vector)
         calref_xy = calref_xy[match_min, :]
 
-        self.features_calqry  = np.array(self.cal_qry_ip.dataset['dataset'][enum_name(self.feat_type)])
-        self.features_calref  = np.array(self.cal_ref_ip.dataset['dataset'][enum_name(self.feat_type)])
+        self.features_calqry  = np.array(self.cal_qry_ip.dataset['dataset'][self.feat_type])
+        self.features_calref  = np.array(self.cal_ref_ip.dataset['dataset'][self.feat_type])
         self.features_calref  = self.features_calref[match_min, :]
         self.actual_match_cal = np.arange(len(self.features_calqry))
         self.Scal, self.rmean, self.rstd    = create_normalised_similarity_matrix(self.features_calref, self.features_calqry)

@@ -6,7 +6,7 @@ import rospkg
 import os
 import datetime
 from pathlib import Path
-from ..core.enum_tools import enum_name
+from ..core.enum_tools import enum_name, enum_get
 from ..core.ros_tools import LogType, process_bag
 from ..vpr_classes import NetVLAD_Container, HybridNet_Container
 from ..core.file_system_tools import scan_directory
@@ -65,7 +65,7 @@ class VPRImageProcessor: # main ROS class
         # generate:
         rosbag_dict         = process_bag(bag_dbp + '/' + bag_name, sample_rate, odom_topic, img_topics, printer=self.print, use_tqdm=self.use_tqdm)
         self.print('Performing feature extraction...', LogType.INFO)
-        feature_vector_dict = {enum_name(ft_type): self.getFeat(list(rosbag_dict[img_topics[0]]), ft_type, img_dims, use_tqdm=self.use_tqdm) for ft_type in ft_types}
+        feature_vector_dict = {ft_type: self.getFeat(list(rosbag_dict[img_topics[0]]), enum_get(ft_type, FeatureType), img_dims, use_tqdm=self.use_tqdm) for ft_type in ft_types}
         self.print('Done.', LogType.INFO)
 
         # Create dataset dictionary and add feature vectors
@@ -104,7 +104,7 @@ class VPRImageProcessor: # main ROS class
         else:
             name = datetime.datetime.today().strftime("dataset_%Y%m%d")
 
-        self.print("[save_dataset] Splitting dataset into files for feature types: %s" % enum_name(self.dataset['params']['ft_types']), LogType.INFO)
+        self.print("[save_dataset] Splitting dataset into files for feature types: %s" % self.dataset['params']['ft_types'], LogType.INFO)
         for ft_type in self.dataset['params']['ft_types']:
             # Generate unique name:
             file_name = name
@@ -116,7 +116,7 @@ class VPRImageProcessor: # main ROS class
             full_file_path  = dir + "/" + file_name
             full_param_path = dir + "/params/" + file_name
 
-            sub_data                = copy.deepcopy({key: self.dataset['dataset'][key] for key in ['time', 'px', 'py', 'pw', 'vx', 'vy', 'vw', enum_name(ft_type)]})
+            sub_data                = copy.deepcopy({key: self.dataset['dataset'][key] for key in ['time', 'px', 'py', 'pw', 'vx', 'vy', 'vw', ft_type]})
             sub_params              = copy.deepcopy(self.dataset['params'])
             sub_params['ft_types']  = [ft_type]
             sub_dataset             = dict(params=sub_params, dataset=sub_data)
@@ -134,11 +134,13 @@ class VPRImageProcessor: # main ROS class
         return self
 
     def extend_dataset(self, new_ft_type, save=False):
+        if isinstance(new_ft_type, FeatureType):
+            new_ft_type = enum_name(new_ft_type)
         new_params = self.dataset['params']
         new_params['ft_types'] = new_ft_type
         if not self.load_dataset(new_params):
             new_dataset = self.generate_dataset(**new_params, load=False)
-        self.dataset[enum_name(new_ft_type)] = copy.deepcopy(new_dataset[enum_name(new_ft_type)])
+        self.dataset[new_ft_type] = copy.deepcopy(new_dataset[new_ft_type])
         if save:
             self.save_dataset(check_exists=True)
 
@@ -253,9 +255,11 @@ class VPRImageProcessor: # main ROS class
     # when loading objects inside dicts from .npz files, must extract with .item() each object
         if not dataset_name.endswith('.npz'):
             dataset_name = dataset_name + '.npz'
+        if isinstance(ft_type, FeatureType):
+            ft_type = enum_name(ft_type)
         
         raw_dataset = np.load(self.npz_dbp + "/" + dataset_name, allow_pickle=True)['dataset'].item()
-        self.dataset['dataset'][enum_name(ft_type)] = raw_dataset[enum_name(ft_type)]
+        self.dataset['dataset'][ft_type] = raw_dataset[ft_type]
         return self.dataset
     
     def destroy(self):
