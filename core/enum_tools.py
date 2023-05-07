@@ -1,17 +1,38 @@
 from enum import Enum
 
-def enum_contains(value, enumtype):
+def enum_contains(value, enumtype, wrap=False):
 # Return true/false if the value exists within enum
-    for i in enumtype:
-        if i.value == value:
+    if not isinstance(value, list):
+        for i in enumtype:
+            if i.value == value:
+                if wrap:
+                    return [True]
             return True
+    else:
+        newvalues = [False] * len(value)
+        for ind in range(len(value)):
+            for i in enumtype:
+                if i.value == value[ind]:
+                    newvalues[ind] = True
+                    break
+        return newvalues
     return False
 
-def enum_get(value, enumtype):
+def enum_get(value, enumtype, wrap=False):
 # Return enumtype corresponding to value if it exists (or return None)
-    for i in enumtype:
-        if i.value == value:
-            return i
+    if not isinstance(value, list):
+        for i in enumtype:
+            if i.value == value or i.name == value:
+                if wrap:
+                    return [i]
+                return i
+    else:
+        for val in value:
+            for i in enumtype:
+                if i.value == val or i.name == val:
+                    val = i
+                    break
+        return value
     return None
 
 
@@ -28,12 +49,16 @@ def enum_value_options(enumtype, skip=[None]):
         options_text.append(i.name)
     return options, str(options_text).replace('\'', '')
 
-def enum_value(enum_in):
+def enum_value(enum_in, wrap=False):
     if isinstance(enum_in, list):
         return [i.value for i in enum_in]
+    if wrap:
+        return [enum_in.value]
     return enum_in.value
 
-def enum_name(enum_in):
+def enum_name(enum_in, wrap=False):
     if isinstance(enum_in, list):
         return [i.name for i in enum_in]
+    if wrap:
+        return [str(enum_in.name)]
     return str(enum_in.name)
