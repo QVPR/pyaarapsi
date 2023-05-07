@@ -11,7 +11,8 @@ from geometry_msgs.msg import Quaternion
 from sensor_msgs.msg import Image, CompressedImage
 
 from aarapsi_robot_pack.msg import ImageLabelStamped, CompressedImageLabelStamped, ImageOdom, CompressedImageOdom, \
-                                   ImageDetails, CompressedImageDetails, MonitorDetails, CompressedMonitorDetails # Our custom msg structures
+                                   ImageDetails, CompressedImageDetails, MonitorDetails, CompressedMonitorDetails, \
+                                   Debug # Our custom msg structures
 from aarapsi_robot_pack.msg import Heartbeat as Hb
 
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
@@ -352,13 +353,22 @@ def roslogger(text, logtype=LogType.INFO, throttle=0, ros=True, name=None, no_st
     except:
         print(logtype.value + " " + text)
 
-def init_node(mrc, node_name, namespace, rate_num, anon, log_level, order_id=None, throttle=30, colour=True):
+def default_debug_cb(mrc, msg):
+    try:
+        mrc.debug_cb(msg)
+    except:
+        roslogger("This container has no debug_cb(msg) method. Instruction Code: %s" % (str(msg.instruction)), LogType.DEBUG, ros=True, name=msg.node_name)
+
+def init_node(mrc, node_name, namespace, rate_num, anon, log_level, order_id=None, throttle=30, colour=True, debug=True):
 
     rospy.init_node(node_name, anonymous=anon, log_level=log_level)
     mrc.namespace   = namespace
     mrc.node_name   = node_name
     mrc.nodespace   = mrc.namespace + '/' + mrc.node_name
     mrc.ROS_HOME    = ROS_Home(mrc.node_name, mrc.namespace, rate_num)
+    if debug:
+        mrc._debug_cb   = lambda msg: default_debug_cb(mrc, msg)
+        mrc._debug_sub  = rospy.Subscriber(mrc.namespace + '/debug', Debug, mrc._debug_cb, queue_size=1)
 
     if not order_id is None:
         launch_step = rospy.get_param(mrc.namespace + '/launch_step')
