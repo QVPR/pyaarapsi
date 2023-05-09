@@ -92,7 +92,8 @@ class PlaceDataset(torch.utils.data.Dataset):
 class NetVLAD_Container:
     def __init__(self, logger=print, cuda=False, ngpus=0, 
                  imw=640, imh=480, batchsize=5, cachebatchsize=5, num_pcs=4096, 
-                 threads=0, resumepath='./pretrained_models/mapillary_WPCA'):
+                 threads=0, resumepath='./pretrained_models/mapillary_WPCA', 
+                 load=True, prep=True):
         
         self.cuda           = cuda
         self.ngpus          = ngpus
@@ -106,9 +107,10 @@ class NetVLAD_Container:
         self.resumepath     = resumepath
         self.transform      = self.input_transform()
 
-        self.load()
-        self.prep()
-
+        if load:
+            self.load()
+        if prep:
+            self.prep()
 
     def load(self):
         self.config = configparser.ConfigParser()
@@ -120,8 +122,6 @@ class NetVLAD_Container:
         if self.cuda and not torch.cuda.is_available():
             raise Exception("No GPU found")
         self.device = torch.device("cuda" if self.cuda else "cpu")
-
-        encoder_dim, encoder = get_backend()
 
         # must resume to do extraction
         if int(self.config['global_params']['num_pcs']) > 0:
@@ -141,9 +141,13 @@ class NetVLAD_Container:
             if bool(self.num_pcs):
                 assert checkpoint['state_dict']['WPCA.0.bias'].shape[0] == int(self.config['global_params']['num_pcs'])
             self.config['global_params']['num_clusters'] = str(checkpoint['state_dict']['pool.centroids'].shape[0])
-
+            
+            encoder_dim, encoder = get_backend()
             self.model = get_model(encoder, encoder_dim, self.config['global_params'], append_pca_layer=bool(self.num_pcs))
+            del encoder, encoder_dim
+
             self.model.load_state_dict(checkpoint['state_dict'])
+            del checkpoint
             
             if int(self.config['global_params']['ngpu']) > 1 and torch.cuda.device_count() > 1:
                 self.model.encoder = torch.nn.DataParallel(self.model.encoder)
@@ -176,10 +180,11 @@ class NetVLAD_Container:
     # This function when ran first typically takes about 1 second
         input_data = self.transform(Image.fromarray(np.zeros((1,1,3), dtype=np.uint8)))
         with torch.no_grad():
-            input_data = input_data.unsqueeze(dim=0).to(self.device)
-            image_encoding = self.model.encoder(input_data)
-            vlad_global = self.model.pool(image_encoding)
-            get_pca_encoding(self.model, vlad_global)
+            input_data      = input_data.unsqueeze(dim=0).to(self.device)
+            image_encoding  = self.model.encoder(input_data)
+            vlad_global     = self.model.pool(image_encoding)
+            vlad_global_pca = get_pca_encoding(self.model, vlad_global)
+        del input_data, image_encoding, vlad_global, vlad_global_pca
         torch.cuda.empty_cache()
 
     def input_transform(self):
