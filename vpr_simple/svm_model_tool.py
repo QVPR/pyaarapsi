@@ -18,22 +18,24 @@ from sklearn import svm
 from sklearn.preprocessing import StandardScaler
 
 from ..core.file_system_tools import scan_directory
+from ..core.ros_tools         import roslogger, LogType
 from .vpr_dataset_tool        import VPRDatasetProcessor
 from ..vpred import *
 
 class SVMModelProcessor: # main ROS class
-    def __init__(self, ros=False, printer=print):
+    def __init__(self, ros=False):
 
-        self.print          = printer
         self.model_ready    = False
         self.ros            = ros
 
         # for making new models (prep but don't load anything yet)
-        self.cal_qry_ip     = VPRDatasetProcessor(None, printer=printer)
-        self.cal_ref_ip     = VPRDatasetProcessor(None, printer=printer)
-        self.cal_ref_ip.pass_nns(self.cal_qry_ip)
+        self.cal_qry_ip     = VPRDatasetProcessor(None, ros=self.ros)
+        self.cal_ref_ip     = VPRDatasetProcessor(None, ros=self.ros)
 
         self.print("[SVMModelProcessor] Processor Ready.")
+
+    def print(self, text, logtype=LogType.INFO, throttle=0):
+        roslogger(text, logtype, throttle=throttle, ros=self.ros)
             
     def generate_model(self, ref, qry, bag_dbp, npz_dbp, svm_dbp, save=True):
         assert ref['img_dims'] == qry['img_dims'], "Reference and query metadata must be the same."
@@ -49,7 +51,7 @@ class SVMModelProcessor: # main ROS class
         self.model_ready        = False
 
         # generate:
-        load_statuses = self._load_cal_data()
+        load_statuses = self._load_cal_data() # [qry, ref]
         if all(load_statuses):
             self._calibrate()
             self._train()
@@ -178,9 +180,9 @@ class SVMModelProcessor: # main ROS class
 
     def _load_cal_data(self):
         # Process calibration data (only needs to be done once)
-        self.print("Loading calibration query dataset...")
+        self.print("Loading calibration query dataset...", LogType.DEBUG)
         load_cal_qry = self.cal_qry_ip.load_dataset(self.cal_qry_params)
-        self.print("Loading calibration reference dataset...")
+        self.print("Loading calibration reference dataset...", LogType.DEBUG)
         load_cal_ref = self.cal_ref_ip.load_dataset(self.cal_ref_params)
         return (load_cal_qry, load_cal_ref)
 
@@ -251,15 +253,15 @@ class SVMModelProcessor: # main ROS class
     def _fix(self, model_name):
         if not model_name.endswith('.npz'):
             model_name = model_name + '.npz'
-        self.print("Bad dataset state detected, performing cleanup...")
+        self.print("Bad dataset state detected, performing cleanup...", LogType.DEBUG)
         try:
             os.remove(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp + '/' + model_name)
-            self.print("Purged: %s" % (self.svm_dbp + '/' + model_name))
+            self.print("Purged: %s" % (self.svm_dbp + '/' + model_name), LogType.DEBUG)
         except:
             pass
         try:
             os.remove(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) +  '/' + self.svm_dbp + '/params/' + model_name)
-            self.print("Purged: %s" % (self.svm_dbp + '/params/' + model_name))
+            self.print("Purged: %s" % (self.svm_dbp + '/params/' + model_name), LogType.DEBUG)
         except:
             pass
 
