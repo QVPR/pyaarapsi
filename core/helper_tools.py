@@ -4,6 +4,25 @@ import rospy
 import sys
 import traceback
 import numpy as np
+import pickle
+
+def np_ndarray_to_uint8_list(ndarray):
+    '''
+    Convert any numpy ndarray into a list of uint8 representing byte information
+    For use with transferring numpy ndarray data agnostic of dtype, shape
+    '''
+    byte_string = pickle.dumps(ndarray)
+    uint8_list  = [i for i in byte_string]
+    return uint8_list
+
+def uint8_list_to_np_ndarray(uint8_list):
+    '''
+    Convert any list of uint8 representing byte information back into a numpy ndarray
+    For use with transferring numpy ndarray data agnostic of dtype, shape
+    '''
+    byte_string = bytes(uint8_list)
+    np_ndarray  = pickle.loads(byte_string)
+    return np_ndarray
 
 class Timer:
     def __init__(self,rospy_on=False):
