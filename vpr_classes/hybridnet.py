@@ -59,7 +59,7 @@ class PlaceDataset(torch.utils.data.Dataset):
         del self.dims
 
 class HybridNet_Container:
-    def __init__(self, logger=print, cuda=False, target_layer='fc7_new'):
+    def __init__(self, logger=print, cuda=False, target_layer='fc7_new', load=True):
         
         self.cuda           = cuda
         self.logger         = logger
@@ -74,7 +74,8 @@ class HybridNet_Container:
         else:
             caffe.set_mode_cpu()
 
-        self.load()
+        if load:
+            self.load()
 
     def load(self):
 
