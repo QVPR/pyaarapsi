@@ -571,8 +571,8 @@ class ROS_Param_Server:
         '''
         update_status = self.params[name].update()
         if not update_status:
-            roslogger("Bad parameter server value for %s. Remaining with last safe value, %s." 
-                      % (str(name), str(self.params[name].value)))
+            roslogger("[ROS_Param_Server] Bad parameter server value for %s. Remaining with last safe value, %s." 
+                      % (str(name), str(self.params[name].value)), LogType.ERROR)
         return update_status
 
     def exists(self, name):
