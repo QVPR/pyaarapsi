@@ -80,6 +80,22 @@ def check_positive_two_int_tuple(value):
     if not (ivalue[0] > 0 and ivalue[1] > 0):
         raise ap.ArgumentTypeError(error_text)
     return ivalue
+
+def check_positive_two_int_list(value):
+    error_text = "%s is an invalid positive two-integer list." % (str(value))
+    str_value = str(value) # force to string
+    value_list = str_value.replace(' ', '').replace('(','').replace(')','').replace('[','').replace(']','').split(',')
+    if not len(value_list) == 2:
+        raise ap.ArgumentTypeError(error_text) 
+    if '.' in str(str_value):
+        raise ap.ArgumentTypeError(error_text) 
+    try:
+        ivalue = [int(value_list[0]), int(value_list[1])]
+    except:
+        raise ap.ArgumentTypeError(error_text)
+    if not (ivalue[0] > 0 and ivalue[1] > 0):
+        raise ap.ArgumentTypeError(error_text)
+    return ivalue
     
 def check_valid_ip(value):
     error_text = "%s is an invalid ip address." % (str(value))
