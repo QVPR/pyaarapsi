@@ -18,41 +18,23 @@ from sklearn import svm
 from sklearn.preprocessing import StandardScaler
 
 from ..core.file_system_tools import scan_directory
-#from ..vpr_simple.vpr_feature_tool import VPRImageProcessor
-from ..vpr_simple.new_vpr_feature_tool import VPRImageProcessor
+from .vpr_dataset_tool        import VPRDatasetProcessor
 from ..vpred import *
 
 class SVMModelProcessor: # main ROS class
-    def __init__(self, model_params: dict, try_gen=True, ros=False, init_hybridnet=False, init_netvlad=False, cuda=False, autosave=False, printer=print):
+    def __init__(self, ros=False, printer=print):
 
-        if not isinstance(model_params, dict):
-            raise Exception("Model type not supported; must be of type dict")
         self.print          = printer
-        self.models_dir     = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + model_params['svm_dbp']
-        self.cal_qry_params = model_params['qry']
-        self.cal_ref_params = model_params['ref']
         self.model_ready    = False
         self.ros            = ros
 
         # for making new models (prep but don't load anything yet)
-        self.cal_qry_ip     = VPRImageProcessor(bag_dbp=model_params['bag_dbp'], npz_dbp=model_params['npz_dbp'], dataset=None, try_gen=try_gen, \
-                                                    init_hybridnet=init_hybridnet, init_netvlad=init_netvlad, cuda=cuda, autosave=autosave, printer=printer)
-        self.cal_ref_ip     = VPRImageProcessor(bag_dbp=model_params['bag_dbp'], npz_dbp=model_params['npz_dbp'], dataset=None, try_gen=try_gen, \
-                                                    init_hybridnet=False, init_netvlad=False, cuda=cuda, autosave=autosave, printer=printer)
+        self.cal_qry_ip     = VPRDatasetProcessor(None, printer=printer)
+        self.cal_ref_ip     = VPRDatasetProcessor(None, printer=printer)
         self.cal_ref_ip.pass_nns(self.cal_qry_ip)
 
-        self.print("[SVMModelProcessor] Loading model from parameters...")
-        self.load_model(model_params)
-
-        if try_gen and (not self.model_ready):
-            self.print("[SVMModelProcessor] Load failed, attempting to generate model from parameters...")
-            self.generate_model(**model_params)
-
-        if not self.model_ready:
-            raise Exception("Model load failed.")
-        self.print("[SVMModelProcessor] Model Ready.")
+        self.print("[SVMModelProcessor] Processor Ready.")
             
-
     def generate_model(self, ref, qry, bag_dbp, npz_dbp, svm_dbp, save=True):
         assert ref['img_dims'] == qry['img_dims'], "Reference and query metadata must be the same."
         assert ref['ft_types'] == qry['ft_types'], "Reference and query metadata must be the same."
@@ -67,29 +49,25 @@ class SVMModelProcessor: # main ROS class
         self.model_ready        = False
 
         # generate:
-        self._load_cal_data()
-        self._calibrate()
-        self._train()
-        self._make()
-        self.model_ready        = True
+        load_statuses = self._load_cal_data()
+        if all(load_statuses):
+            self._calibrate()
+            self._train()
+            self._make()
+            self.model_ready    = True
+            if save:
+                self.save_model()
+        return load_statuses
 
-        if save:
-            self.save_model(check_exists=True)
-
-        return self
-
-    def save_model(self, dir=None, name=None, check_exists=False):
-        if dir is None:
-            dir = self.models_dir
+    def save_model(self, name=None):
         if not self.model_ready:
             raise Exception("Model not loaded in system. Either call 'generate_model' or 'load_model' before using this method.")
+        dir = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp
         Path(dir).mkdir(parents=False, exist_ok=True)
         Path(dir+"/params").mkdir(parents=False, exist_ok=True)
-        if check_exists:
-            existing_file = self._check(dir)
-            if existing_file:
-                self.print("[save_model] File exists with identical parameters: %s")
-                return self
+        if self._check():
+            self.print("[save_model] File exists with identical parameters: %s")
+            return self
         
         # Ensure file name is of correct format, generate if not provided
         file_list, _, _, = scan_directory(dir, short_files=True)
@@ -115,25 +93,24 @@ class SVMModelProcessor: # main ROS class
         self.print("[save_model] Saved file, params to %s, %s" % (full_file_path, full_param_path))
         return self
 
-    def load_model(self, model_params, dir=None):
+    def load_model(self, model_params):
     # load via search for param match
+        self.svm_dbp = model_params['svm_dbp']
         self.print("[load_model] Loading model.")
         self.model_ready = False
-        if dir is None:
-            dir = self.models_dir
-        models = self._get_models(dir)
+        models = self._get_models()
         self.model = {}
         for name in models:
             if models[name]['params'] == model_params:
                 try:
                     self._load(name)
-                    break
+                    return True
                 except:
                     self._fix(name)
-        return self
+        return False
     
     def swap(self, model_params, generate=False, allow_false=True):
-        models = self._get_models(self.models_dir)
+        models = self._get_models()
         for name in models:
             if models[name]['params'] == model_params:
                 try:
@@ -192,8 +169,8 @@ class SVMModelProcessor: # main ROS class
         return (img_np_raw, (x_lim, y_lim))
     
     #### Private methods:
-    def _check(self, dir):
-        models = self._get_models(dir)
+    def _check(self):
+        models = self._get_models()
         for name in models:
             if models[name]['params'] == self.model['params']:
                 return name
@@ -201,14 +178,14 @@ class SVMModelProcessor: # main ROS class
 
     def _load_cal_data(self):
         # Process calibration data (only needs to be done once)
-        self.print("Loading calibration query data set...")
-        if not self.cal_qry_ip.load_dataset(self.cal_qry_params, try_gen=True):
-            raise Exception('Query load failed.')
-        self.print("Loading calibration reference data set...")
-        if not self.cal_ref_ip.load_dataset(self.cal_ref_params, try_gen=True):
-            raise Exception('Reference load failed.')
+        self.print("Loading calibration query dataset...")
+        load_cal_qry = self.cal_qry_ip.load_dataset(self.cal_qry_params)
+        self.print("Loading calibration reference dataset...")
+        load_cal_ref = self.cal_ref_ip.load_dataset(self.cal_ref_params)
+        return (load_cal_qry, load_cal_ref)
 
     def _calibrate(self):
+        self.print("Calibrating datasets...")
         # Goals: 
         # 1. Reshape calref to match length of calqry
         # 2. Reorder calref to match 1:1 indices with calqry
@@ -225,6 +202,7 @@ class SVMModelProcessor: # main ROS class
         self.Scal, self.rmean, self.rstd    = create_normalised_similarity_matrix(self.features_calref, self.features_calqry)
 
     def _train(self):
+        self.print("Performing training...")
         # We define the acceptable tolerance for a 'correct' match as +/- one image frame:
         self.tolerance      = 10
 
@@ -253,11 +231,9 @@ class SVMModelProcessor: # main ROS class
         self.print('Performance of prediction on calibration set:\nTP={0}, TN={1}, FP={2}, FN={3}\nprecision={4:3.1f}% recall={5:3.1f}%\n' \
                    .format(num_tp,num_tn,num_fp,num_fn,precision*100,recall*100))
 
-    def _get_models(self, dir=None):
-        if dir is None:
-            dir = self.models_dir
+    def _get_models(self):
         models = {}
-        entry_list = os.scandir(dir+"/params/")
+        entry_list = os.scandir(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp + "/params/")
         for entry in entry_list:
             if entry.is_file() and entry.name.startswith('svmmodel'):
                 raw_npz = dict(np.load(entry.path, allow_pickle=True))
@@ -277,13 +253,13 @@ class SVMModelProcessor: # main ROS class
             model_name = model_name + '.npz'
         self.print("Bad dataset state detected, performing cleanup...")
         try:
-            os.remove(self.models_dir + '/' + model_name)
-            self.print("Purged: %s" % (self.models_dir + '/' + model_name))
+            os.remove(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp + '/' + model_name)
+            self.print("Purged: %s" % (self.svm_dbp + '/' + model_name))
         except:
             pass
         try:
-            os.remove(self.models_dir + '/params/' + model_name)
-            self.print("Purged: %s" % (self.models_dir + '/params/' + model_name))
+            os.remove(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) +  '/' + self.svm_dbp + '/params/' + model_name)
+            self.print("Purged: %s" % (self.svm_dbp + '/params/' + model_name))
         except:
             pass
 
@@ -291,7 +267,8 @@ class SVMModelProcessor: # main ROS class
     # when loading objects inside dicts from .npz files, must extract with .item() each object
         if not model_name.endswith('.npz'):
             model_name = model_name + '.npz'
-        raw_model = np.load(self.models_dir + "/" + model_name, allow_pickle=True)
+        raw_model = np.load(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp + '/' + model_name, allow_pickle=True)
+        self.model_ready = False
         del self.model
         self.model = dict(model=raw_model['model'].item(), params=raw_model['params'].item())
         self.model_ready = True
