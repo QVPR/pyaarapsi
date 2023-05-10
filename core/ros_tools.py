@@ -514,8 +514,7 @@ class ROS_Param:
                 self.old    = self.value
                 self.value  = check_value
                 self.set_param(self.value)
-                return True
-            return False
+            return True
         except:
             self.set_param(self.value)
             return False
@@ -569,10 +568,14 @@ class ROS_Param_Server:
         Returns:
         None 
         '''
+        try:
+            current_value = str(rospy.get_param(name))
+        except:
+            current_value = str(None)
         update_status = self.params[name].update()
         if not update_status:
-            roslogger("[ROS_Param_Server] Bad parameter server value for %s. Remaining with last safe value, %s." 
-                      % (str(name), str(self.params[name].value)), LogType.ERROR)
+            roslogger("[ROS_Param_Server] Bad parameter server value for %s [%s]. Remaining with last safe value, %s." 
+                      % (str(name), current_value, str(self.params[name].value)), LogType.ERROR)
         return update_status
 
     def exists(self, name):
