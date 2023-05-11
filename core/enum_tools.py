@@ -1,6 +1,6 @@
 from enum import Enum
 
-def enum_contains(value, enumtype, wrap=False):
+def enum_contains(value: any, enumtype: Enum, wrap: bool=False) -> bool:
 # Return true/false if the value exists within enum
     if not isinstance(value, list):
         for i in enumtype:
@@ -18,7 +18,7 @@ def enum_contains(value, enumtype, wrap=False):
         return newvalues
     return False
 
-def enum_get(value, enumtype, wrap=False):
+def enum_get(value: any, enumtype: Enum, wrap: bool=False) -> Enum:
 # Return enumtype corresponding to value if it exists (or return None)
     if not isinstance(value, list):
         for i in enumtype:
@@ -36,7 +36,7 @@ def enum_get(value, enumtype, wrap=False):
     return None
 
 
-def enum_value_options(enumtype, skip=[None]):
+def enum_value_options(enumtype: Enum, skip=[None]):
 # Return lists of an enumtype's values and a cleaned string variant for printing purposes
     if isinstance(skip, enumtype):
         skip = [skip]

@@ -220,6 +220,11 @@ def img2msg(img, mode, bridge=None):
     return msg
 
 class NodeState(Enum):
+    '''
+    NodeState Enumeration
+
+    For use with Heartbeat to provide an indication of node health
+    '''
     EXIT        = 0
     FAIL        = 1
     INIT        = 2
@@ -229,6 +234,7 @@ class NodeState(Enum):
 class Heartbeat:
     '''
     Heartbeat Class
+
     Purpose:
     - Wrap a timer and publisher for easy implementation
     - Create a listen point for diagnosing which nodes have failed
@@ -297,7 +303,9 @@ class Heartbeat:
 
 class LogType(Enum):
     '''
-    Enum type to use with roslogger
+    LogType Enumeration
+
+    For use with roslogger
     '''
 
     DEBUG       = "[DEBUG]"
@@ -354,32 +362,64 @@ def roslogger(text, logtype=LogType.INFO, throttle=0, ros=True, name=None, no_st
         print(logtype.value + " " + text)
 
 def default_debug_cb(mrc, msg):
+    '''
+    Try/Except wrapper to enable optional use of mrc.debug_cb(msg)
+    Should not be used or accessed directly.
+    '''
     try:
         mrc.debug_cb(msg)
     except:
         roslogger("This container has no debug_cb(msg) method. Instruction Code: %s" % (str(msg.instruction)), LogType.DEBUG, ros=True, name=msg.node_name)
 
 def init_node(mrc, node_name, namespace, rate_num, anon, log_level, order_id=None, throttle=30, colour=True, debug=True):
+    '''
+    Super-wrapper for rospy
 
-    rospy.init_node(node_name, anonymous=anon, log_level=log_level)
-    mrc.namespace   = namespace
-    mrc.node_name   = node_name
-    mrc.nodespace   = mrc.namespace + '/' + mrc.node_name
-    mrc.ROS_HOME    = ROS_Home(mrc.node_name, mrc.namespace, rate_num)
-    if debug:
-        mrc._debug_cb   = lambda msg: default_debug_cb(mrc, msg)
-        mrc._debug_sub  = rospy.Subscriber(mrc.namespace + '/debug', Debug, mrc._debug_cb, queue_size=1)
+    Bundles:
+    - rospy.init_node
+    - A ROS_Home instance, including a ROS_Parameter_Server instance and a heartbeat publisher
+    - Assigns namespace, node_name, and nodespace
+    - Optionally creates a subscriber and callback for debugging/diagnostics
+    - Optionally handles launch control using order_id for sequencing
+    - Optionally colours the init_node message (blue)
 
-    if not order_id is None:
-        launch_step = rospy.get_param(mrc.namespace + '/launch_step')
-        while (launch_step < order_id) and (not rospy.is_shutdown()):
-            roslogger('%s waiting in line, position %s.' % (str(mrc.node_name), str(order_id)), LogType.DEBUG, throttle=throttle, ros=True)
-            rospy.sleep(0.2)
+    Inputs:
+    - mrc:          class type; Main ROS Class to assign parameters to
+    - node_name:    str type;   Name of node, used in rospy.init_node and nodespace
+    - namespace:    str type;   rospy namespace
+    - rate_num:     float type; ROS node execution rate
+    - anon:         bool type;  Whether to run the node as anonymous
+    - log_level:    int type;   Initial rospy log level
+    - order_id:     int type;   The namespace/launch_step parameter value to wait for before proceeding (default: None)
+    - throttle:     float type; The number of seconds to wait before sending messages on rospy.DEBUG to inform the user this node is waiting in line to launch (default: 30)
+    - colour:       bool type;  Whether or not to colour the launch message (default: True)
+    - debug:        bool type;  Whether or not to create a subscriber and callback for debugging (default: True)
+    Returns:
+    - bool, True on success (False on Exception)
+    '''
+    try:
+        rospy.init_node(node_name, anonymous=anon, log_level=log_level)
+        mrc.namespace   = namespace
+        mrc.node_name   = node_name
+        mrc.nodespace   = mrc.namespace + '/' + mrc.node_name
+        mrc.ROS_HOME    = ROS_Home(mrc.node_name, mrc.namespace, rate_num)
+        if debug:
+            mrc._debug_cb   = lambda msg: default_debug_cb(mrc, msg)
+            mrc._debug_sub  = rospy.Subscriber(mrc.namespace + '/debug', Debug, mrc._debug_cb, queue_size=1)
+
+        if not order_id is None:
             launch_step = rospy.get_param(mrc.namespace + '/launch_step')
-    if colour:
-        roslogger('\033[96mStarting %s node.\033[0m' % (mrc.node_name), ros=True)
-    else:
-        roslogger('Starting %s node.' % (mrc.node_name), ros=True)
+            while (launch_step < order_id) and (not rospy.is_shutdown()):
+                roslogger('%s waiting in line, position %s.' % (str(mrc.node_name), str(order_id)), LogType.DEBUG, throttle=throttle, ros=True)
+                rospy.sleep(0.2)
+                launch_step = rospy.get_param(mrc.namespace + '/launch_step')
+        if colour:
+            roslogger('\033[96mStarting %s node.\033[0m' % (mrc.node_name), ros=True)
+        else:
+            roslogger('Starting %s node.' % (mrc.node_name), ros=True)
+        return True
+    except:
+        return False
 
 def yaw_from_q(q):
     '''
@@ -407,6 +447,7 @@ def q_from_yaw(yaw):
 class ROS_Param:
     '''
     ROS Parameter Class
+
     Purpose:
     - Wrapper class that handles dynamic updates to ROS parameter values
     '''
@@ -423,8 +464,8 @@ class ROS_Param:
         - name:         string name of parameter to be used on parameter server
         - value:        default value of parameter if unset on parameter server
         - evaluation:   handle to method to check value type
-        - force:        bool to force update of value on parameter server with input value
-        - server:       ROS_Param_Server reference
+        - force:        bool to force update of value on parameter server with input value (defaults to False)
+        - server:       ROS_Param_Server reference (defaults to None)
         Returns:
         None
         '''
@@ -454,6 +495,14 @@ class ROS_Param:
             self.value  = self.evaluation(rospy.get_param(self.name))
 
     def revert(self):
+        '''
+        Undo latest value change if possible
+
+        Inputs:
+        - None
+        Returns:
+        - None
+        '''
         if self.old is None:
             raise Exception('No old value to revert to.')
         self.set_param(self.old)
@@ -461,6 +510,14 @@ class ROS_Param:
         self.old = None
 
     def update(self):
+        '''
+        Update to latest parameter value
+
+        Inputs:
+        - None
+        Returns:
+        - None
+        '''
         try:
             return self.set(rospy.get_param(self.name))
         except:

@@ -35,7 +35,7 @@ class VPRDatasetProcessor: # main ROS class
             cuda:           bool type {default: False}; whether or not to use CUDA for feature type/GPU acceleration
             use_tqdm:       bool type {default: False}; whether or not to display extraction/loading statuses using tqdm
             autosave:       bool type {default: False}; whether or not to automatically save any generated datasets
-            printer:        method type {default: print}; what function to use to display logging messages
+            ros:            bool type {default: True}; whether or not to use rospy logging (requires operation within ROS node scope)
         Returns:
             self
         '''
