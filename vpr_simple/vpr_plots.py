@@ -3,11 +3,10 @@ import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from bokeh.plotting import figure
-from bokeh.palettes import Sunset11, Viridis256
-from bokeh.models import ColumnDataSource, Range1d
+from bokeh.models import ColumnDataSource
 from scipy.spatial.distance import cdist
+from pyaarapsi.core.helper_tools import uint8_list_to_np_ndarray
 import warnings
-import cv2
 
 #   _____       _____  _       _   
 #  |  __ \     |  __ \| |     | |  
@@ -181,7 +180,7 @@ def doCntrFigBokeh():
 
     return {'fig': fig_cntr, 'img': img_plotted, 'in_y': in_yes_plotted, 'out_y': out_yes_plotted, 'in_n': in_no_plotted, 'out_n': out_no_plotted}
 
-def updateCntrFigBokeh(doc_frame, svm_field_msg, state, compress, bridge, new_field):
+def updateCntrFigBokeh(doc_frame, svm_field_msg, state, new_field):
 
     xlims = (np.min(svm_field_msg.data.xlim), np.max(svm_field_msg.data.xlim))
     ylims = (np.min(svm_field_msg.data.ylim), np.max(svm_field_msg.data.ylim))
@@ -206,11 +205,7 @@ def updateCntrFigBokeh(doc_frame, svm_field_msg, state, compress, bridge, new_fi
     if not new_field:
         return
     
-    ros_msg_img = svm_field_msg.image
-    if compress:
-        cv_msg_img = bridge.compressed_imgmsg_to_cv2(ros_msg_img, "passthrough")
-    else:
-        cv_msg_img = bridge.imgmsg_to_cv2(ros_msg_img, "passthrough")
+    cv_msg_img = uint8_list_to_np_ndarray(svm_field_msg.image)
 
     # process image from three layer (rgb) into four layer (rgba) uint8:
     img_rgba = np.array(np.dstack((np.flipud(np.flip(cv_msg_img,2)), np.ones((1000,1000))*255)), dtype=np.uint8)
