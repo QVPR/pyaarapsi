@@ -419,6 +419,7 @@ def init_node(mrc, node_name, namespace, rate_num, anon, log_level, order_id=Non
             roslogger('Starting %s node.' % (mrc.node_name), ros=True)
         return True
     except:
+        roslogger(formatException(), LogType.ERROR)
         return False
 
 def yaw_from_q(q):
