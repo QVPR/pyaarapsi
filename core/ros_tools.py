@@ -10,29 +10,12 @@ from tqdm.auto import tqdm
 from geometry_msgs.msg import Quaternion
 from sensor_msgs.msg import Image, CompressedImage
 
-from aarapsi_robot_pack.msg import ImageLabelStamped, CompressedImageLabelStamped, ImageOdom, CompressedImageOdom, \
-                                   ImageDetails, CompressedImageDetails, MonitorDetails, CompressedMonitorDetails, \
-                                   Debug # Our custom msg structures
+from aarapsi_robot_pack.msg import Debug # Our custom msg structures
 from aarapsi_robot_pack.msg import Heartbeat as Hb
 
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
 from .helper_tools import formatException
 from .enum_tools import enum_name
-
-def get_ROS_message_types_dict(compress=True):
-    '''
-    Helper to allow nodes to easily switch between compressed and uncompressed message structures
-    '''
-    _compress_on = {'topic': "/compressed", 'image': CompressedImage, 'label': CompressedImageLabelStamped, 
-                    'img_dets': CompressedImageDetails, 'mon_dets': CompressedMonitorDetails, 
-                    'data': CompressedImageOdom}
-    _compress_off = {'topic': "", 'image': Image, 'label': ImageLabelStamped, 
-                     'img_dets': ImageDetails, 'mon_dets': MonitorDetails,
-                     'data': ImageOdom}
-    if compress == True:
-        return _compress_on
-    else: 
-        return _compress_off
 
 def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, use_tqdm=True):
     '''
