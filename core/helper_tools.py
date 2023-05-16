@@ -6,6 +6,22 @@ import traceback
 import numpy as np
 import pickle
 
+def angle_wrap(angle_in, mode='DEG'):
+    '''
+    Wrap an angle after addition/subtraction to be the smallest equivalent
+    Inputs:
+    - angle_in: numeric
+    - mode:     str type; either 'DEG' or 'RAD' for degrees or radians
+    Returns:
+    angle-wrapped numeric
+    '''
+    if mode == 'DEG':
+        return ((angle_in + 180.0) % 360) - 180
+    elif mode == 'RAD':
+        return ((angle_in + np.pi) % (np.pi * 2)) - np.pi
+    else:
+        raise Exception('Mode must be either DEG or RAD.')
+
 def np_ndarray_to_uint8_list(ndarray):
     '''
     Convert any numpy ndarray into a list of uint8 representing byte information

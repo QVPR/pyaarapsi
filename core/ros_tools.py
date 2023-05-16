@@ -2,6 +2,7 @@
 import rospy
 import rosbag
 import logging
+import sys
 import numpy as np
 from enum import Enum
 from cv_bridge import CvBridge
@@ -392,7 +393,12 @@ def init_node(mrc, node_name, namespace, rate_num, anon, log_level, order_id=Non
 
         if not order_id is None:
             launch_step = rospy.get_param(mrc.namespace + '/launch_step')
-            while (launch_step < order_id) and (not rospy.is_shutdown()):
+            while (launch_step < order_id):
+                if rospy.is_shutdown():
+                    try:
+                        mrc.exit()
+                    except:
+                        sys.exit()
                 roslogger('%s waiting in line, position %s.' % (str(mrc.node_name), str(order_id)), LogType.DEBUG, throttle=throttle, ros=True)
                 rospy.sleep(0.2)
                 launch_step = rospy.get_param(mrc.namespace + '/launch_step')
