@@ -342,14 +342,14 @@ def doOdomFigBokeh(px, py):
     # Make legend glyphs
     fig_odom.line(x=[xlims[1]*2], y=[ylims[1]*2], color="blue", line_dash='dotted', legend_label="Path")
     fig_odom.cross(x=[xlims[1]*2], y=[ylims[1]*2], color="red", legend_label="Match", size=14)
-    fig_odom.circle( x=[xlims[1]*2], y=[ylims[1]*2], color="green", legend_label="True", size=4,)
+    fig_odom.plus( x=[xlims[1]*2], y=[ylims[1]*2], color="magenta", legend_label="True", size=4)
     
     ref_plotted = fig_odom.line(   x=px, y=py, color="blue", \
                                    alpha=0.5, line_dash='dotted')
-    var_plotted = fig_odom.circle( x=[], y=[], color="blue", size=[], alpha=0.1)
+    var_plotted = fig_odom.circle( x=[], y=[], color="grey", size=[], alpha=0.1)
     seg_plotted = fig_odom.segment(x0=[], y0=[], x1=[], y1=[], line_color="black", line_width=1, alpha=[])
     mat_plotted = fig_odom.cross(  x=[], y=[], color="red", size=12, alpha=[])
-    tru_plotted = fig_odom.circle( x=[], y=[], color="green", size=4, alpha=1.0)
+    tru_plotted = fig_odom.plus( x=[], y=[], color="magenta", size=8, alpha=1.0)
 
     fig_odom.legend.location= (120, 145)
     fig_odom.legend.orientation='horizontal'
