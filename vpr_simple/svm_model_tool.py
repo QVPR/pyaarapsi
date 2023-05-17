@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+from fastdist import fastdist
 from sklearnex import patch_sklearn # Package for speeding up sklearn 
 patch_sklearn()
 
@@ -143,8 +144,10 @@ class SVMModelProcessor: # main ROS class
     
     def generate_svm_mat(self, array_dim=500):
         # Generate decision function matrix:
-        f1          = np.linspace(0, self.model['model']['factors'][0].max(), array_dim)
-        f2          = np.linspace(0, self.model['model']['factors'][1].max(), array_dim)
+        x_lim       = [self.model['model']['factors'][0].min(), self.model['model']['factors'][0].max()]
+        y_lim       = [self.model['model']['factors'][1].min(), self.model['model']['factors'][1].max()]
+        f1          = np.linspace(x_lim[0], x_lim[1], array_dim)
+        f2          = np.linspace(y_lim[0], y_lim[1], array_dim)
         F1, F2      = np.meshgrid(f1, f2)
         Fscaled     = self.model['model']['scaler'].transform(np.vstack([F1.ravel(), F2.ravel()]).T)
         y_zvalues_t = self.model['model']['svm'].decision_function(Fscaled).reshape([array_dim, array_dim])
@@ -154,8 +157,6 @@ class SVMModelProcessor: # main ROS class
         z_contour = ax.contour(F1, F2, y_zvalues_t, levels=[0], colors=['red','blue','green'])
         p_contour = ax.contour(F1, F2, y_zvalues_t, levels=[0.75])
         ax.clabel(p_contour, inline=True, fontsize=8)
-        x_lim = [0, self.model['model']['factors'][0].max()]
-        y_lim = [0, self.model['model']['factors'][1].max()]
         ax.set_xlim(x_lim)
         ax.set_ylim(y_lim)
         ax.set_box_aspect(1)
@@ -186,6 +187,15 @@ class SVMModelProcessor: # main ROS class
         load_cal_ref = self.cal_ref_ip.load_dataset(self.cal_ref_params)
         return (load_cal_qry, load_cal_ref)
 
+    def _create_similarity_matrix(self, ft_ref_arr, ft_qry_arr):
+        # query features must be a 2D array of feature vectors: np.array([[X,X...],[X,X...]])
+        # reference features must be a 2D array of feature vectors
+        Srefref     = fastdist.matrix_to_matrix_distance(ft_ref_arr, ft_ref_arr, fastdist.euclidean, "euclidean")
+        Srefqry     = fastdist.matrix_to_matrix_distance(ft_ref_arr, ft_qry_arr, fastdist.euclidean, "euclidean")
+        self.rmean  = Srefref.mean()
+        self.rstd   = Srefref.std()
+        self.Scal   = (Srefqry - self.rmean)/self.rstd
+
     def _calibrate(self):
         self.print("Calibrating datasets...")
         # Goals: 
@@ -201,7 +211,7 @@ class SVMModelProcessor: # main ROS class
         self.features_calref  = np.array(self.cal_ref_ip.dataset['dataset'][self.feat_type])
         self.features_calref  = self.features_calref[match_min, :]
         self.actual_match_cal = np.arange(len(self.features_calqry))
-        self.Scal, self.rmean, self.rstd    = create_normalised_similarity_matrix(self.features_calref, self.features_calqry)
+        self._create_similarity_matrix(self.features_calref, self.features_calqry)
 
     def _train(self):
         self.print("Performing training...")
