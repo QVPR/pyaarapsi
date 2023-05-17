@@ -333,7 +333,10 @@ class VPRDatasetProcessor: # main ROS class
         if any([fttype == FeatureType.NETVLAD for fttype in fttypes]) and not self.init_netvlad:
             raise Exception("[getFeat] FeatureType.NETVLAD provided but VPRImageProcessor not initialised with init_netvlad=True")
         try:
-            return getFeat(imgs, fttypes, dims, use_tqdm=use_tqdm, nn_hybrid=self.hybridnet, nn_netvlad=self.netvlad)
+            feats = getFeat(imgs, fttypes, dims, use_tqdm=use_tqdm, nn_hybrid=self.hybridnet, nn_netvlad=self.netvlad)
+            if isinstance(feats, list):
+                return [np.array(i/np.max(i), dtype=np.float32) for i in feats]
+            return np.array(feats/np.max(feats), dtype=np.float32)
         except Exception as e:
             raise Exception("[getFeat] Feature vector could not be constructed.\nCode: %s" % (e))
         
