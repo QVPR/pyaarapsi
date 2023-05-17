@@ -8,15 +8,76 @@ from enum import Enum
 from cv_bridge import CvBridge
 from tqdm.auto import tqdm
 
-from geometry_msgs.msg import Quaternion
-from sensor_msgs.msg import Image, CompressedImage
+from geometry_msgs.msg      import Quaternion
+from sensor_msgs.msg        import Image, CompressedImage
 
 from aarapsi_robot_pack.msg import Debug # Our custom msg structures
 from aarapsi_robot_pack.msg import Heartbeat as Hb
 
-from tf.transformations import quaternion_from_euler, euler_from_quaternion
-from .helper_tools import formatException
-from .enum_tools import enum_name
+from tf.transformations     import quaternion_from_euler, euler_from_quaternion
+from .helper_tools          import formatException
+from .enum_tools            import enum_name
+
+class SubscribeListener(rospy.SubscribeListener):
+    '''
+    Wrapper for in-built ROS Class to handle detections of subscribe and unsubscribe events
+    '''
+    def __init__(self):
+        '''
+        Initialisation
+
+        Inputs:
+        - None
+        Returns:
+        - None
+        '''
+        super(SubscribeListener, self).__init__()
+        self.topics = {}
+
+    def peer_subscribe(self, topic_name, topic_publish, peer_publish):
+        '''
+        Overwrite base class method for when a subscribe action is detected
+
+        Inputs:
+        - topic_name:       str type; topic name
+        - topic_publish:    method; unknown purpose
+        - peer_publish:     method; unknown purpose
+        Returns:
+        - None
+        '''
+        roslogger("[SubscribeListener] Subscribed: %s" % topic_name, LogType.DEBUG, ros=True)
+        if topic_name in self.topics.keys():
+            if not (self.topics[topic_name]['sub'] is None):
+                self.topics[topic_name]['sub']()
+
+    def peer_unsubscribe(self, topic_name, num_peers):
+        '''
+        Overwrite base class method for when an unsubscribe action is detected
+
+        Inputs:
+        - topic_name:       str type; topic name
+        - num_peers:        int type; number of new subscribers
+        Returns:
+        - None
+        '''
+        roslogger("[SubscribeListener] Unsubscribed: %s" % topic_name, LogType.DEBUG, ros=True)
+        if topic_name in self.topics.keys():
+            if not (self.topics[topic_name]['unsub'] is None):
+                self.topics[topic_name]['unsub']()
+
+    def add_operation(self, topic_name, method_sub=None, method_unsub=None):
+        '''
+        Hacky method because I don't understand peer_subscribe and peer_unsubscribe...
+        Purpose: add new methods to be called by peer_subscribe and peer_unsubscribe
+
+        Inputs:
+        - topic_name:       str type; topic name to add methods for
+        - method_sub:       method; function to be triggered by subscribe actions
+        - method_unsub:     method; function to be triggered by unsubscribe actions
+        Returns:
+        - None
+        '''
+        self.topics[topic_name] = {'sub': method_sub, 'unsub': method_unsub}
 
 def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, use_tqdm=True):
     '''
@@ -645,7 +706,7 @@ class ROS_Publisher:
     Purpose:
     - Wrapper class for ROS Publishers
     '''
-    def __init__(self, topic, data_class, queue_size=1, latch=False, server=None):
+    def __init__(self, topic, data_class, queue_size=1, latch=False, server=None, subscriber_listener=None):
         '''
         Initialisation
 
@@ -664,8 +725,9 @@ class ROS_Publisher:
         self.server     = server
         self.last_t     = -1
         self.period     = -1
+        self.sublist    = subscriber_listener
 
-        self.publisher  = rospy.Publisher(self.topic, self.data_class, queue_size=self.queue_size, latch=self.latch)
+        self.publisher  = rospy.Publisher(self.topic, self.data_class, queue_size=self.queue_size, latch=self.latch, subscriber_listener=subscriber_listener)
     
     def publish(self, msg):
         '''
@@ -737,20 +799,21 @@ class ROS_Home:
 
         self.hb.set_state(state)
 
-    def add_pub(self, topic, data_class, queue_size=1, latch=False):
+    def add_pub(self, topic, data_class, queue_size=1, latch=False, subscriber_listener=None):
         '''
         Add new ROS_Publisher
 
         Inputs:
-        - topic:        string topic
-        - data_class:   ROS data class
-        - queue_size:   integer number of messages to store for publishing
-        - latch:        bool True/False
+        - topic:                string topic
+        - data_class:           ROS data class
+        - queue_size:           integer number of messages to store for publishing
+        - latch:                bool True/False
+        - subscriber_listener:  rospy.SubscribeListener class
         Returns:
         Generated ROS_Publisher
         '''
 
-        self.pubs[topic] = ROS_Publisher(topic, data_class, queue_size, latch, server=self)
+        self.pubs[topic] = ROS_Publisher(topic, data_class, queue_size, latch, server=self, subscriber_listener=subscriber_listener)
         return self.pubs[topic]
     
 
