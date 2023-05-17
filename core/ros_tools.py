@@ -48,7 +48,7 @@ class SubscribeListener(rospy.SubscribeListener):
         roslogger("[SubscribeListener] Subscribed: %s" % topic_name, LogType.DEBUG, ros=True)
         if topic_name in self.topics.keys():
             if not (self.topics[topic_name]['sub'] is None):
-                self.topics[topic_name]['sub']()
+                self.topics[topic_name]['sub'](topic_name)
 
     def peer_unsubscribe(self, topic_name, num_peers):
         '''
@@ -63,7 +63,7 @@ class SubscribeListener(rospy.SubscribeListener):
         roslogger("[SubscribeListener] Unsubscribed: %s" % topic_name, LogType.DEBUG, ros=True)
         if topic_name in self.topics.keys():
             if not (self.topics[topic_name]['unsub'] is None):
-                self.topics[topic_name]['unsub']()
+                self.topics[topic_name]['unsub'](topic_name)
 
     def add_operation(self, topic_name, method_sub=None, method_unsub=None):
         '''
