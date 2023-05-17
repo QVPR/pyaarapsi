@@ -195,9 +195,9 @@ def updateCntrFigBokeh(doc_frame, svm_field_msg, state, new_field):
         data_to_add = 'in'
     else:
         data_to_add = 'out'
-    if state.data.state == 2:
+    if state.data.gt_state == 1:
         data_to_add += '_y'
-    elif state.data.state == 1:
+    elif state.data.gt_state == 0:
         data_to_add += '_n'
 
     doc_frame.fig_cntr_handles[data_to_add].data_source.stream(to_stream, rollover = 50)
