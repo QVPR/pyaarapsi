@@ -170,39 +170,37 @@ def doCntrFigBokeh():
     img_uint32      = img_rand.view(dtype=np.uint32).reshape(img_rand.shape[:-1])
     img_ds          = ColumnDataSource(data=dict(image=[img_uint32], x=[0], y=[0], dw=[10], dh=[10])) #CDS must contain columns, hence []
     img_plotted     = fig_cntr.image_rgba(image='image', x='x', y='y', dw='dw', dh='dh', source=img_ds)
-    in_yes_plotted  = fig_cntr.circle(x=[], y=[], color="green",  size=8, alpha=0.4, legend_label="True Positive")
-    out_yes_plotted = fig_cntr.circle(x=[], y=[], color="red",    size=8, alpha=0.4, legend_label="True Negative")
-    in_no_plotted   = fig_cntr.circle(x=[], y=[], color="blue",   size=8, alpha=0.4, legend_label="False Positive")
-    out_no_plotted  = fig_cntr.circle(x=[], y=[], color="orange", size=8, alpha=0.4, legend_label="False Negative")
+    fig_cntr.circle(x=[-1000], y=[-1000], fill_color="green",  size=8, alpha=0.4, legend_label="True Positive")
+    fig_cntr.circle(x=[-1000], y=[-1000], fill_color="red",    size=8, alpha=0.4, legend_label="True Negative")
+    fig_cntr.circle(x=[-1000], y=[-1000], fill_color="blue",   size=8, alpha=0.4, legend_label="False Positive")
+    fig_cntr.circle(x=[-1000], y=[-1000], fill_color="orange", size=8, alpha=0.4, legend_label="False Negative")
+    data_plotted = fig_cntr.circle(x=[], y=[], fill_color=[],  size=8, alpha=0.4)
 
     fig_cntr.x_range.range_padding = 0
     fig_cntr.y_range.range_padding = 0
 
-    return {'fig': fig_cntr, 'img': img_plotted, 'in_y': in_yes_plotted, 'out_y': out_yes_plotted, 'in_n': in_no_plotted, 'out_n': out_no_plotted}
+    return {'fig': fig_cntr, 'img': img_plotted, 'data': data_plotted, 'xlims': [0,10], 'ylims': [0,10], 'fttype': ''}
 
-def updateCntrFigBokeh(doc_frame, svm_field_msg, state, new_field):
+def updateCntrFigBokeh(doc_frame, svm_field_msg, state, update_contour):
 
-    xlims = (np.min(svm_field_msg.data.xlim), np.max(svm_field_msg.data.xlim))
-    ylims = (np.min(svm_field_msg.data.ylim), np.max(svm_field_msg.data.ylim))
+    xlims = [svm_field_msg.data.x_min, svm_field_msg.data.x_max, svm_field_msg.data.x_max - svm_field_msg.data.x_min]
+    ylims = [svm_field_msg.data.y_min, svm_field_msg.data.y_max, svm_field_msg.data.y_max - svm_field_msg.data.y_min]
 
-    f1_clip = np.clip(((state.factors[0]-xlims[0])/(xlims[1]-xlims[0]))*100, 0, 100)
-    f2_clip = np.clip(((state.factors[1]-ylims[0])/(ylims[1]-ylims[0]))*100, 0, 100)
-
-    to_stream = dict(x=[f1_clip], y=[f2_clip])
-
-    data_to_add = ''
     if state.mStateBin:
-        data_to_add = 'in'
+        if state.data.gt_state == 1:
+            color = 'green'
+        else:
+            color = 'blue'
     else:
-        data_to_add = 'out'
-    if state.data.gt_state == 1:
-        data_to_add += '_y'
-    elif state.data.gt_state == 0:
-        data_to_add += '_n'
+        if state.data.gt_state == 1:
+            color = 'orange'
+        else:
+            color = 'red'
+    
+    to_stream = dict(x=[state.factors[0]], y=[state.factors[1]], fill_color=[color])
+    doc_frame.fig_cntr_handles['data'].data_source.stream(to_stream, rollover = 100)
 
-    doc_frame.fig_cntr_handles[data_to_add].data_source.stream(to_stream, rollover = 50)
-
-    if not new_field:
+    if not update_contour:
         return
     
     cv_msg_img = uint8_list_to_np_ndarray(svm_field_msg.image)
@@ -212,18 +210,17 @@ def updateCntrFigBokeh(doc_frame, svm_field_msg, state, new_field):
     # collapse into uint32:
     img_uint32 = img_rgba.view(dtype=np.uint32).reshape(img_rgba.shape[:-1])
 
-    doc_frame.fig_cntr_handles['img'].data_source.data = dict(x=[0], y=[0], dw=[100], \
-                                                         dh=[100], image=[img_uint32.copy()])
+    doc_frame.fig_cntr_handles['img'].data_source.data = dict(x=[xlims[0]], y=[ylims[0]], dw=[xlims[2]], \
+                                                         dh=[ylims[2]], image=[img_uint32.copy()])
     
     # clear old data:
-    for key in ['in_y', 'out_y', 'in_n', 'out_n']:
-        doc_frame.fig_cntr_handles[key].data_source.data = dict(x=[], y=[])
+    doc_frame.fig_cntr_handles['data'].data_source.data = dict(x=[], y=[], fill_color=[])
 
     doc_frame.fig_cntr_handles['fig'].title.text         = svm_field_msg.data.title
     doc_frame.fig_cntr_handles['fig'].xaxis.axis_label   = svm_field_msg.data.xlab
     doc_frame.fig_cntr_handles['fig'].yaxis.axis_label   = svm_field_msg.data.ylab
-    doc_frame.fig_cntr_handles['fig'].x_range.update(start=0, end=100, bounds=(0, 100))
-    doc_frame.fig_cntr_handles['fig'].y_range.update(start=0, end=100, bounds=(0, 100))
+    doc_frame.fig_cntr_handles['fig'].x_range.update(start=xlims[0], end=xlims[2], bounds=(xlims[0], xlims[2]))
+    doc_frame.fig_cntr_handles['fig'].y_range.update(start=ylims[0], end=ylims[2], bounds=(ylims[0], ylims[2]))
 
 ##################################################################
 #### Linear & Angular Vector Figure: do and update
