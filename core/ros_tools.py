@@ -78,6 +78,7 @@ class SubscribeListener(rospy.SubscribeListener):
         - None
         '''
         self.topics[topic_name] = {'sub': method_sub, 'unsub': method_unsub}
+        roslogger('New listener added. All current listeners: \n%s' % str(self.topics), LogType.DEBUG, ros=True)
 
 def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, use_tqdm=True):
     '''
