@@ -335,8 +335,8 @@ class VPRDatasetProcessor: # main ROS class
         try:
             feats = getFeat(imgs, fttypes, dims, use_tqdm=use_tqdm, nn_hybrid=self.hybridnet, nn_netvlad=self.netvlad)
             if isinstance(feats, list):
-                return [np.array(i/np.max(i), dtype=np.float32) for i in feats]
-            return np.array(feats/np.max(feats), dtype=np.float32)
+                return [np.array(i, dtype=np.float32) for i in feats]
+            return np.array(feats, dtype=np.float32)
         except Exception as e:
             raise Exception("[getFeat] Feature vector could not be constructed.\nCode: %s" % (e))
         
