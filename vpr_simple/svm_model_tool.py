@@ -142,10 +142,14 @@ class SVMModelProcessor: # main ROS class
         prob            = self.model['model']['svm'].predict_proba(Xrt_scaled)[:,1] # get probability of prediction
         return (y_pred_rt, y_zvalues_rt, [factor1_qry, factor2_qry], prob)
     
-    def generate_svm_mat(self, array_dim=500):
+    def generate_svm_mat(self, lims=None, array_dim=500):
         # Generate decision function matrix:
-        x_lim       = [self.model['model']['factors'][0].min(), self.model['model']['factors'][0].max()]
-        y_lim       = [self.model['model']['factors'][1].min(), self.model['model']['factors'][1].max()]
+        if lims is None:
+            x_lim       = [0, self.model['model']['factors'][0].max()]
+            y_lim       = [0, self.model['model']['factors'][1].max()]
+        else:
+            x_lim       = lims['x']
+            y_lim       = lims['y']
         f1          = np.linspace(x_lim[0], x_lim[1], array_dim)
         f2          = np.linspace(y_lim[0], y_lim[1], array_dim)
         F1, F2      = np.meshgrid(f1, f2)
