@@ -12,8 +12,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from fastdist import fastdist
-from sklearnex import patch_sklearn # Package for speeding up sklearn 
-patch_sklearn()
+#from sklearnex import patch_sklearn # Package for speeding up sklearn (must be run on GPU; TODO)
+#patch_sklearn()
 
 from sklearn import svm
 from sklearn.preprocessing import StandardScaler
