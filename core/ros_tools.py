@@ -5,6 +5,7 @@ import logging
 import sys
 import numpy as np
 from enum import Enum
+import cv2
 from cv_bridge import CvBridge
 from tqdm.auto import tqdm
 
