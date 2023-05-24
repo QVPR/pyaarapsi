@@ -7,7 +7,6 @@ import os
 import imp # TODO: deprecated :-(
 MODELS_DIR = imp.find_module("pyaarapsi")[1] + '/vpr_classes/downloads/'
 
-
 def ask_yesnoexit(question):
     """
     Helper to get yes / no / exit answer from user.

@@ -96,13 +96,13 @@ class NetVLAD_Container:
         else:
             resume_ckpt = self.config['global_params']['resumePath'] + '.pth.tar'
 
-        resume_ckpt = join(MODELS_DIR, resume_ckpt)
-        if not isfile(resume_ckpt):
+        file_path = MODELS_DIR + resume_ckpt
+        if not isfile(file_path):
             download_netvlad_models()
 
-        if isfile(resume_ckpt):
-            self.logger("=> Trying to load checkpoint '{}'".format(resume_ckpt))
-            checkpoint = torch.load(resume_ckpt, map_location=lambda storage, loc: storage)
+        if isfile(file_path):
+            self.logger("=> Trying to load checkpoint '{}'".format(file_path))
+            checkpoint = torch.load(file_path, map_location=lambda storage, loc: storage)
             if bool(self.num_pcs):
                 assert checkpoint['state_dict']['WPCA.0.bias'].shape[0] == int(self.config['global_params']['num_pcs'])
             self.config['global_params']['num_clusters'] = str(checkpoint['state_dict']['pool.centroids'].shape[0])
@@ -119,9 +119,9 @@ class NetVLAD_Container:
                 self.model.pool = torch.nn.DataParallel(self.model.pool)
         
             self.model = self.model.to(self.device)
-            self.logger("=> Successfully loaded checkpoint '{}'".format(resume_ckpt, ))
+            self.logger("=> Successfully loaded checkpoint '{}'".format(file_path))
         else:
-            raise FileNotFoundError("=> no checkpoint found at '{}'".format(resume_ckpt))
+            raise FileNotFoundError("=> no checkpoint found at '{}'".format(file_path))
         self.model.eval()
 
     def destroy(self):
