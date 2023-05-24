@@ -96,10 +96,9 @@ class NetVLAD_Container:
         else:
             resume_ckpt = self.config['global_params']['resumePath'] + '.pth.tar'
 
+        resume_ckpt = join(MODELS_DIR, resume_ckpt)
         if not isfile(resume_ckpt):
-            resume_ckpt = join(MODELS_DIR, resume_ckpt)
-            if not isfile(resume_ckpt):
-                download_netvlad_models()
+            download_netvlad_models()
 
         if isfile(resume_ckpt):
             self.logger("=> Trying to load checkpoint '{}'".format(resume_ckpt))

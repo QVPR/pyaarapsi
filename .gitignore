@@ -11,5 +11,6 @@ src/CMakeLists.txt
 *.pyc
 *.swp
 *.npz
+*.pth.tar
 *.egg-info
 .ipynb_checkpoints
