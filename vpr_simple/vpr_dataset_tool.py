@@ -50,11 +50,11 @@ class VPRDatasetProcessor: # main ROS class
         self.hybridnet      = None
 
         if self.init_netvlad: # If needed, initialise NetVLAD
-            from ..vpr_classes import NetVLAD_Container
+            from ..vpr_classes.netvlad import NetVLAD_Container
             self.netvlad    = NetVLAD_Container(cuda=self.cuda, ngpus=int(self.cuda), logger=self.print)
 
         if self.init_hybridnet: # If needed, initialise HybridNet
-            from ..vpr_classes import HybridNet_Container
+            from ..vpr_classes.hybridnet import HybridNet_Container
             self.hybridnet  = HybridNet_Container(cuda=self.cuda, logger=self.print)
 
         if not (dataset_params is None): # If parameters have been provided:
