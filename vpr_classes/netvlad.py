@@ -12,7 +12,7 @@ import torchvision.transforms as transforms
 import numpy as np
 from PIL import Image
 
-from patchnetvlad.models.models_generic import get_backend, get_model, get_pca_encoding
+from .netvlad_lib     import get_backend, get_model, get_pca_encoding
 from .download_models import PATCHNETVLAD_ROOT_DIR
 from .download_models import download_netvlad_models
 
