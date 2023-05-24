@@ -162,7 +162,8 @@ def doCntrFigBokeh():
 # Set up contour figure
 
     fig_cntr        = figure(title="SVM Contour", width=500, height=500, \
-                            x_axis_label = 'VA Factor', y_axis_label = 'Grad Factor')
+                            x_axis_label = 'VA Factor', y_axis_label = 'Grad Factor', \
+                            x_range = (0, 1), y_range = (0, 1))
 
     #fig_cntr        = disable_toolbar(fig_cntr)
 
@@ -170,14 +171,14 @@ def doCntrFigBokeh():
     img_uint32      = img_rand.view(dtype=np.uint32).reshape(img_rand.shape[:-1])
     img_ds          = ColumnDataSource(data=dict(image=[img_uint32], x=[0], y=[0], dw=[10], dh=[10])) #CDS must contain columns, hence []
     img_plotted     = fig_cntr.image_rgba(image='image', x='x', y='y', dw='dw', dh='dh', source=img_ds)
-    fig_cntr.circle(x=[-1000], y=[-1000], fill_color="green",  size=8, alpha=0.4, legend_label="True Positive")
-    fig_cntr.circle(x=[-1000], y=[-1000], fill_color="red",    size=8, alpha=0.4, legend_label="True Negative")
-    fig_cntr.circle(x=[-1000], y=[-1000], fill_color="blue",   size=8, alpha=0.4, legend_label="False Positive")
-    fig_cntr.circle(x=[-1000], y=[-1000], fill_color="orange", size=8, alpha=0.4, legend_label="False Negative")
+    fig_cntr.circle(x=[-100], y=[-100], fill_color="green",  size=8, alpha=1, legend_label="True Positive")
+    fig_cntr.circle(x=[-100], y=[-100], fill_color="red",    size=8, alpha=1, legend_label="True Negative")
+    fig_cntr.circle(x=[-100], y=[-100], fill_color="blue",   size=8, alpha=1, legend_label="False Positive")
+    fig_cntr.circle(x=[-100], y=[-100], fill_color="orange", size=8, alpha=1, legend_label="False Negative")
     data_plotted = fig_cntr.circle(x=[], y=[], fill_color=[],  size=8, alpha=0.4)
 
-    fig_cntr.x_range.range_padding = 0
-    fig_cntr.y_range.range_padding = 0
+    #fig_cntr.x_range.range_padding = 0 # interferes with setting x_range/y_range in figure()
+    #fig_cntr.y_range.range_padding = 0
 
     return {'fig': fig_cntr, 'img': img_plotted, 'data': data_plotted, 'xlims': [0,10], 'ylims': [0,10], 'fttype': ''}
 
@@ -201,7 +202,7 @@ def updateCntrFigBokeh(doc_frame, svm_field_msg, state, update_contour):
     doc_frame.fig_cntr_handles['data'].data_source.stream(to_stream, rollover = 100)
 
     if not update_contour:
-        return
+        return False
     
     cv_msg_img = uint8_list_to_np_ndarray(svm_field_msg.image)
 
@@ -221,6 +222,8 @@ def updateCntrFigBokeh(doc_frame, svm_field_msg, state, update_contour):
     doc_frame.fig_cntr_handles['fig'].yaxis.axis_label   = svm_field_msg.data.ylab
     doc_frame.fig_cntr_handles['fig'].x_range.update(start=xlims[0], end=xlims[2], bounds=(xlims[0], xlims[2]))
     doc_frame.fig_cntr_handles['fig'].y_range.update(start=ylims[0], end=ylims[2], bounds=(ylims[0], ylims[2]))
+
+    return True
 
 ##################################################################
 #### Linear & Angular Vector Figure: do and update

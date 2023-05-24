@@ -150,6 +150,7 @@ class SVMModelProcessor: # main ROS class
         else:
             x_lim       = lims['x']
             y_lim       = lims['y']
+            
         f1          = np.linspace(x_lim[0], x_lim[1], array_dim)
         f2          = np.linspace(y_lim[0], y_lim[1], array_dim)
         F1, F2      = np.meshgrid(f1, f2)
