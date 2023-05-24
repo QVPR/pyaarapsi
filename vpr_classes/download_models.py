@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 
 import os
-import urllib.request
 import gdown
 import sys
 import os
-import imp # TODO: deprecated.
-PATCHNETVLAD_ROOT_DIR       = imp.find_module("patchnetvlad")[1]
-HYBRIDNET_ROOT_DIR          = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir)), 'HybridNet')
+import imp # TODO: deprecated :-(
+MODELS_DIR = imp.find_module("pyaarapsi")[1] + '/vpr_classes/downloads/'
+
 
 def ask_yesnoexit(question):
     """
@@ -31,8 +30,8 @@ def ask_yesnoexit(question):
             print("Please respond 'yes', 'no', or 'quit'.")
 
 def download_netvlad_models(force=False):
-    global PATCHNETVLAD_ROOT_DIR
-    dest_dir = os.path.join(PATCHNETVLAD_ROOT_DIR, 'pretrained_models')
+    global MODELS_DIR
+    dest_dir = os.path.join(MODELS_DIR)
     print("Path to netvlad model/s:\n\t<%s>" % dest_dir)
     if ask_yesnoexit("Auto-download pretrained NetVLAD model/s (takes around 2GB of space)? (y)es/(n)o/(q)uit."):
         if force:
@@ -91,8 +90,8 @@ def download_netvlad_models(force=False):
         print('Downloaded all pretrained models.')
 
 def download_hybridnet_models(force=False):
-    global HYBRIDNET_ROOT_DIR
-    dest_dir = os.path.join(HYBRIDNET_ROOT_DIR, 'pretrained_models')
+    global MODELS_DIR
+    dest_dir = os.path.join(MODELS_DIR)
     print("Path to hybridnet model/s:\n\t<%s>" % dest_dir)
     if ask_yesnoexit("Auto-download pretrained HybridNet model/s (takes around 300MB of space)? (y)es/(n)o/(q)uit."):
         
@@ -108,7 +107,7 @@ def download_hybridnet_models(force=False):
 def download_all_models(force=False):
     
     download_netvlad_models(force)
-    print("Path to hybridnet model/s:\n\t<%s>" % os.path.join(HYBRIDNET_ROOT_DIR, 'pretrained_models'))
+    print("Path to hybridnet model/s:\n\t<%s>" % os.path.join(MODELS_DIR))
     download_hybridnet_models(force)
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ import torch
 from tqdm.auto import tqdm
 import cv2
 from PIL import Image
-from .download_models import download_hybridnet_models, HYBRIDNET_ROOT_DIR
+from .download_models import download_hybridnet_models, MODELS_DIR
 
 class PlaceDataset(torch.utils.data.Dataset):
     def __init__(self, image_data, dims=None):
@@ -79,17 +79,17 @@ class HybridNet_Container:
 
     def load(self):
 
-        model_file_path = os.path.join(HYBRIDNET_ROOT_DIR, 'pretrained_models/HybridNet.caffemodel')
+        model_file_path = os.path.join(MODELS_DIR, 'HybridNet.caffemodel')
         if not isfile(model_file_path):
             download_hybridnet_models()
         self.logger('Loading HybridNet model')
 
-        self.net = caffe.Net(os.path.join(HYBRIDNET_ROOT_DIR,'deploy.prototxt'), model_file_path, caffe.TEST)
+        self.net = caffe.Net(os.path.join(MODELS_DIR,'deploy.prototxt'), model_file_path, caffe.TEST)
 
         # input preprocessing: 'data' is the name of the input blob == net.inputs[0]
         self.transformer = caffe.io.Transformer({'data': self.net.blobs['data'].data.shape})
         self.transformer.set_transpose('data', (2,0,1))
-        self.transformer.set_mean('data', np.load(os.path.join(HYBRIDNET_ROOT_DIR,'amosnet_mean.npy')).mean(1).mean(1)) # mean pixel
+        self.transformer.set_mean('data', np.load(os.path.join(MODELS_DIR, 'amosnet_mean.npy')).mean(1).mean(1)) # mean pixel
         self.transformer.set_raw_scale('data', 255)  # the reference model operates on images in [0,255] range instead of [0,1]
         self.transformer.set_channel_swap('data', (2,1,0))  # the reference model has channels in BGR order instead of RGB
         self.net.blobs['data'].reshape(1,3,227,227)

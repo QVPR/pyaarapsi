@@ -13,8 +13,7 @@ import numpy as np
 from PIL import Image
 
 from .netvlad_lib     import get_backend, get_model, get_pca_encoding
-from .download_models import PATCHNETVLAD_ROOT_DIR
-from .download_models import download_netvlad_models
+from .download_models import download_netvlad_models, MODELS_DIR
 
 class PlaceDataset(torch.utils.data.Dataset):
     def __init__(self, image_data, transform, dims=None):
@@ -60,7 +59,7 @@ class PlaceDataset(torch.utils.data.Dataset):
 class NetVLAD_Container:
     def __init__(self, logger=print, cuda=False, ngpus=0, 
                  imw=640, imh=480, batchsize=5, cachebatchsize=5, num_pcs=4096, 
-                 threads=0, resumepath='./pretrained_models/mapillary_WPCA', 
+                 threads=0, resumepath='/mapillary_WPCA', 
                  load=True, prep=True):
         
         self.cuda           = cuda
@@ -97,9 +96,8 @@ class NetVLAD_Container:
         else:
             resume_ckpt = self.config['global_params']['resumePath'] + '.pth.tar'
 
-        # backup: try whether resume_ckpt is relative to PATCHNETVLAD_ROOT_DIR
         if not isfile(resume_ckpt):
-            resume_ckpt = join(PATCHNETVLAD_ROOT_DIR, resume_ckpt)
+            resume_ckpt = join(MODELS_DIR, resume_ckpt)
             if not isfile(resume_ckpt):
                 download_netvlad_models()
 
