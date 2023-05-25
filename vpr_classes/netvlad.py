@@ -143,6 +143,9 @@ class NetVLAD_Container:
     def prep(self):
     # Somehow, running this much code 'accelerates' the feature_query_extract
     # This function when ran first typically takes about 1 second
+        torch.cuda.empty_cache()
+        torch.nn.functional.conv2d(torch.zeros(32, 32, 32, 32, device=self.device), torch.zeros(32, 32, 32, 32, device=self.device))
+
         input_data = self.transform(Image.fromarray(np.zeros((1,1,3), dtype=np.uint8)))
         with torch.no_grad():
             input_data      = input_data.unsqueeze(dim=0).to(self.device)
