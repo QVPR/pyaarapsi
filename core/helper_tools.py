@@ -84,17 +84,20 @@ class Timer:
                 pass
         print(string)
 
-def formatException():
+def formatException(dump=False):
     # https://www.adamsmith.haus/python/answers/how-to-retrieve-the-file,-line-number,-and-type-of-an-exception-in-python
     exception_type, e, exception_traceback = sys.exc_info()
     filename = exception_traceback.tb_frame.f_code.co_filename
     line_number = exception_traceback.tb_lineno
     traceback_list = traceback.extract_tb(exception_traceback)
-    traceback_string = ""
-    for c, i in enumerate(traceback_list):
-        traceback_string += "%s [%s]" % (str(i[2]), str(i[1]))
-        if c < len(traceback_list) - 1:
-            traceback_string += " >> "
+    if dump:
+        traceback_string = str(traceback_list)
+    else:
+        traceback_string = ""
+        for c, i in enumerate(traceback_list):
+            traceback_string += "%s [%s]" % (str(i[2]), str(i[1]))
+            if c < len(traceback_list) - 1:
+                traceback_string += " >> "
     return "Exception Caught.\n\tDetails: %s %s\n\tFile %s [Line %s]\n\tTrace: %s" \
         % (str(exception_type), str(e), str(filename), str(line_number), traceback_string)
 
