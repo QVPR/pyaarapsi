@@ -91,7 +91,7 @@ def formatException(dump=False):
     line_number = exception_traceback.tb_lineno
     traceback_list = traceback.extract_tb(exception_traceback)
     if dump:
-        traceback_string = str(traceback_list)
+        traceback_string = str(traceback.format_exc())
     else:
         traceback_string = ""
         for c, i in enumerate(traceback_list):
