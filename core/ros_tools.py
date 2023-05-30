@@ -466,9 +466,9 @@ def init_node(mrc, node_name, namespace, rate_num, anon, log_level, order_id=Non
                 rospy.sleep(0.2)
                 launch_step = rospy.get_param(mrc.namespace + '/launch_step')
         if colour:
-            roslogger('\033[96mStarting %s node.\033[0m' % (mrc.node_name), ros=True)
+            roslogger('\033[96mStarting %s node.\033[0m' % (mrc.node_name), ros=True, no_stamp=True)
         else:
-            roslogger('Starting %s node.' % (mrc.node_name), ros=True)
+            roslogger('Starting %s node.' % (mrc.node_name), ros=True, no_stamp=True)
         return True
     except:
         roslogger(formatException(), LogType.ERROR)
