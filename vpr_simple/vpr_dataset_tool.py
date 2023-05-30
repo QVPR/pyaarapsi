@@ -11,6 +11,8 @@ from ..core.ros_tools import process_bag, LogType, roslogger
 from ..core.helper_tools import formatException
 from ..core.file_system_tools import scan_directory
 from .vpr_helpers import *
+from ..vpr_classes.netvlad import NetVLAD_Container
+from ..vpr_classes.hybridnet import HybridNet_Container
 
 class VPRDatasetProcessor: # main ROS class
     def __init__(self, dataset_params: dict, try_gen=True, init_netvlad=False, init_hybridnet=False, cuda=False, use_tqdm=False, autosave=False, ros=True):
@@ -50,11 +52,9 @@ class VPRDatasetProcessor: # main ROS class
         self.hybridnet      = None
 
         if self.init_netvlad: # If needed, initialise NetVLAD
-            from ..vpr_classes.netvlad import NetVLAD_Container
             self.netvlad    = NetVLAD_Container(cuda=self.cuda, ngpus=int(self.cuda), logger=self.print)
 
         if self.init_hybridnet: # If needed, initialise HybridNet
-            from ..vpr_classes.hybridnet import HybridNet_Container
             self.hybridnet  = HybridNet_Container(cuda=self.cuda, logger=self.print)
 
         if not (dataset_params is None): # If parameters have been provided:
