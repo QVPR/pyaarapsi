@@ -26,7 +26,7 @@ def ask_yesnoexit(question):
         elif choice in _exit:
             sys.exit()
         else:
-            print("Please respond 'yes', 'no', or 'quit'.")
+            print("Please respond '(y)es', '(n)o', or '(q)uit'.")
 
 def download_netvlad_models(force=False):
     global MODELS_DIR
