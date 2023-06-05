@@ -114,12 +114,12 @@ class VPRDatasetProcessor: # main ROS class
         Returns:
             None
         '''
-        if (not self.netvlad is None) and netvlad:
+        if netvlad:
             if isinstance(self.netvlad, NetVLAD_Container):
                 self.netvlad.destroy()
             self.netvlad = processor.netvlad
             self.init_netvlad = True
-        if (not self.hybridnet is None) and hybridnet:
+        if hybridnet:
             if isinstance(self.hybridnet, HybridNet_Container):
                 self.hybridnet.destroy()
             self.hybridnet = processor.hybridnet
