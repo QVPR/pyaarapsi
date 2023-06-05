@@ -6,6 +6,16 @@ import traceback
 import numpy as np
 import pickle
 
+def try_load_var(path, var_name):
+    try:
+        return np.load(path+"/"+var_name+".npz", allow_pickle=True)[var_name]
+    except FileNotFoundError as e:
+        print(var_name + " missing.")
+        return None
+
+def save_var(path, var, var_name):
+    np.savez(path+"/"+var_name, **{var_name: var})
+
 def angle_wrap(angle_in, mode='DEG'):
     '''
     Wrap an angle after addition/subtraction to be the smallest equivalent
