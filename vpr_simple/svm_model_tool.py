@@ -96,7 +96,7 @@ class SVMModelProcessor: # main ROS class
         self.print("[save_model] Saved file, params to %s, %s" % (full_file_path, full_param_path))
         return self
 
-    def load_model(self, model_params):
+    def load_model(self, model_params, try_gen=False):
     # load via search for param match
         self.svm_dbp = model_params['svm_dbp']
         self.print("[load_model] Loading model.")
@@ -110,6 +110,9 @@ class SVMModelProcessor: # main ROS class
                     return True
                 except:
                     self._fix(name)
+        if try_gen:
+            self.generate_model(**model_params)
+            return True
         return False
     
     def swap(self, model_params, generate=False, allow_false=True):
