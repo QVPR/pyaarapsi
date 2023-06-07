@@ -214,8 +214,9 @@ class VPRDatasetProcessor: # main ROS class
             sub_params['ft_types']  = [ft_type]
             sub_dataset             = dict(params=sub_params, dataset=sub_data)
 
-            if self._check(params=sub_params):
-                self.print("[save_dataset] File exists with identical parameters, skipping.")
+            file_ = self._check(params=sub_params)
+            if file_:
+                self.print("[save_dataset] File exists with identical parameters (%s); skipping save." % file_)
                 continue
             
             np.savez(full_file_path, **sub_dataset)

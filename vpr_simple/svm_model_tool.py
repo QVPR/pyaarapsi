@@ -21,7 +21,7 @@ from sklearn.preprocessing import StandardScaler
 from ..core.file_system_tools import scan_directory
 from ..core.ros_tools         import roslogger, LogType
 from .vpr_dataset_tool        import VPRDatasetProcessor
-from ..vpred import *
+from ..vpred                  import find_va_factor, find_grad_factor, find_prediction_performance_metrics
 
 class SVMModelProcessor: # main ROS class
     def __init__(self, ros=False):
@@ -68,8 +68,9 @@ class SVMModelProcessor: # main ROS class
         dir = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp
         Path(dir).mkdir(parents=False, exist_ok=True)
         Path(dir+"/params").mkdir(parents=False, exist_ok=True)
-        if self._check():
-            self.print("[save_model] File exists with identical parameters: %s")
+        file_ = self._check()
+        if file_:
+            self.print("[save_model] File exists with identical parameters (%s); skipping save." % file_)
             return self
         
         # Ensure file name is of correct format, generate if not provided
@@ -160,6 +161,7 @@ class SVMModelProcessor: # main ROS class
         Fscaled     = self.model['model']['scaler'].transform(np.vstack([F1.ravel(), F2.ravel()]).T)
         y_zvalues_t = self.model['model']['svm'].decision_function(Fscaled).reshape([array_dim, array_dim])
 
+        # generate matplotlib contour of decision boundary:
         fig, ax = plt.subplots()
         ax.imshow(y_zvalues_t, origin='lower',extent=[0, f1[-1], 0, f2[-1]], aspect='auto')
         z_contour = ax.contour(F1, F2, y_zvalues_t, levels=[0], colors=['red','blue','green'])
@@ -218,13 +220,11 @@ class SVMModelProcessor: # main ROS class
         self.features_calqry  = np.array(self.cal_qry_ip.dataset['dataset'][self.feat_type])
         self.features_calref  = np.array(self.cal_ref_ip.dataset['dataset'][self.feat_type])
         self.features_calref  = self.features_calref[match_min, :]
-        self.actual_match_cal = np.arange(len(self.features_calqry))
+
         self._create_similarity_matrix(self.features_calref, self.features_calqry)
 
     def _train(self):
         self.print("Performing training...")
-        # We define the acceptable tolerance for a 'correct' match as +/- one image frame:
-        self.tolerance      = 10
 
         # Extract factors that describe the "sharpness" of distance vectors
         self.factor1_cal    = find_va_factor(self.Scal)
@@ -236,7 +236,10 @@ class SVMModelProcessor: # main ROS class
         self.Xcal_scaled    = self.scaler.fit_transform(self.Xcal)
         
         # Form desired output vector
-        self.y_cal          = find_y(self.Scal, self.actual_match_cal, self.tolerance)
+        gt_indices          = np.arange( len(self.features_calqry) ) # this is only true because of _calibrate
+        match_indices       = np.argmin(self.Scal, axis=0)
+        frame_error         = np.min(np.array([-1 * abs(match_indices - gt_indices) + len(match_indices), abs(match_indices - gt_indices)]), axis=0)
+        self.y_cal          = frame_error <= 10 # +-10 frames
 
         # Define and train the Support Vector Machine
         self.svm_model      = svm.SVC(kernel='rbf', C=1, gamma='scale', class_weight='balanced', probability=True)
@@ -264,7 +267,10 @@ class SVMModelProcessor: # main ROS class
         params_dict         = dict(ref=self.cal_ref_params, qry=self.cal_qry_params, \
                                     npz_dbp=self.npz_dbp, bag_dbp=self.bag_dbp, svm_dbp=self.svm_dbp)
         model_dict          = dict(svm=self.svm_model, scaler=self.scaler, rstd=self.rstd, rmean=self.rmean, factors=[self.factor1_cal, self.factor2_cal])
-        del self.model
+        try:
+            del self.model
+        except:
+            pass
         self.model          = dict(params=params_dict, model=model_dict)
         self.model_ready    = True
     
