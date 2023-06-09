@@ -397,16 +397,28 @@ class VPRDatasetProcessor: # main ROS class
     
     def destroy(self):
         if self.init_hybridnet:
-            self.hybridnet.destroy()
-            del self.hybridnet
+            try:
+                self.hybridnet.destroy()
+                del self.hybridnet
+            except:
+                pass
         if self.init_netvlad:
-            self.netvlad.destroy()
-            del self.netvlad
+            try:
+                self.netvlad.destroy()
+                del self.netvlad
+            except:
+                pass
         del self.dataset_ready
         del self.cuda
         del self.use_tqdm
         del self.autosave
         del self.init_netvlad
         del self.init_hybridnet
-        del self.print
-        del self.dataset
+        try:
+            del self.dataset
+        except:
+            pass
+        try:
+            del self
+        except:
+            pass
