@@ -418,7 +418,7 @@ def default_debug_cb(mrc, msg):
     except:
         roslogger("This container has no debug_cb(msg) method. Instruction Code: %s" % (str(msg.instruction)), LogType.DEBUG, ros=True, name=msg.node_name)
 
-def init_node(mrc, node_name, namespace, rate_num, anon, log_level, order_id=None, throttle=30, colour=True, debug=True):
+def init_node(mrc, node_name, namespace, rate_num, anon, log_level, order_id=None, throttle=30, colour=True, debug=True, disable_signals=False):
     '''
     Super-wrapper for rospy
 
@@ -445,7 +445,7 @@ def init_node(mrc, node_name, namespace, rate_num, anon, log_level, order_id=Non
     - bool, True on success (False on Exception)
     '''
     try:
-        rospy.init_node(node_name, anonymous=anon, log_level=log_level)
+        rospy.init_node(node_name, anonymous=anon, log_level=log_level, disable_signals=disable_signals)
         mrc.namespace   = namespace
         mrc.node_name   = node_name
         mrc.nodespace   = mrc.namespace + '/' + mrc.node_name

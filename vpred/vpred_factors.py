@@ -240,8 +240,9 @@ def find_linear_factors(S, rXY, mXY, mInd, cutoff=10):
         factor_2[q] = corr_coef
     return factor_1, factor_2
 
-def find_factors(factors_in, _S, mXY, rXY, mInd, cutoff=2, init_pos=np.array([0,0]), all=False):
+def find_factors(factors_in, _S, rXY, mInd, cutoff=2, init_pos=np.array([0,0]), all=False):
     seq      = (_S - np.min(_S, 0)) / (np.max(_S, 0) - np.min(_S, 0))
+    mXY      = rXY[mInd, :]
     va       = None
     grad     = None
     lgrad    = None

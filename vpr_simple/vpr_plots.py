@@ -171,14 +171,13 @@ def doCntrFigBokeh():
     img_uint32      = img_rand.view(dtype=np.uint32).reshape(img_rand.shape[:-1])
     img_ds          = ColumnDataSource(data=dict(image=[img_uint32], x=[0], y=[0], dw=[10], dh=[10])) #CDS must contain columns, hence []
     img_plotted     = fig_cntr.image_rgba(image='image', x='x', y='y', dw='dw', dh='dh', source=img_ds)
+    # Generate legend entries:
     fig_cntr.circle(x=[-100], y=[-100], fill_color="green",  size=8, alpha=1, legend_label="True Positive")
     fig_cntr.circle(x=[-100], y=[-100], fill_color="red",    size=8, alpha=1, legend_label="True Negative")
     fig_cntr.circle(x=[-100], y=[-100], fill_color="blue",   size=8, alpha=1, legend_label="False Positive")
     fig_cntr.circle(x=[-100], y=[-100], fill_color="orange", size=8, alpha=1, legend_label="False Negative")
+    
     data_plotted = fig_cntr.circle(x=[], y=[], fill_color=[],  size=8, alpha=0.4)
-
-    #fig_cntr.x_range.range_padding = 0 # interferes with setting x_range/y_range in figure()
-    #fig_cntr.y_range.range_padding = 0
 
     return {'fig': fig_cntr, 'img': img_plotted, 'data': data_plotted, 'xlims': [0,10], 'ylims': [0,10], 'fttype': ''}
 

@@ -21,7 +21,7 @@ from sklearn.preprocessing import StandardScaler
 from ..core.file_system_tools import scan_directory
 from ..core.ros_tools         import roslogger, LogType
 from .vpr_dataset_tool        import VPRDatasetProcessor
-from ..vpred                  import find_va_factor, find_grad_factor, find_prediction_performance_metrics
+from ..vpred                  import find_factors, find_prediction_performance_metrics
 
 class SVMModelProcessor: # main ROS class
     def __init__(self, ros=False):
@@ -38,23 +38,23 @@ class SVMModelProcessor: # main ROS class
     def print(self, text, logtype=LogType.INFO, throttle=0):
         roslogger(text, logtype, throttle=throttle, ros=self.ros)
             
-    def generate_model(self, ref, qry, bag_dbp, npz_dbp, svm_dbp, save=True):
+    def generate_model(self, ref, qry, svm, bag_dbp, npz_dbp, svm_dbp, save=True):
         assert ref['img_dims'] == qry['img_dims'], "Reference and query metadata must be the same."
         assert ref['ft_types'] == qry['ft_types'], "Reference and query metadata must be the same."
         # store for access in saving operation:
         self.bag_dbp            = bag_dbp
         self.npz_dbp            = npz_dbp
         self.svm_dbp            = svm_dbp
-        self.cal_qry_params     = qry
-        self.cal_ref_params     = ref 
+        self.qry_params         = qry
+        self.ref_params         = ref 
+        self.svm_params         = svm
         self.img_dims           = ref['img_dims']
         self.feat_type          = ref['ft_types'][0]
         self.model_ready        = False
 
         # generate:
-        load_statuses = self._load_cal_data() # [qry, ref]
+        load_statuses = self._load_training_data() # [qry, ref]
         if all(load_statuses):
-            self._calibrate()
             self._train()
             self._make()
             self.model_ready    = True
@@ -132,19 +132,17 @@ class SVMModelProcessor: # main ROS class
             raise Exception('Model failed to load.')
         return False
     
-    def predict(self, dvc):
+    def predict(self, dvc, mInd):
         if not self.model_ready:
             raise Exception("Model not loaded in system. Either call 'generate_model' or 'load_model' before using this method.")
-        sequence        = (dvc - self.model['model']['rmean']) / self.model['model']['rstd'] # normalise using parameters from the reference set
-        factor1_qry     = find_va_factor(np.c_[sequence])[0]
-        factor2_qry     = find_grad_factor(np.c_[sequence])[0]
-        # rt for realtime; still don't know what 'X' and 'y' mean! TODO
-        Xrt             = np.c_[factor1_qry, factor2_qry]      # put the two factors into a 2-column vector
-        Xrt_scaled      = self.model['model']['scaler'].transform(Xrt)  # perform scaling using same parameters as calibration set
-        y_zvalues_rt    = self.model['model']['svm'].decision_function(Xrt_scaled)[0] # 'z' value; not probability but "related"...
-        y_pred_rt       = self.model['model']['svm'].predict(Xrt_scaled)[0] # Make the prediction: predict whether this match is good or bad
-        prob            = self.model['model']['svm'].predict_proba(Xrt_scaled)[:,1] # get probability of prediction
-        return (y_pred_rt, y_zvalues_rt, [factor1_qry, factor2_qry], prob)
+        factor1_qry, factor2_qry = find_factors(self.model['params']['svm']['factors'], dvc, self.ref_odom[:, 0:2], mInd)
+
+        X          = np.c_[factor1_qry, factor2_qry]                           # put the two factors into a 2-column vector
+        X_scaled   = self.model['model']['scaler'].transform(X)                # perform scaling using same parameters as calibration set
+        zvalues    = self.model['model']['svm'].decision_function(X_scaled)[0] # 'z' value; not probability but "related"...
+        pred       = self.model['model']['svm'].predict(X_scaled)[0]           # Make the prediction: predict whether this match is good or bad
+        prob       = self.model['model']['svm'].predict_proba(X_scaled)[:,1]   # get probability of prediction
+        return (pred, zvalues, [factor1_qry[0], factor2_qry[0]], prob)
     
     def generate_svm_mat(self, lims=None, array_dim=500):
         # Generate decision function matrix:
@@ -189,68 +187,63 @@ class SVMModelProcessor: # main ROS class
                 return name
         return ""
 
-    def _load_cal_data(self):
+    def _load_training_data(self):
         # Process calibration data (only needs to be done once)
         self.print("Loading calibration query dataset...", LogType.DEBUG)
-        load_cal_qry = self.cal_qry_ip.load_dataset(self.cal_qry_params)
+        load_qry = self.cal_qry_ip.load_dataset(self.qry_params)
         self.print("Loading calibration reference dataset...", LogType.DEBUG)
-        load_cal_ref = self.cal_ref_ip.load_dataset(self.cal_ref_params)
-        return (load_cal_qry, load_cal_ref)
-
-    def _create_similarity_matrix(self, ft_ref_arr, ft_qry_arr):
-        # query features must be a 2D array of feature vectors: np.array([[X,X...],[X,X...]])
-        # reference features must be a 2D array of feature vectors
-        Srefref     = fastdist.matrix_to_matrix_distance(ft_ref_arr, ft_ref_arr, fastdist.euclidean, "euclidean")
-        Srefqry     = fastdist.matrix_to_matrix_distance(ft_ref_arr, ft_qry_arr, fastdist.euclidean, "euclidean")
-        self.rmean  = Srefref.mean()
-        self.rstd   = Srefref.std()
-        self.Scal   = (Srefqry - self.rmean)/self.rstd
-
-    def _calibrate(self):
-        self.print("Calibrating datasets...")
-        # Goals: 
-        # 1. Reshape calref to match length of calqry
-        # 2. Reorder calref to match 1:1 indices with calqry
-        calqry_xy = np.transpose(np.stack((self.cal_qry_ip.dataset['dataset']['px'], self.cal_qry_ip.dataset['dataset']['py'])))
-        calref_xy = np.transpose(np.stack((self.cal_ref_ip.dataset['dataset']['px'], self.cal_ref_ip.dataset['dataset']['py'])))
-        match_mat = np.sum((calqry_xy[:,np.newaxis] - calref_xy)**2, 2)
-        match_min = np.argmin(match_mat, 1) # should have the same number of rows as calqry (but as a vector)
-        calref_xy = calref_xy[match_min, :]
-
-        self.features_calqry  = np.array(self.cal_qry_ip.dataset['dataset'][self.feat_type])
-        self.features_calref  = np.array(self.cal_ref_ip.dataset['dataset'][self.feat_type])
-        self.features_calref  = self.features_calref[match_min, :]
-
-        self._create_similarity_matrix(self.features_calref, self.features_calqry)
+        load_ref = self.cal_ref_ip.load_dataset(self.ref_params)
+        return (load_qry, load_ref)
 
     def _train(self):
         self.print("Performing training...")
 
-        # Extract factors that describe the "sharpness" of distance vectors
-        self.factor1_cal    = find_va_factor(self.Scal)
-        self.factor2_cal    = find_grad_factor(self.Scal)
+        # Define SVM:
+        self.svm_model      = svm.SVC(kernel='rbf', C=1, gamma='scale', class_weight='balanced', probability=True)
+        self.scaler         = StandardScaler()
+
+        # Generate details:
+        self.S_train = fastdist.matrix_to_matrix_distance(  
+            self.cal_ref_ip.dataset['dataset'][self.feat_type], \
+            self.cal_qry_ip.dataset['dataset'][self.feat_type], \
+            fastdist.euclidean, "euclidean")
+        
+        self.ref_odom       = np.stack([self.cal_ref_ip.dataset['dataset']['px'], self.cal_ref_ip.dataset['dataset']['py']], 1)
+        self.qry_odom       = np.stack([self.cal_qry_ip.dataset['dataset']['px'], self.cal_qry_ip.dataset['dataset']['py']], 1)
+
+        euc_dists_train = fastdist.matrix_to_matrix_distance(
+            self.ref_odom[:, 0:2],
+            self.qry_odom[:, 0:2],
+            fastdist.euclidean, "euclidean")
+        
+        true_inds_train     = np.argmin(euc_dists_train, axis=0)
+        match_inds_train    = np.argmin(self.S_train, axis=0)
+        error_inds_train    = np.min(np.array([-1 * abs(match_inds_train - true_inds_train) + len(match_inds_train), 
+                                               abs(match_inds_train - true_inds_train)]), axis=0)
+        # error_dist_train    = np.sqrt( \
+        #                             np.square(self.ref_odom[match_inds_train,0] - self.ref_odom[true_inds_train,0]) + \
+        #                             np.square(self.ref_odom[match_inds_train,1] - self.ref_odom[true_inds_train,1]) \
+        #                             )
+        
+        self.y_train        = error_inds_train <= 10 # +-10 frames
+
+        # Extract factors:
+        self.factor1_train, self.factor2_train = find_factors(self.svm_params['factors'], self.S_train, self.ref_odom[:, 0:2], np.argmin(self.S_train, axis=0))
 
         # Form input vector
-        self.Xcal           = np.c_[self.factor1_cal, self.factor2_cal]
-        self.scaler         = StandardScaler()
-        self.Xcal_scaled    = self.scaler.fit_transform(self.Xcal)
-        
-        # Form desired output vector
-        gt_indices          = np.arange( len(self.features_calqry) ) # this is only true because of _calibrate
-        match_indices       = np.argmin(self.Scal, axis=0)
-        frame_error         = np.min(np.array([-1 * abs(match_indices - gt_indices) + len(match_indices), abs(match_indices - gt_indices)]), axis=0)
-        self.y_cal          = frame_error <= 10 # +-10 frames
+        self.X_train        = np.c_[self.factor1_train, self.factor2_train]
+        self.X_train_scaled = self.scaler.fit_transform(self.X_train)
 
         # Define and train the Support Vector Machine
-        self.svm_model      = svm.SVC(kernel='rbf', C=1, gamma='scale', class_weight='balanced', probability=True)
-        self.svm_model.fit(self.Xcal_scaled, self.y_cal)
+        self.svm_model.fit(self.X_train_scaled, self.y_train)
 
         # Make predictions on calibration set to assess performance
-        self.y_pred_cal     = self.svm_model.predict(self.Xcal_scaled)
-        self.y_zvalues_cal  = self.svm_model.decision_function(self.Xcal_scaled)
+        self.pred_train     = self.svm_model.predict(self.X_train_scaled)
+        self.zvalues_train  = self.svm_model.decision_function(self.X_train_scaled)
+        self.prob_train     = self.svm_model.predict_proba(self.X_train_scaled)[:,1]
 
         [precision, recall, num_tp, num_fp, num_tn, num_fn] = \
-            find_prediction_performance_metrics(self.y_pred_cal, self.y_cal, verbose=False)
+            find_prediction_performance_metrics(self.pred_train, self.y_train, verbose=False)
         self.print('Performance of prediction on calibration set:\nTP={0}, TN={1}, FP={2}, FN={3}\nprecision={4:3.1f}% recall={5:3.1f}%\n' \
                    .format(num_tp,num_tn,num_fp,num_fn,precision*100,recall*100))
 
@@ -264,9 +257,9 @@ class SVMModelProcessor: # main ROS class
         return models
 
     def _make(self):
-        params_dict         = dict(ref=self.cal_ref_params, qry=self.cal_qry_params, \
+        params_dict         = dict(ref=self.ref_params, qry=self.qry_params, svm=self.svm_params,\
                                     npz_dbp=self.npz_dbp, bag_dbp=self.bag_dbp, svm_dbp=self.svm_dbp)
-        model_dict          = dict(svm=self.svm_model, scaler=self.scaler, rstd=self.rstd, rmean=self.rmean, factors=[self.factor1_cal, self.factor2_cal])
+        model_dict          = dict(svm=self.svm_model, scaler=self.scaler, factors=[self.factor1_train, self.factor2_train])
         try:
             del self.model
         except:
@@ -288,6 +281,15 @@ class SVMModelProcessor: # main ROS class
             self.print("Purged: %s" % (self.svm_dbp + '/params/' + model_name), LogType.DEBUG)
         except:
             pass
+    
+    def _load_ips(self):
+        self.print("Loading calibration query dataset...", LogType.DEBUG)
+        self.cal_qry_ip.load_dataset(self.model['params']['qry'])
+        self.print("Loading calibration reference dataset...", LogType.DEBUG)
+        self.cal_ref_ip.load_dataset(self.model['params']['ref'])
+
+        self.ref_odom    = np.stack([self.cal_ref_ip.dataset['dataset']['px'], self.cal_ref_ip.dataset['dataset']['py']], 1)
+        self.qry_odom    = np.stack([self.cal_qry_ip.dataset['dataset']['px'], self.cal_qry_ip.dataset['dataset']['py']], 1)
 
     def _load(self, model_name):
     # when loading objects inside dicts from .npz files, must extract with .item() each object
@@ -296,6 +298,7 @@ class SVMModelProcessor: # main ROS class
         raw_model = np.load(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp + '/' + model_name, allow_pickle=True)
         self.model_ready = False
         del self.model
-        self.model = dict(model=raw_model['model'].item(), params=raw_model['params'].item())
+        self.model       = dict(model=raw_model['model'].item(), params=raw_model['params'].item())
+        self._load_ips()
         self.model_ready = True
 
