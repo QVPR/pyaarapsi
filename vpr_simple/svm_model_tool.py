@@ -18,10 +18,13 @@ from fastdist import fastdist
 from sklearn import svm
 from sklearn.preprocessing import StandardScaler
 
-from ..core.file_system_tools import scan_directory
-from ..core.ros_tools         import roslogger, LogType
-from .vpr_dataset_tool        import VPRDatasetProcessor
-from ..vpred                  import find_factors, find_prediction_performance_metrics
+from ..core.file_system_tools   import scan_directory
+from ..core.ros_tools           import roslogger, LogType
+from ..core.enum_tools          import enum_get, enum_name
+from ..core.helper_tools        import formatException
+from .vpr_dataset_tool          import VPRDatasetProcessor
+from .vpr_helpers               import SVM_Tolerance_Mode
+from ..vpred                    import find_factors, find_prediction_performance_metrics
 
 class SVMModelProcessor: # main ROS class
     def __init__(self, ros=False):
@@ -95,6 +98,7 @@ class SVMModelProcessor: # main ROS class
         np.savez(full_file_path, **self.model)
         np.savez(full_param_path, params=self.model['params']) # save whole dictionary to preserve key object types
         self.print("[save_model] Saved file, params to %s, %s" % (full_file_path, full_param_path))
+        self.print("[save_model] Parameters: \n%s" % str(self.model['params']))
         return self
 
     def load_model(self, model_params, try_gen=False):
@@ -110,6 +114,7 @@ class SVMModelProcessor: # main ROS class
                     self._load(name)
                     return True
                 except:
+                    self.print("Load failed, performing cleanup. Code: \n%s" % formatException())
                     self._fix(name)
         if try_gen:
             self.generate_model(**model_params)
@@ -124,6 +129,7 @@ class SVMModelProcessor: # main ROS class
                     self._load(name)
                     return True
                 except:
+                    self.print("Load failed, performing cleanup. Code: \n%s" % formatException())
                     self._fix(name)
         if generate:
             self.generate_model(**model_params)
@@ -132,10 +138,10 @@ class SVMModelProcessor: # main ROS class
             raise Exception('Model failed to load.')
         return False
     
-    def predict(self, dvc, mInd):
+    def predict(self, dvc, mInd, rXY, init_pos=np.array([0,0])):
         if not self.model_ready:
             raise Exception("Model not loaded in system. Either call 'generate_model' or 'load_model' before using this method.")
-        factor1_qry, factor2_qry = find_factors(self.model['params']['svm']['factors'], dvc, self.ref_odom[:, 0:2], mInd)
+        factor1_qry, factor2_qry = find_factors(self.model['params']['svm']['factors'], dvc, rXY, mInd, init_pos=init_pos)
 
         X          = np.c_[factor1_qry, factor2_qry]                           # put the two factors into a 2-column vector
         X_scaled   = self.model['model']['scaler'].transform(X)                # perform scaling using same parameters as calibration set
@@ -208,27 +214,35 @@ class SVMModelProcessor: # main ROS class
             self.cal_qry_ip.dataset['dataset'][self.feat_type], \
             fastdist.euclidean, "euclidean")
         
-        self.ref_odom       = np.stack([self.cal_ref_ip.dataset['dataset']['px'], self.cal_ref_ip.dataset['dataset']['py']], 1)
-        self.qry_odom       = np.stack([self.cal_qry_ip.dataset['dataset']['px'], self.cal_qry_ip.dataset['dataset']['py']], 1)
+        ref_odom       = np.stack([self.cal_ref_ip.dataset['dataset']['px'], self.cal_ref_ip.dataset['dataset']['py']], 1)
+        qry_odom       = np.stack([self.cal_qry_ip.dataset['dataset']['px'], self.cal_qry_ip.dataset['dataset']['py']], 1)
 
         euc_dists_train = fastdist.matrix_to_matrix_distance(
-            self.ref_odom[:, 0:2],
-            self.qry_odom[:, 0:2],
+            ref_odom[:, 0:2],
+            qry_odom[:, 0:2],
             fastdist.euclidean, "euclidean")
         
         true_inds_train     = np.argmin(euc_dists_train, axis=0)
         match_inds_train    = np.argmin(self.S_train, axis=0)
-        error_inds_train    = np.min(np.array([-1 * abs(match_inds_train - true_inds_train) + len(match_inds_train), 
-                                               abs(match_inds_train - true_inds_train)]), axis=0)
-        # error_dist_train    = np.sqrt( \
-        #                             np.square(self.ref_odom[match_inds_train,0] - self.ref_odom[true_inds_train,0]) + \
-        #                             np.square(self.ref_odom[match_inds_train,1] - self.ref_odom[true_inds_train,1]) \
-        #                             )
         
-        self.y_train        = error_inds_train <= 10 # +-10 frames
+        tol_mode = enum_get(self.svm_params['tol_mode'], SVM_Tolerance_Mode)
+        if tol_mode == SVM_Tolerance_Mode.DISTANCE:
+            error_dist_train    = np.sqrt( \
+                                        np.square(ref_odom[match_inds_train,0] - ref_odom[true_inds_train,0]) + \
+                                        np.square(ref_odom[match_inds_train,1] - ref_odom[true_inds_train,1]) \
+                                        )
+            self.y_train        = error_dist_train <= self.svm_params['tol_thres']
+
+        elif tol_mode == SVM_Tolerance_Mode.FRAME:
+            error_inds_train    = np.min(np.array([-1 * abs(match_inds_train - true_inds_train) + len(match_inds_train), 
+                                                abs(match_inds_train - true_inds_train)]), axis=0)
+        
+            self.y_train        = error_inds_train <= self.svm_params['tol_thres']
+        else:
+            raise Exception("Unknown tolerance mode (%s, %s)" % (str(tol_mode), str(self.svm_params['tol_mode'])))
 
         # Extract factors:
-        self.factor1_train, self.factor2_train = find_factors(self.svm_params['factors'], self.S_train, self.ref_odom[:, 0:2], np.argmin(self.S_train, axis=0))
+        self.factor1_train, self.factor2_train = find_factors(self.svm_params['factors'], self.S_train, ref_odom[:, 0:2], np.argmin(self.S_train, axis=0))
 
         # Form input vector
         self.X_train        = np.c_[self.factor1_train, self.factor2_train]
@@ -281,15 +295,6 @@ class SVMModelProcessor: # main ROS class
             self.print("Purged: %s" % (self.svm_dbp + '/params/' + model_name), LogType.DEBUG)
         except:
             pass
-    
-    def _load_ips(self):
-        self.print("Loading calibration query dataset...", LogType.DEBUG)
-        self.cal_qry_ip.load_dataset(self.model['params']['qry'])
-        self.print("Loading calibration reference dataset...", LogType.DEBUG)
-        self.cal_ref_ip.load_dataset(self.model['params']['ref'])
-
-        self.ref_odom    = np.stack([self.cal_ref_ip.dataset['dataset']['px'], self.cal_ref_ip.dataset['dataset']['py']], 1)
-        self.qry_odom    = np.stack([self.cal_qry_ip.dataset['dataset']['px'], self.cal_qry_ip.dataset['dataset']['py']], 1)
 
     def _load(self, model_name):
     # when loading objects inside dicts from .npz files, must extract with .item() each object
@@ -299,6 +304,5 @@ class SVMModelProcessor: # main ROS class
         self.model_ready = False
         del self.model
         self.model       = dict(model=raw_model['model'].item(), params=raw_model['params'].item())
-        self._load_ips()
         self.model_ready = True
 

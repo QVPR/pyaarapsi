@@ -24,11 +24,15 @@ class ViewMode(Enum):
     PANORAMA 	        = 8
     forward             = 9
 
-class Tolerance_Mode(Enum):
+class VPR_Tolerance_Mode(Enum):
     METRE_CROW_TRUE     = 0
     METRE_CROW_MATCH    = 1
     METRE_LINE          = 2
     FRAME               = 3 
+
+class SVM_Tolerance_Mode(Enum):
+    DISTANCE            = 0
+    FRAME               = 1
 
 def discretise(dict_in, metrics=None, mode=None, keep='first'):
     if not len(dict_in):
