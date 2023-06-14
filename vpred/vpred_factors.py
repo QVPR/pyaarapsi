@@ -2,40 +2,6 @@ import numpy as np
 import copy
 from sklearn.linear_model import LinearRegression
 
-#from .vpred_tools import find_nth_best_match_distances
-
-# def find_minima(sequence):
-#     # find the number of local minima in each sequence:
-#     # Returns two arrays, containing: the minima values and the minima indicies
-#     # Written by H.Carson 4 Aug 2021
-#     # TODO: vectorise
-
-#     # Initialisations
-#     minima = []
-#     minima_idx = []
-#     idx = 1
-
-#     #check the first value:
-#     if sequence[1] > sequence[0]:
-#         minima.append(sequence[0])
-#         minima_idx.append(0)
-    
-#     for value in sequence[1:-1]: # start with the second value in the sequence
-
-#         if (sequence[idx - 1] > value) & (sequence[idx + 1] > value):
-#             # Conditions for minima have been met: the previous point and next point are both above the current point
-#             minima.append(value)
-#             minima_idx.append(idx)
-#             was_increasing = True            
-#         idx = idx + 1
-        
-#     #check the last value:
-#     if sequence[idx - 1] > sequence[idx]:
-#         minima.append(sequence[idx])
-#         minima_idx.append(idx)
-
-#     return (np.array(minima), np.array(minima_idx))
-
 def find_minima(sequence: np.ndarray, check_ends=True):
     if not isinstance(sequence, np.ndarray):
         if isinstance(sequence, list):
@@ -60,24 +26,6 @@ def find_minima(sequence: np.ndarray, check_ends=True):
     
     return minima_vals, minima_inds
 
-# def find_va_factor(S):
-#     if S.ndim == 1:
-#         qry_list = [0]
-#     else:
-#         qry_list=np.arange(S.shape[1])
-#     factors=np.zeros(len(qry_list))
-#     for q in qry_list:
-#         if S.ndim==1:
-#             Sv=S
-#         else:
-#             Sv=S[:,q]
-#         minima_values,minima_indicies = find_minima(Sv)
-#         minima_values.sort()
-#         d1 = minima_values[1]-minima_values[0]
-#         d2 = Sv.max()-Sv.min()
-#         factors[q]=(d1/d2)
-#     return factors
-
 def find_va_factor(S):
     if S.ndim == 1:
         S = S[:, np.newaxis]
@@ -91,29 +39,6 @@ def find_va_factor(S):
         d2 = Sv.max() - Sv.min()
         factors[q] = (d1/d2)
     return factors
-
-# def find_grad_factor(S):
-#     if S.ndim==1:
-#         qry_list=[0]
-#     else:
-#         qry_list=np.arange(S.shape[1])
-#     g=np.zeros(len(qry_list))
-#     for q in qry_list:
-#         if S.ndim==1:
-#             Sv=S
-#         else:
-#             Sv=S[:,q]
-#         m0=Sv.min()
-#         m0_index=Sv.argmin()
-#         if m0_index == 0:
-#             g[q] = Sv[1]-Sv[0]
-#         elif m0_index == len(Sv)-1:
-#             g[q] = Sv[-2]-Sv[-1]
-#         else:
-#             g1=Sv[m0_index-1]-m0
-#             g2=Sv[m0_index+1]-m0
-#             g[q]=g1+g2
-#     return g
 
 def find_grad_factor(S):
     if S.ndim == 1:
@@ -152,7 +77,8 @@ def find_all_grad_factors(s):
 def find_area_factors(S, mInd):
     if S.ndim == 1:
         S    = S[:, np.newaxis]
-        mInd = mInd[:, np.newaxis]
+    if not hasattr(mInd, '__iter__'):
+        mInd = np.array([mInd])
     
     _shape   = S.shape
     _len     = int(np.round(np.min([_shape[0] * 0.01, 10])))
@@ -190,13 +116,12 @@ def find_peak_factors(S):
         
     return factor_1, factor_2
 
-def find_posi_factors(mInd, mXY, init_pos=np.array([0,0])):
-    mInd = np.array([mInd])
-    if mInd.ndim == 2:
-        mInd = mInd[0]
+def find_posi_factors(rXY, mXY, init_pos=np.array([0,0])):
+    if mXY.ndim == 1:
+        mXY  = mXY[np.newaxis, :]
     
-    x_range  = np.max(mXY[:,0]) - np.min(mXY[:,0])
-    y_range  = np.max(mXY[:,1]) - np.min(mXY[:,1])
+    x_range  = np.max(rXY[:,0]) - np.min(rXY[:,0])
+    y_range  = np.max(rXY[:,1]) - np.min(rXY[:,1])
     xy_range = np.array([x_range, y_range])
     
     _len     = len(mXY[:,0])
@@ -211,16 +136,19 @@ def find_posi_factors(mInd, mXY, init_pos=np.array([0,0])):
     
     return factor_1, factor_2
 
-def find_linear_factors(S, rXY, mXY, mInd, cutoff=10):
+def find_linear_factors(S, rXY, mXY, cutoff=10):
     if S.ndim == 1:
         S    = S[:, np.newaxis]
-        mInd = np.array([mInd])
+    if mXY.ndim == 1:
+        mXY  = mXY[np.newaxis, :]
         
     qry_list = np.arange(S.shape[1])
     factor_1 = np.zeros(qry_list[-1] + 1)
     factor_2 = np.zeros(qry_list[-1] + 1)
     for q in qry_list:
         dvc         = S[:,q]
+
+        assert len(dvc) == rXY.shape[0], "distance vector does not align with x,y array [%d versus %d]." % (len(dvc), rXY.shape[0])
 
         euc         = np.sqrt(np.sum((rXY - mXY[q,:]) ** 2, 1))
         euc_argsort = euc.argsort()
@@ -258,13 +186,13 @@ def find_factors(factors_in, _S, rXY, mInd, cutoff=2, init_pos=np.array([0,0]), 
     if "grad" in factors_in or all:
         grad         = find_grad_factor(seq)
     if ("lgrad" in factors_in) or ("lcoef" in factors_in) or all:
-        lgrad, lcoef = find_linear_factors(seq, rXY, mXY, mInd, cutoff=cutoff)
+        lgrad, lcoef = find_linear_factors(seq, rXY, mXY, cutoff=cutoff)
     if "area" in factors_in or all:
         area = find_area_factors(seq, mInd) 
     if ("dlows" in factors_in) or ("mlows" in factors_in) or all:
         dlows, mlows = find_peak_factors(seq) 
     if ("dposi" in factors_in) or ("dvari" in factors_in) or all:
-        dposi, dvari = find_posi_factors(mInd, mXY, init_pos=init_pos)
+        dposi, dvari = find_posi_factors(rXY, mXY, init_pos=init_pos)
     factors_ = {"va": va,       "grad": grad,   "lgrad": lgrad, "lcoef": lcoef, \
                 "area": area,                   "dlows": dlows, "mlows": mlows, \
                 "dposi": dposi, "dvari": dvari}
