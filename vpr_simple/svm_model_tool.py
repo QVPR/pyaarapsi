@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import datetime
 
+import cv2
+
 import rospkg
 
 import matplotlib
@@ -26,7 +28,7 @@ from .vpr_dataset_tool          import VPRDatasetProcessor
 from .vpr_helpers               import SVM_Tolerance_Mode
 from ..vpred                    import find_factors, find_prediction_performance_metrics
 
-class SVMModelProcessor: # main ROS class
+class SVMModelProcessor:
     def __init__(self, ros=False):
 
         self.model_ready    = False
@@ -71,6 +73,7 @@ class SVMModelProcessor: # main ROS class
         dir = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp
         Path(dir).mkdir(parents=False, exist_ok=True)
         Path(dir+"/params").mkdir(parents=False, exist_ok=True)
+        Path(dir+"/fields").mkdir(parents=False, exist_ok=True)
         file_ = self._check()
         if file_:
             self.print("[save_model] File exists with identical parameters (%s); skipping save." % file_)
@@ -95,9 +98,12 @@ class SVMModelProcessor: # main ROS class
         
         full_file_path = dir + "/" + file_name
         full_param_path = dir + "/params/" + file_name
+        full_field_path = dir + "/fields/" + file_name
         np.savez(full_file_path, **self.model)
         np.savez(full_param_path, params=self.model['params']) # save whole dictionary to preserve key object types
-        self.print("[save_model] Saved file, params to %s, %s" % (full_file_path, full_param_path))
+        np.savez(full_field_path, field=self.model['field']) # save whole dictionary to preserve key object types
+
+        self.print("[save_model] Saved file, params, field to %s, %s" % (full_file_path, full_param_path, full_field_path))
         self.print("[save_model] Parameters: \n%s" % str(self.model['params']))
         return self
 
@@ -150,27 +156,22 @@ class SVMModelProcessor: # main ROS class
         prob       = self.model['model']['svm'].predict_proba(X_scaled)[:,1]   # get probability of prediction
         return (pred, zvalues, [factor1_qry[0], factor2_qry[0]], prob)
     
-    def generate_svm_mat(self, lims=None, array_dim=500):
+    def generate_svm_mat(self, array_dim=500):
         # Generate decision function matrix:
-        if lims is None:
-            x_lim       = [0, self.model['model']['factors'][0].max()]
-            y_lim       = [0, self.model['model']['factors'][1].max()]
-        else:
-            x_lim       = lims['x']
-            y_lim       = lims['y']
+        x_lim       = [0, self.model['model']['factors'][0].max()]
+        y_lim       = [0, self.model['model']['factors'][1].max()]
             
         f1          = np.linspace(x_lim[0], x_lim[1], array_dim)
         f2          = np.linspace(y_lim[0], y_lim[1], array_dim)
         F1, F2      = np.meshgrid(f1, f2)
         Fscaled     = self.model['model']['scaler'].transform(np.vstack([F1.ravel(), F2.ravel()]).T)
-        y_zvalues_t = self.model['model']['svm'].decision_function(Fscaled).reshape([array_dim, array_dim])
+        zvalues_t   = self.model['model']['svm'].decision_function(Fscaled).reshape([array_dim, array_dim])
 
         # generate matplotlib contour of decision boundary:
         fig, ax = plt.subplots()
-        ax.imshow(y_zvalues_t, origin='lower',extent=[0, f1[-1], 0, f2[-1]], aspect='auto')
-        z_contour = ax.contour(F1, F2, y_zvalues_t, levels=[0], colors=['red','blue','green'])
-        p_contour = ax.contour(F1, F2, y_zvalues_t, levels=[0.75])
-        ax.clabel(p_contour, inline=True, fontsize=8)
+        ax.imshow(zvalues_t, origin='lower',extent=[0, f1[-1], 0, f2[-1]], aspect='auto')
+        contour_levels = ax.contour(F1, F2, zvalues_t, levels=[0, 0.75], colors=['red','blue','green'])
+        ax.clabel(contour_levels, inline=True, fontsize=8)
         ax.set_xlim(x_lim)
         ax.set_ylim(y_lim)
         ax.set_box_aspect(1)
@@ -181,9 +182,15 @@ class SVMModelProcessor: # main ROS class
         img_np_raw_flat = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
         img_np_raw = img_np_raw_flat.reshape(fig.canvas.get_width_height()[::-1] + (3,))
         plt.close('all') # close matplotlib
-        #plt.show()
 
-        return (img_np_raw, (x_lim, y_lim))
+        # extract only plot region; ditch padded borders; resize to 1000x1000
+        img_np              = np.flip(img_np_raw, axis=2) # to bgr format, for ROS
+        indices_cols        = np.arange(img_np.shape[1])[np.sum(np.sum(img_np,2),0) != 255*3*img_np.shape[0]]
+        indices_rows        = np.arange(img_np.shape[0])[np.sum(np.sum(img_np,2),1) != 255*3*img_np.shape[1]]
+        img_np_crop         = img_np[min(indices_rows) : max(indices_rows)+1, min(indices_cols) : max(indices_cols)+1]
+        final_image         = np.array(cv2.resize(img_np_crop, (array_dim, array_dim), interpolation = cv2.INTER_AREA), dtype=np.uint8)
+        
+        return {'image': final_image, 'x_lim': x_lim, 'y_lim': y_lim}
     
     #### Private methods:
     def _check(self):
@@ -262,8 +269,8 @@ class SVMModelProcessor: # main ROS class
                    .format(num_tp,num_tn,num_fp,num_fn,precision*100,recall*100))
 
     def _get_models(self):
-        models = {}
-        entry_list = os.scandir(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp + "/params/")
+        models      = {}
+        entry_list  = os.scandir(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp + "/params/")
         for entry in entry_list:
             if entry.is_file() and entry.name.startswith('svmmodel'):
                 raw_npz = dict(np.load(entry.path, allow_pickle=True))
@@ -274,6 +281,8 @@ class SVMModelProcessor: # main ROS class
         params_dict         = dict(ref=self.ref_params, qry=self.qry_params, svm=self.svm_params,\
                                     npz_dbp=self.npz_dbp, bag_dbp=self.bag_dbp, svm_dbp=self.svm_dbp)
         model_dict          = dict(svm=self.svm_model, scaler=self.scaler, factors=[self.factor1_train, self.factor2_train])
+
+        field_dict          = self.generate_svm_mat()
         try:
             del self.model
         except:
@@ -295,6 +304,11 @@ class SVMModelProcessor: # main ROS class
             self.print("Purged: %s" % (self.svm_dbp + '/params/' + model_name), LogType.DEBUG)
         except:
             pass
+        try:
+            os.remove(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) +  '/' + self.svm_dbp + '/fields/' + model_name)
+            self.print("Purged: %s" % (self.svm_dbp + '/fields/' + model_name), LogType.DEBUG)
+        except:
+            pass
 
     def _load(self, model_name):
     # when loading objects inside dicts from .npz files, must extract with .item() each object
@@ -305,4 +319,38 @@ class SVMModelProcessor: # main ROS class
         del self.model
         self.model       = dict(model=raw_model['model'].item(), params=raw_model['params'].item())
         self.model_ready = True
+
+class SVMFieldLoader(SVMModelProcessor):
+    def __init__(self, field_params, ros=False):
+        self.field          = None
+        self.field_ready    = False
+        self.ros            = ros
+        self.load_field(field_params)
+
+    def load_field(self, field_params):
+    # load via search for param match
+        self.svm_dbp = field_params['svm_dbp']
+        self.print("[load_field] Loading model.")
+        self.field_ready    = False
+        models              = self._get_models() # because we're looking at the model params
+        self.field          = {}
+        for name in models:
+            if models[name]['params'] == field_params:
+                try:
+                    self._load_field(name)
+                    return True
+                except:
+                    self.print("Load failed, performing cleanup. Code: \n%s" % formatException())
+                    self._fix(name)
+        return False
+
+    def _load_field(self, field_name):
+    # when loading objects inside dicts from .npz files, must extract with .item() each object
+        if not field_name.endswith('.npz'):
+            field_name = field_name + '.npz'
+        raw_field = np.load(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp + '/fields/' + field_name, allow_pickle=True)
+        self.field_ready = False
+        del self.field
+        self.field       = raw_field['field'].item()
+        self.field_ready = True
 
