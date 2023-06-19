@@ -30,7 +30,7 @@ class SubscribeListener(rospy.SubscribeListener):
         Inputs:
         - None
         Returns:
-        - None
+        self
         '''
         super(SubscribeListener, self).__init__()
         self.topics = {}
