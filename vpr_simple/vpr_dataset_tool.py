@@ -15,7 +15,7 @@ from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
 
 class VPRDatasetProcessor: # main ROS class
-    def __init__(self, dataset_params: dict, try_gen=True, init_netvlad=False, init_hybridnet=False, cuda=False, use_tqdm=False, autosave=False, ros=True):
+    def __init__(self, dataset_params: dict, try_gen=True, init_netvlad=False, init_hybridnet=False, cuda=False, use_tqdm=False, autosave=False, ros=True, root=None):
         '''
         Initialisation
 
@@ -37,6 +37,7 @@ class VPRDatasetProcessor: # main ROS class
             use_tqdm:       bool type {default: False}; whether or not to display extraction/loading statuses using tqdm
             autosave:       bool type {default: False}; whether or not to automatically save any generated datasets
             ros:            bool type {default: True}; whether or not to use rospy logging (requires operation within ROS node scope)
+            root:           str type {default: None}; base root inserted in front of npz_dbp, bag_dbp, and svm_dbp
         Returns:
             self
         '''
@@ -46,6 +47,11 @@ class VPRDatasetProcessor: # main ROS class
         self.autosave       = autosave
         self.init_netvlad   = init_netvlad
         self.init_hybridnet = init_hybridnet
+
+        if root is None:
+            self.root       = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__)))
+        else:
+            self.root       = root
 
         self.ros            = ros
         self.netvlad        = None
@@ -152,7 +158,7 @@ class VPRDatasetProcessor: # main ROS class
             self.bag_dbp        = bag_dbp
 
         # generate:
-        rosbag_dict         = process_bag(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) +  '/' + bag_dbp + '/' + bag_name, sample_rate, odom_topic, img_topics, printer=self.print, use_tqdm=self.use_tqdm)
+        rosbag_dict         = process_bag(self.root +  '/' + bag_dbp + '/' + bag_name, sample_rate, odom_topic, img_topics, printer=self.print, use_tqdm=self.use_tqdm)
         self.print('[generate_dataset] Performing feature extraction...')
         feature_vector_dict = {ft_type: self.getFeat(list(rosbag_dict[img_topics[0]]), enum_get(ft_type, FeatureType), img_dims, use_tqdm=self.use_tqdm) for ft_type in ft_types}
         self.print('[generate_dataset] Done.')
@@ -183,7 +189,7 @@ class VPRDatasetProcessor: # main ROS class
         '''
         if not self.dataset_ready:
             raise Exception("Dataset not loaded in system. Either call 'generate_dataset' or 'load_dataset' before using this method.")
-        dir = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.npz_dbp
+        dir = self.root + '/' + self.npz_dbp
         Path(dir).mkdir(parents=False, exist_ok=True)
         Path(dir+"/params").mkdir(parents=False, exist_ok=True)
         
@@ -226,6 +232,9 @@ class VPRDatasetProcessor: # main ROS class
         return self
 
     def extend_dataset(self, new_ft_type, try_gen=False, save=False):
+        '''
+        
+        '''
         if isinstance(new_ft_type, FeatureType):
             new_ft_type = enum_name(new_ft_type)
         new_params = copy.deepcopy(self.dataset['params'])
@@ -344,6 +353,14 @@ class VPRDatasetProcessor: # main ROS class
         
     #### Private methods:
     def _check(self, params=None):
+        '''
+        Helper function to check if params already exist in saved npz_dbp library
+
+        Inputs:
+        - params: dict type {default: None}; parameter dictionary to compare against in search (if None, uses loaded dataset parameter dictionary)
+        Returns:
+        str type; '' if no matching parameters, otherwise file name of matching parameters
+        '''
         datasets = self._get_datasets()
         if params is None:
             params = self.dataset['params']
@@ -353,9 +370,17 @@ class VPRDatasetProcessor: # main ROS class
         return ""
     
     def _get_datasets(self):
+        '''
+        Helper function to iterate over parameter dictionaries and compile a list
+
+        Inputs:
+        - None
+        Returns:
+        dict type; key corresponds to file name, contents are loaded parameter dictionaries (from npz_dbp/params)
+        '''
         datasets = {}
         try:
-            entry_list = os.scandir(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.npz_dbp + "/params/")
+            entry_list = os.scandir(self.root + '/' + self.npz_dbp + "/params/")
         except FileNotFoundError:
             raise Exception("Directory invalid.")
         for entry in entry_list:
@@ -365,28 +390,45 @@ class VPRDatasetProcessor: # main ROS class
         return datasets
     
     def _fix(self, dataset_name):
+        '''
+        Helper function to remove broken/erroneous files
+
+        Inputs:
+        - dataset_name: str type; name of file to search and remove (from npz_dbp)
+        Returns:
+        None
+        '''
         if not dataset_name.endswith('.npz'):
             dataset_name = dataset_name + '.npz'
         self.print("[_fix] Bad dataset state detected, performing cleanup...", LogType.DEBUG)
         try:
-            os.remove(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.npz_dbp + '/' + dataset_name)
+            os.remove(self.root + '/' + self.npz_dbp + '/' + dataset_name)
             self.print("[_fix] Purged: %s" % (self.npz_dbp + '/' + dataset_name), LogType.DEBUG)
         except:
             pass
         try:
-            os.remove(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.npz_dbp + '/params/' + dataset_name)
+            os.remove(self.root + '/' + self.npz_dbp + '/params/' + dataset_name)
             self.print("[_fix] Purged: %s" % (self.npz_dbp + '/params/' + dataset_name), LogType.DEBUG)
         except:
             pass
 
     def _load(self, dataset_name, store=True):
-    # when loading objects inside dicts from .npz files, must extract with .item() each object
+        '''
+        Helper function to load a dataset from a file name
+
+        Inputs:
+        - dataset_name: str type; name of file to load (from npz_dbp directory)
+        - store         bool type {default: True}; whether to overwrite (store) the loaded dataset within this VPRDatasetProcessor instance 
+        Returns:
+        dict type; loaded dataset
+        '''
         if not dataset_name.endswith('.npz'):
             dataset_name = dataset_name + '.npz'
-        full_file_path  = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.npz_dbp + '/' + dataset_name
+        full_file_path  = self.root + '/' + self.npz_dbp + '/' + dataset_name
 
         self.print('[_load] Attempting to load: %s' % full_file_path, LogType.DEBUG)
         raw_dataset     = np.load(full_file_path, allow_pickle=True)
+        # when loading objects inside dicts from .npz files, must extract with .item() each object:
         dataset         = dict(dataset=raw_dataset['dataset'].item(), params=raw_dataset['params'].item())
         if store:
             if hasattr(self, 'dataset'):
@@ -396,6 +438,14 @@ class VPRDatasetProcessor: # main ROS class
         return dataset
     
     def destroy(self):
+        '''
+        Destructor for instance
+
+        Inputs:
+        None
+        Returns:
+        None
+        '''
         if self.init_hybridnet:
             try:
                 self.hybridnet.destroy()
