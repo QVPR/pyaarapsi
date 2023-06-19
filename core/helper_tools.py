@@ -156,4 +156,7 @@ def vis_dict(input, printer=print):
             return "%s%s %s %s:\n%s" % (indent, key, type(input), _this_len, _this_str)
         except:
             return "%s%s %s\n" % (indent, key, type(input))
-    printer(sub_dict_struct(input, 0, 'root'))
+    dictionary_view = sub_dict_struct(input, 0, 'root')
+    if not printer is None:
+        printer(dictionary_view)
+    return dictionary_view
