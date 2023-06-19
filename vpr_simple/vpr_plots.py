@@ -119,83 +119,44 @@ def disable_toolbar(fig, interact=False):
         fig.toolbar.active_tap = None
     return fig
 
-def get_contour_data(X, Y, Z, levels):
-    cs = plt.contour(X, Y, Z, levels)
-    xs = []
-    ys = []
-    xt = []
-    yt = []
-    col = []
-    text = []
-    isolevelid = 0
-    for isolevel in cs.collections:
-        isocol = isolevel.get_color()[0]
-        thecol = 3 * [None]
-        theiso = str(cs.get_array()[isolevelid])
-        isolevelid += 1
-        for i in range(3):
-            thecol[i] = int(255 * isocol[i])
-        thecol = '#%02x%02x%02x' % (thecol[0], thecol[1], thecol[2])
-
-        for path in isolevel.get_paths():
-            v = path.vertices
-            x = v[:, 0]
-            y = v[:, 1]
-            xs.append(x.tolist())
-            ys.append(y.tolist())
-            try:
-                xt.append(x[len(x) / 2])
-                yt.append(y[len(y) / 2])
-            except:
-                xt.append(5)
-                yt.append(5)
-            text.append(theiso)
-            col.append(thecol)
-
-    source = ColumnDataSource(data={'xs': xs, 'ys': ys, 'line_color': col,'xt':xt,'yt':yt,'text':text})
-    return source
-
 ##################################################################
 #### Contour Figure: do and update
 
 def doCntrFigBokeh():
 # Set up contour figure
 
-    fig_cntr        = figure(title="SVM Contour", width=500, height=500, \
-                            x_axis_label = 'VA Factor', y_axis_label = 'Grad Factor', \
-                            x_range = (0, 1), y_range = (0, 1))
+    _fig            = figure(title="SVM Contour", width=500, height=500, \
+                                x_axis_label = 'VA Factor', y_axis_label = 'Grad Factor', \
+                                x_range = (0, 1), y_range = (0, 1))
 
-    #fig_cntr        = disable_toolbar(fig_cntr)
+    _fig            = disable_toolbar(_fig)
 
     img_rand        = np.array(np.ones((1000,1000,4))*255, dtype=np.uint8)
     img_uint32      = img_rand.view(dtype=np.uint32).reshape(img_rand.shape[:-1])
     img_ds          = ColumnDataSource(data=dict(image=[img_uint32], x=[0], y=[0], dw=[10], dh=[10])) #CDS must contain columns, hence []
-    img_plotted     = fig_cntr.image_rgba(image='image', x='x', y='y', dw='dw', dh='dh', source=img_ds)
-    # Generate legend entries:
-    fig_cntr.circle(x=[-100], y=[-100], fill_color="green",  size=8, alpha=1, legend_label="True Positive")
-    fig_cntr.circle(x=[-100], y=[-100], fill_color="red",    size=8, alpha=1, legend_label="True Negative")
-    fig_cntr.circle(x=[-100], y=[-100], fill_color="blue",   size=8, alpha=1, legend_label="False Positive")
-    fig_cntr.circle(x=[-100], y=[-100], fill_color="orange", size=8, alpha=1, legend_label="False Negative")
+    img_plotted     = _fig.image_rgba(image='image', x='x', y='y', dw='dw', dh='dh', source=img_ds)
     
-    data_plotted = fig_cntr.circle(x=[], y=[], fill_color=[],  size=8, alpha=0.4)
+    # Generate legend entries:
+    _fig.circle(x=[-100], y=[-100], fill_color="green",  size=8, alpha=1, legend_label="True Positive")
+    _fig.circle(x=[-100], y=[-100], fill_color="red",    size=8, alpha=1, legend_label="True Negative")
+    _fig.circle(x=[-100], y=[-100], fill_color="blue",   size=8, alpha=1, legend_label="False Positive")
+    _fig.circle(x=[-100], y=[-100], fill_color="orange", size=8, alpha=1, legend_label="False Negative")
+    
+    data_plotted = _fig.circle(x=[], y=[], fill_color=[],  size=8, alpha=0.4)
 
-    return {'fig': fig_cntr, 'img': img_plotted, 'data': data_plotted, 'xlims': [0,10], 'ylims': [0,10], 'fttype': ''}
+    _fig.legend.orientation='horizontal'
+    _fig.legend.border_line_alpha=0
+    _fig.legend.background_fill_alpha=0
+
+    return {'fig': _fig, 'img': img_plotted, 'data': data_plotted, 'xlims': [0,10], 'ylims': [0,10], 'fttype': ''}
 
 def updateCntrFigBokeh(doc_frame, svm_field_msg, state, update_contour):
 
     xlims = [svm_field_msg.data.x_min, svm_field_msg.data.x_max, svm_field_msg.data.x_max - svm_field_msg.data.x_min]
     ylims = [svm_field_msg.data.y_min, svm_field_msg.data.y_max, svm_field_msg.data.y_max - svm_field_msg.data.y_min]
 
-    if state.mStateBin:
-        if state.data.gt_state == 1:
-            color = 'green'
-        else:
-            color = 'blue'
-    else:
-        if state.data.gt_state == 1:
-            color = 'orange'
-        else:
-            color = 'red'
+    colours = ['red', 'orange', 'blue', 'green']
+    color = colours[2*int(state.mStateBin) + int(state.data.gt_state == 1)]
     
     to_stream = dict(x=[state.factors[0]], y=[state.factors[1]], fill_color=[color])
     doc_frame.fig_cntr_handles['data'].data_source.stream(to_stream, rollover = 100)
@@ -230,18 +191,18 @@ def updateCntrFigBokeh(doc_frame, svm_field_msg, state, update_contour):
 def doXYWVFigBokeh(num_points):
 # Set up distance vector figure
 
-    fig_xywv    = figure(title="Linear & Angular Vectors", width=500, height=250, \
+    _fig        = figure(title="Linear & Angular Vectors", width=500, height=250, \
                             x_axis_label = 'Index', y_axis_label = 'Value', \
                             x_range = (0, num_points))#, y_range = (0, 1.2))
-    fig_xywv    = disable_toolbar(fig_xywv)
-    rw_plotted  = fig_xywv.circle(x=[], y=[], color="black", size=3, legend_label="Yaw Vector") # distance vector
+    _fig        = disable_toolbar(_fig)
+    rw_plotted  = _fig.circle(x=[], y=[], color="black", size=3, legend_label="Yaw Vector") # distance vector
 
-    fig_xywv.legend.location=(0, 140)
-    fig_xywv.legend.orientation='horizontal'
-    fig_xywv.legend.border_line_alpha=0
-    fig_xywv.legend.background_fill_alpha=0
+    _fig.legend.location=(0, 140)
+    _fig.legend.orientation='horizontal'
+    _fig.legend.border_line_alpha=0
+    _fig.legend.background_fill_alpha=0
 
-    return {'fig': fig_xywv, 'rw': rw_plotted, 'rwc': 1}
+    return {'fig': _fig, 'rw': rw_plotted, 'rwc': 1}
 
 def updateXYWVFigBokeh(doc_frame, mInd, px, py, pw):
 # Update DVec figure with new data (match->mInd, true->tInd)
@@ -256,21 +217,21 @@ def updateXYWVFigBokeh(doc_frame, mInd, px, py, pw):
 def doDVecFigBokeh(num_points):
 # Set up distance vector figure
 
-    fig_dvec    = figure(title="Distance Vector", width=500, height=250, \
+    _fig        = figure(title="Distance Vector", width=500, height=250, \
                             x_axis_label = 'Index', y_axis_label = 'Distance', \
                             x_range = (0, num_points), y_range = (0, 1.2))
-    fig_dvec    = disable_toolbar(fig_dvec)
-    spd_plotted = fig_dvec.line([],   [], color="orange",           legend_label="Spatial Separation") # Distance from match
-    dvc_plotted = fig_dvec.line([],   [], color="black",            legend_label="Distance Vector") # distance vector
-    mat_plotted = fig_dvec.circle([], [], color="red",     size=7,  legend_label="Selected") # matched image (lowest distance)
-    tru_plotted = fig_dvec.circle([], [], color="magenta", size=7,  legend_label="True") # true image (correct match)
+    _fig        = disable_toolbar(_fig)
+    spd_plotted = _fig.line([],   [], color="orange",           legend_label="Spatial Separation") # Distance from match
+    dvc_plotted = _fig.line([],   [], color="black",            legend_label="Distance Vector") # distance vector
+    mat_plotted = _fig.circle([], [], color="red",     size=7,  legend_label="Selected") # matched image (lowest distance)
+    tru_plotted = _fig.circle([], [], color="magenta", size=7,  legend_label="True") # true image (correct match)
 
-    fig_dvec.legend.location=(0, 140)
-    fig_dvec.legend.orientation='horizontal'
-    fig_dvec.legend.border_line_alpha=0
-    fig_dvec.legend.background_fill_alpha=0
+    _fig.legend.location=(0, 140)
+    _fig.legend.orientation='horizontal'
+    _fig.legend.border_line_alpha=0
+    _fig.legend.background_fill_alpha=0
 
-    return {'fig': fig_dvec, 'spd': spd_plotted, 'dvc': dvc_plotted, 'mat': mat_plotted, 'tru': tru_plotted}
+    return {'fig': _fig, 'spd': spd_plotted, 'dvc': dvc_plotted, 'mat': mat_plotted, 'tru': tru_plotted}
 
 def updateDVecFigBokeh(doc_frame, mInd, tInd, dvc, px, py):
 # Update DVec figure with new data (match->mInd, true->tInd)
@@ -290,20 +251,20 @@ def updateDVecFigBokeh(doc_frame, mInd, tInd, dvc, px, py):
 def doFDVCFigBokeh(num_points):
 # Set up distance vector figure
 
-    fig_dvec    = figure(title="Filtered Distance Vector", width=500, height=250, \
+    _fig        = figure(title="Filtered Distance Vector", width=500, height=250, \
                             x_axis_label = 'Index', y_axis_label = 'Distance', \
                             x_range = (0, num_points), y_range = (0, 1.2))
-    fig_dvec    = disable_toolbar(fig_dvec)
-    dvc_plotted = fig_dvec.line([],   [], color="black",            legend_label="Filtered Distance Vector") # distance vector
-    mat_plotted = fig_dvec.circle([], [], color="red",     size=7,  legend_label="Selected") # matched image (lowest distance)
-    tru_plotted = fig_dvec.circle([], [], color="magenta", size=7,  legend_label="True") # true image (correct match)
+    _fig        = disable_toolbar(_fig)
+    dvc_plotted = _fig.line([],   [], color="black",            legend_label="Filtered Distance Vector") # distance vector
+    mat_plotted = _fig.circle([], [], color="red",     size=7,  legend_label="Selected") # matched image (lowest distance)
+    tru_plotted = _fig.circle([], [], color="magenta", size=7,  legend_label="True") # true image (correct match)
 
-    fig_dvec.legend.location=(0, 140)
-    fig_dvec.legend.orientation='horizontal'
-    fig_dvec.legend.border_line_alpha=0
-    fig_dvec.legend.background_fill_alpha=0
+    _fig.legend.location=(0, 140)
+    _fig.legend.orientation='horizontal'
+    _fig.legend.border_line_alpha=0
+    _fig.legend.background_fill_alpha=0
 
-    return {'fig': fig_dvec, 'dvc': dvc_plotted, 'mat': mat_plotted, 'tru': tru_plotted}
+    return {'fig': _fig, 'dvc': dvc_plotted, 'mat': mat_plotted, 'tru': tru_plotted}
 
 def updateFDVCFigBokeh(doc_frame, mInd, tInd, dvc, px, py):
 # Update DVec figure with new data (match->mInd, true->tInd)
@@ -331,34 +292,30 @@ def doOdomFigBokeh(px, py):
     xrang = xlims[1] - xlims[0]
     yrang = ylims[1] - ylims[0]
 
-    fig_odom    = figure(title="Odometries", width=500, height=250, \
+    _fig        = figure(title="Odometries", width=500, height=250, \
                             x_axis_label = 'X-Axis', y_axis_label = 'Y-Axis', \
                             x_range = (xlims[0] - 0.1 * xrang, xlims[1] + 0.1 * xrang), \
                             y_range = (ylims[0] - 0.1 * yrang, ylims[1] + 0.1 * yrang), \
                             match_aspect = True, aspect_ratio = "auto")
-    fig_odom    = disable_toolbar(fig_odom)
+    _fig        = disable_toolbar(_fig)
 
     # Make legend glyphs
-    fig_odom.line(x=[xlims[1]*2], y=[ylims[1]*2], color="blue", line_dash='dotted', legend_label="Path")
-    fig_odom.cross(x=[xlims[1]*2], y=[ylims[1]*2], color="red", legend_label="Match", size=14)
-    fig_odom.plus( x=[xlims[1]*2], y=[ylims[1]*2], color="magenta", legend_label="True", size=4)
+    _fig.line(x=[xlims[1]*2], y=[ylims[1]*2], color="blue", line_dash='dotted', legend_label="Path")
+    _fig.cross(x=[xlims[1]*2], y=[ylims[1]*2], color="red", legend_label="Match", size=14)
+    _fig.plus( x=[xlims[1]*2], y=[ylims[1]*2], color="magenta", legend_label="True", size=4)
     
-    ref_plotted = fig_odom.line(   x=px, y=py, color="blue", \
-                                   alpha=0.5, line_dash='dotted')
-    var_plotted = fig_odom.circle( x=[], y=[], color="grey", size=[], alpha=0.1)
-    seg_plotted = fig_odom.segment(x0=[], y0=[], x1=[], y1=[], line_color="black", line_width=1, alpha=[])
-    mat_plotted = fig_odom.cross(  x=[], y=[], color="red", size=12, alpha=[])
-    tru_plotted = fig_odom.plus( x=[], y=[], color="magenta", size=8, alpha=1.0)
+    ref_plotted = _fig.line(   x=px,  y=py, color="blue", alpha=0.5, line_dash='dotted')
+    var_plotted = _fig.circle( x=[],  y=[], color="grey",    size=[], alpha=0.1)
+    seg_plotted = _fig.segment(x0=[], y0=[], x1=[], y1=[], line_color="black", line_width=1, alpha=[])
+    mat_plotted = _fig.cross(  x=[],  y=[], color="red",     size=12, alpha=[])
+    tru_plotted = _fig.plus(   x=[],  y=[], color="magenta", size=8, alpha=1.0)
 
-    fig_odom.legend.location= (120, 145)
-    fig_odom.legend.orientation='horizontal'
-    fig_odom.legend.border_line_alpha=0
-    fig_odom.legend.background_fill_alpha=0
-    fig_odom.legend.items[0].visible = True
-    fig_odom.legend.items[1].visible = True
-    fig_odom.legend.items[2].visible = True
+    _fig.legend.location= (120, 145)
+    _fig.legend.orientation='horizontal'
+    _fig.legend.border_line_alpha=0
+    _fig.legend.background_fill_alpha=0
 
-    return {'fig': fig_odom, 'ref': ref_plotted, 'var': var_plotted, 'seg': seg_plotted, 'mat': mat_plotted, 'tru': tru_plotted}
+    return {'fig': _fig, 'ref': ref_plotted, 'var': var_plotted, 'seg': seg_plotted, 'mat': mat_plotted, 'tru': tru_plotted}
 
 def updateOdomFigBokeh(doc_frame, mInd, tInd, px, py):
 # Update odometryfigure with new data (match->mInd, true->tInd)
@@ -393,21 +350,21 @@ def updateOdomFigBokeh(doc_frame, mInd, tInd, px, py):
 def doSVMMFigBokeh(num_points):
 # Set up SVM Metrics Figure
 
-    fig_svmm    = figure(title="SVM Metrics", width=500, height=250, \
+    _fig    = figure(title="SVM Metrics", width=500, height=250, \
                             x_axis_label = 'Index', y_axis_label = 'Value', \
                             x_range = (0, num_points))
-    #fig_svmm    = disable_toolbar(fig_svmm)
-    f1_plotted  = fig_svmm.circle(x=[], y=[], color="blue",  size=3, legend_label="Factor 1")
-    f2_plotted  = fig_svmm.circle(x=[], y=[], color="red",   size=3, legend_label="Factor 2")
-    pr_plotted  = fig_svmm.circle(x=[], y=[], color="green", size=3, legend_label="Probability")
-    zv_plotted  = fig_svmm.circle(x=[], y=[], color="black", size=3, legend_label="Z-Value")
+    #_fig    = disable_toolbar(_fig)
+    f1_plotted  = _fig.circle(x=[], y=[], color="blue",  size=3, legend_label="Factor 1")
+    f2_plotted  = _fig.circle(x=[], y=[], color="red",   size=3, legend_label="Factor 2")
+    pr_plotted  = _fig.circle(x=[], y=[], color="green", size=3, legend_label="Probability")
+    zv_plotted  = _fig.circle(x=[], y=[], color="black", size=3, legend_label="Z-Value")
 
-    fig_svmm.legend.location=(0, 140)
-    fig_svmm.legend.orientation='horizontal'
-    fig_svmm.legend.border_line_alpha=0
-    fig_svmm.legend.background_fill_alpha=0
+    _fig.legend.location=(0, 140)
+    _fig.legend.orientation='horizontal'
+    _fig.legend.border_line_alpha=0
+    _fig.legend.background_fill_alpha=0
 
-    return {'fig': fig_svmm, 'c': 1, 'f1': f1_plotted, 'f2': f2_plotted, 'pr': pr_plotted, 'zv': zv_plotted}
+    return {'fig': _fig, 'c': 1, 'f1': f1_plotted, 'f2': f2_plotted, 'pr': pr_plotted, 'zv': zv_plotted}
 
 def updateSVMMFigBokeh(doc_frame, state):
 # Update SVM Metrics Figure
