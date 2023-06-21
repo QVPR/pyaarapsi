@@ -29,14 +29,19 @@ from .vpr_helpers               import SVM_Tolerance_Mode
 from ..vpred                    import find_factors, find_prediction_performance_metrics
 
 class SVMModelProcessor:
-    def __init__(self, ros=False):
+    def __init__(self, ros=False, root=None):
 
         self.model_ready    = False
         self.ros            = ros
 
+        if root is None:
+            self.root       = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__)))
+        else:
+            self.root       = root
+
         # for making new models (prep but don't load anything yet)
-        self.cal_qry_ip     = VPRDatasetProcessor(None, ros=self.ros)
-        self.cal_ref_ip     = VPRDatasetProcessor(None, ros=self.ros)
+        self.cal_qry_ip     = VPRDatasetProcessor(None, ros=self.ros, root=root)
+        self.cal_ref_ip     = VPRDatasetProcessor(None, ros=self.ros, root=root)
 
         self.print("[SVMModelProcessor] Processor Ready.")
 
@@ -70,7 +75,7 @@ class SVMModelProcessor:
     def save_model(self, name=None):
         if not self.model_ready:
             raise Exception("Model not loaded in system. Either call 'generate_model' or 'load_model' before using this method.")
-        dir = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp
+        dir = self.root + '/' + self.svm_dbp
         Path(dir).mkdir(parents=False, exist_ok=True)
         Path(dir+"/params").mkdir(parents=False, exist_ok=True)
         Path(dir+"/fields").mkdir(parents=False, exist_ok=True)
@@ -101,10 +106,11 @@ class SVMModelProcessor:
         full_field_path = dir + "/fields/" + file_name
         np.savez(full_file_path, **self.model)
         np.savez(full_param_path, params=self.model['params']) # save whole dictionary to preserve key object types
-        np.savez(full_field_path, field=self.model['field']) # save whole dictionary to preserve key object types
+        np.savez(full_field_path, field=self.field) # save whole dictionary to preserve key object types
 
-        self.print("[save_model] Saved file, params, field to %s, %s" % (full_file_path, full_param_path, full_field_path))
-        self.print("[save_model] Parameters: \n%s" % str(self.model['params']))
+        self.print("[save_model] Model %s saved." % file_name)
+        self.print("[save_model] Saved model, params, field to %s, %s, %s" % (full_file_path, full_param_path, full_field_path), LogType.DEBUG)
+        self.print("[save_model] Parameters: \n%s" % str(self.model['params']), LogType.DEBUG)
         return self
 
     def load_model(self, model_params, try_gen=False):
@@ -114,6 +120,7 @@ class SVMModelProcessor:
         self.model_ready = False
         models = self._get_models()
         self.model = {}
+        self.field = {}
         for name in models:
             if models[name]['params'] == model_params:
                 try:
@@ -270,7 +277,7 @@ class SVMModelProcessor:
 
     def _get_models(self):
         models      = {}
-        entry_list  = os.scandir(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp + "/params/")
+        entry_list  = os.scandir(self.root + '/' + self.svm_dbp + "/params/")
         for entry in entry_list:
             if entry.is_file() and entry.name.startswith('svmmodel'):
                 raw_npz = dict(np.load(entry.path, allow_pickle=True))
@@ -282,12 +289,13 @@ class SVMModelProcessor:
                                     npz_dbp=self.npz_dbp, bag_dbp=self.bag_dbp, svm_dbp=self.svm_dbp)
         model_dict          = dict(svm=self.svm_model, scaler=self.scaler, factors=[self.factor1_train, self.factor2_train])
 
-        field_dict          = self.generate_svm_mat()
         try:
             del self.model
+            del self.field
         except:
             pass
         self.model          = dict(params=params_dict, model=model_dict)
+        self.field          = self.generate_svm_mat()
         self.model_ready    = True
     
     def _fix(self, model_name):
@@ -295,29 +303,40 @@ class SVMModelProcessor:
             model_name = model_name + '.npz'
         self.print("Bad dataset state detected, performing cleanup...", LogType.DEBUG)
         try:
-            os.remove(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp + '/' + model_name)
+            os.remove(self.root + '/' + self.svm_dbp + '/' + model_name)
             self.print("Purged: %s" % (self.svm_dbp + '/' + model_name), LogType.DEBUG)
         except:
             pass
         try:
-            os.remove(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) +  '/' + self.svm_dbp + '/params/' + model_name)
+            os.remove(self.root +  '/' + self.svm_dbp + '/params/' + model_name)
             self.print("Purged: %s" % (self.svm_dbp + '/params/' + model_name), LogType.DEBUG)
         except:
             pass
         try:
-            os.remove(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) +  '/' + self.svm_dbp + '/fields/' + model_name)
+            os.remove(self.root +  '/' + self.svm_dbp + '/fields/' + model_name)
             self.print("Purged: %s" % (self.svm_dbp + '/fields/' + model_name), LogType.DEBUG)
         except:
             pass
+
+    def _load_field(self, field_name):
+    # when loading objects inside dicts from .npz files, must extract with .item() each object
+        if not field_name.endswith('.npz'):
+            field_name = field_name + '.npz'
+        raw_field = np.load(self.root + '/' + self.svm_dbp + '/fields/' + field_name, allow_pickle=True)
+        self.field_ready = False
+        del self.field
+        self.field       = raw_field['field'].item()
+        self.field_ready = True
 
     def _load(self, model_name):
     # when loading objects inside dicts from .npz files, must extract with .item() each object
         if not model_name.endswith('.npz'):
             model_name = model_name + '.npz'
-        raw_model = np.load(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp + '/' + model_name, allow_pickle=True)
+        raw_model = np.load(self.root + '/' + self.svm_dbp + '/' + model_name, allow_pickle=True)
         self.model_ready = False
         del self.model
         self.model       = dict(model=raw_model['model'].item(), params=raw_model['params'].item())
+        self._load_field(model_name)
         self.model_ready = True
 
 class SVMFieldLoader(SVMModelProcessor):
@@ -343,14 +362,4 @@ class SVMFieldLoader(SVMModelProcessor):
                     self.print("Load failed, performing cleanup. Code: \n%s" % formatException())
                     self._fix(name)
         return False
-
-    def _load_field(self, field_name):
-    # when loading objects inside dicts from .npz files, must extract with .item() each object
-        if not field_name.endswith('.npz'):
-            field_name = field_name + '.npz'
-        raw_field = np.load(rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/' + self.svm_dbp + '/fields/' + field_name, allow_pickle=True)
-        self.field_ready = False
-        del self.field
-        self.field       = raw_field['field'].item()
-        self.field_ready = True
 
