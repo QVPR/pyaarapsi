@@ -305,7 +305,7 @@ class Heartbeat:
         self.node_state = node_state.value
         self.hb_topic   = hb_topic
         self.server     = server
-        
+
         from aarapsi_robot_pack.msg import Heartbeat as Hb
 
         self.hb_msg     = Hb(node_name=self.node_name, node_rate=self.node_rate, node_state=self.node_state)
@@ -750,40 +750,39 @@ class Base_ROS_Class:
         return True
     
     def init_params(self, rate_num, log_level, reset):
-        self.FEAT_TYPE              = self.params.add(self.namespace + "/feature_type",        None,                   lambda x: check_enum(x, FeatureType),           force=False)
-        self.IMG_DIMS               = self.params.add(self.namespace + "/img_dims",            None,                   check_positive_two_int_list,                    force=False)
-        self.NPZ_DBP                = self.params.add(self.namespace + "/npz_dbp",             None,                   check_string,                                   force=False)
-        self.BAG_DBP                = self.params.add(self.namespace + "/bag_dbp",             None,                   check_string,                                   force=False)
-        self.SVM_DBP                = self.params.add(self.namespace + "/svm_dbp",             None,                   check_string,                                   force=False)
-        self.IMG_TOPIC              = self.params.add(self.namespace + "/img_topic",           None,                   check_string,                                   force=False)
-        self.ODOM_TOPIC             = self.params.add(self.namespace + "/odom_topic",          None,                   check_string,                                   force=False)
+        self.FEAT_TYPE              = self.params.add(self.namespace + "/feature_type",             None,       lambda x: check_enum(x, FeatureType),           force=False)
+        self.IMG_DIMS               = self.params.add(self.namespace + "/img_dims",                 None,       check_positive_two_int_list,                    force=False)
+        self.NPZ_DBP                = self.params.add(self.namespace + "/npz_dbp",                  None,       check_string,                                   force=False)
+        self.BAG_DBP                = self.params.add(self.namespace + "/bag_dbp",                  None,       check_string,                                   force=False)
+        self.SVM_DBP                = self.params.add(self.namespace + "/svm_dbp",                  None,       check_string,                                   force=False)
+        self.IMG_TOPIC              = self.params.add(self.namespace + "/img_topic",                None,       check_string,                                   force=False)
+        self.ODOM_TOPIC             = self.params.add(self.namespace + "/odom_topic",               None,       check_string,                                   force=False)
         
-        self.PATH_BAG               = self.params.add(self.namespace + "/path/bag_name",       None,                   check_string,                                   force=False)
-        self.PATH_ODOM              = self.params.add(self.namespace + "/path/odom_topic",     None,                   check_string,                                   force=False)
-        self.PATH_IMG               = self.params.add(self.namespace + "/path/img_topic",      None,                   check_string,                                   force=False)
+        self.PATH_BAG               = self.params.add(self.namespace + "/path/bag_name",            None,       check_string,                                   force=False)
+        self.PATH_ODOM              = self.params.add(self.namespace + "/path/odom_topic",          None,       check_string,                                   force=False)
+        self.PATH_IMG               = self.params.add(self.namespace + "/path/img_topic",           None,       check_string,                                   force=False)
 
-        self.REF_BAG_NAME           = self.params.add(self.namespace + "/ref/bag_name",        None,                   check_string,                                   force=False)
-        self.REF_FILTERS            = self.params.add(self.namespace + "/ref/filters",         None,                   check_string,                                   force=False)
-        self.REF_SAMPLE_RATE        = self.params.add(self.namespace + "/ref/sample_rate",     None,                   check_positive_float,                           force=False) # Hz
+        self.REF_BAG_NAME           = self.params.add(self.namespace + "/ref/bag_name",             None,       check_string,                                   force=False)
+        self.REF_FILTERS            = self.params.add(self.namespace + "/ref/filters",              None,       check_string,                                   force=False)
+        self.REF_SAMPLE_RATE        = self.params.add(self.namespace + "/ref/sample_rate",          None,       check_positive_float,                           force=False) # Hz
+
+        self.SVM_QRY_BAG_NAME       = self.params.add(self.namespace + "/svm/qry/bag_name",         None,       check_string,                                   force=False)
+        self.SVM_QRY_FILTERS        = self.params.add(self.namespace + "/svm/qry/filters",          None,       check_string,                                   force=False)
+        self.SVM_QRY_SAMPLE_RATE    = self.params.add(self.namespace + "/svm/qry/sample_rate",      None,       check_positive_float,                           force=False)
+
+        self.SVM_REF_BAG_NAME       = self.params.add(self.namespace + "/svm/ref/bag_name",         None,       check_string,                                   force=False)
+        self.SVM_REF_FILTERS        = self.params.add(self.namespace + "/svm/ref/filters",          None,       check_string,                                   force=False)
+        self.SVM_REF_SAMPLE_RATE    = self.params.add(self.namespace + "/svm/ref/sample_rate",      None,       check_positive_float,                           force=False)
         
-        self.RATE_NUM               = self.params.add(self.nodespace + "/rate",                rate_num,               check_positive_float,                           force=reset)
-        self.LOG_LEVEL              = self.params.add(self.nodespace + "/log_level",           log_level,              check_positive_int,                             force=reset)
+        self.SVM_FACTORS            = self.params.add(self.namespace + "/svm/factors",              None,       check_string_list,                              force=False)
+        self.SVM_TOL_MODE           = self.params.add(self.namespace + "/svm/tolerance/mode",       None,       lambda x: check_enum(x, SVM_Tolerance_Mode),    force=False)
+        self.SVM_TOL_THRES          = self.params.add(self.namespace + "/svm/tolerance/threshold",  None,       check_positive_float,                           force=False)
+        
+        self.RATE_NUM               = self.params.add(self.nodespace + "/rate",                     rate_num,   check_positive_float,                           force=reset)
+        self.LOG_LEVEL              = self.params.add(self.nodespace + "/log_level",                log_level,  check_positive_int,                             force=reset)
 
         self.REF_DATA_PARAMS        = [self.NPZ_DBP, self.BAG_DBP, self.REF_BAG_NAME, self.REF_FILTERS, self.REF_SAMPLE_RATE, self.IMG_TOPIC, self.ODOM_TOPIC, self.FEAT_TYPE, self.IMG_DIMS]
         self.REF_DATA_NAMES         = [i.name for i in self.REF_DATA_PARAMS]
-
-        self.SVM_QRY_BAG_NAME       = self.params.add(self.namespace + "/svm/qry/bag_name",        None,             check_string,                                 force=False)
-        self.SVM_QRY_FILTERS        = self.params.add(self.namespace + "/svm/qry/filters",         None,             check_string,                                 force=False)
-        self.SVM_QRY_SAMPLE_RATE    = self.params.add(self.namespace + "/svm/qry/sample_rate",     None,             check_positive_float,                         force=False)
-
-        self.SVM_REF_BAG_NAME       = self.params.add(self.namespace + "/svm/ref/bag_name",        None,             check_string,                                 force=False)
-        self.SVM_REF_FILTERS        = self.params.add(self.namespace + "/svm/ref/filters",         None,             check_string,                                 force=False)
-        self.SVM_REF_SAMPLE_RATE    = self.params.add(self.namespace + "/svm/ref/sample_rate",     None,             check_positive_float,                         force=False)
-        
-        self.SVM_FACTORS            = self.params.add(self.namespace + "/svm/factors",             None,             check_string_list,                            force=False)
-        self.SVM_TOL_MODE           = self.params.add(self.namespace + "/svm/tolerance/mode",      None,             lambda x: check_enum(x, SVM_Tolerance_Mode),  force=False)
-        self.SVM_TOL_THRES          = self.params.add(self.namespace + "/svm/tolerance/threshold", None,             check_positive_float,                         force=False)
-        
 
         self.SVM_DATA_PARAMS        = [self.FEAT_TYPE, self.IMG_DIMS, self.NPZ_DBP, self.BAG_DBP, self.SVM_DBP, self.IMG_TOPIC, self.ODOM_TOPIC, \
                                        self.SVM_QRY_BAG_NAME, self.SVM_QRY_FILTERS, self.SVM_QRY_SAMPLE_RATE, \
