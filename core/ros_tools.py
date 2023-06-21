@@ -12,9 +12,6 @@ from tqdm.auto import tqdm
 from geometry_msgs.msg          import Quaternion
 from sensor_msgs.msg            import Image, CompressedImage
 
-from aarapsi_robot_pack.msg     import Debug # Our custom msg structures
-from aarapsi_robot_pack.msg     import Heartbeat as Hb
-
 from tf.transformations         import quaternion_from_euler, euler_from_quaternion
 from .helper_tools              import formatException, vis_dict
 from .enum_tools                import enum_name
@@ -308,9 +305,10 @@ class Heartbeat:
         self.node_state = node_state.value
         self.hb_topic   = hb_topic
         self.server     = server
+        
+        from aarapsi_robot_pack.msg import Heartbeat as Hb
 
         self.hb_msg     = Hb(node_name=self.node_name, node_rate=self.node_rate, node_state=self.node_state)
-
         self.hb_pub     = rospy.Publisher(self.namespace + self.hb_topic, Hb, queue_size=1)
         if self.server is None:
             self.hb_timer   = rospy.Timer(rospy.Duration(secs=period), self.heartbeat_cb)
@@ -731,6 +729,7 @@ class Base_ROS_Class:
         self.hb          = Heartbeat(self.node_name, self.namespace, rate_num, node_state=NodeState.INIT, hb_topic=hb_topic, server=self)
 
         if debug:
+            from aarapsi_robot_pack.msg import Debug # Our custom msg structures
             self._debug_sub  = rospy.Subscriber(self.namespace + '/debug', Debug, self.debug_cb, queue_size=1)
 
         if not order_id is None:
