@@ -29,9 +29,10 @@ from .vpr_helpers               import SVM_Tolerance_Mode
 from ..vpred                    import find_factors, find_prediction_performance_metrics
 
 class SVMModelProcessor:
-    def __init__(self, ros=False, root=None):
+    def __init__(self, ros=False, root=None, load_field=False):
 
         self.model_ready    = False
+        self.load_field     = load_field
         self.ros            = ros
 
         if root is None:
@@ -336,7 +337,8 @@ class SVMModelProcessor:
         self.model_ready = False
         del self.model
         self.model       = dict(model=raw_model['model'].item(), params=raw_model['params'].item())
-        self._load_field(model_name)
+        if self.load_field:
+            self._load_field(model_name)
         self.model_ready = True
 
 class SVMFieldLoader(SVMModelProcessor):
