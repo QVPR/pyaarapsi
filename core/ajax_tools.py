@@ -7,6 +7,7 @@ import json
 import logging
 from enum import Enum
 import requests
+import time
 
 from .enum_tools import enum_name, enum_get
 from .helper_tools import vis_dict
@@ -105,6 +106,9 @@ class AJAX_Connection:
 
         return json.loads(response._content), response
 
+# log = logging.getLogger('werkzeug')
+# log.setLevel(logging.ERROR)
+
 class Flask_AJAX_Server:
     def __init__(self, port=5050):
         self.app    = Flask(__name__)
@@ -119,29 +123,30 @@ class Flask_AJAX_Server:
         # Handle data retrieval:
         if req_type == GET_Method_Types.GET:
             if req_datakey in self.data.keys():
-                return jsonify(self.data[req_datakey])
+                msg = self.data[req_datakey]
             else:
-                return jsonify(None)
+                msg = None
             
         # Handle data deletion:
         elif req_type == GET_Method_Types.DEL:
-            return jsonify(not self.data.pop(req_datakey, None) == None)
+            msg = not self.data.pop(req_datakey, None) == None
         
         # Handle string overview of database:
         elif req_type == GET_Method_Types.VIEW:
-            return jsonify(vis_dict(self.data, printer=None))
+            msg = vis_dict(self.data, printer=None)
         
         # Handle json overview of database:
         elif req_type == GET_Method_Types.WEBVIEW:
-            return jsonify(self.data)
+            msg = self.data
         
         # Handle check request
         elif req_type == GET_Method_Types.CHECK:
-            return jsonify(True)
+            msg = True
         
         # Otherwise, throw error.
         else:
             raise NotImplementedError("in Flask_AJAX_Server.get, received unknown req_type %s" % str(req_type))
+        return jsonify(msg)
 
     def post(self, req_type, req_datakey, req_data):
         if req_data is None:
@@ -203,15 +208,17 @@ class Flask_AJAX_Server:
                     req_methodtype  = flask_request.headers['Method-Type'].upper()
 
                 except KeyError:
-                    resp            = make_response(self.get(GET_Method_Types.WEBVIEW, None))
+                    json_resp       = self.get(GET_Method_Types.WEBVIEW, None)
 
                 else:
                     if req_method == 'GET':
                         req_type    = enum_get(req_methodtype, GET_Method_Types)
-                        resp        = make_response(self.get(req_type, req_datakey))
+                        json_resp   = self.get(req_type, req_datakey)
                     else:
                         req_type    = enum_get(req_methodtype, POST_Method_Types)
-                        resp        = make_response(self.post(req_type, req_datakey, req_data))
+                        json_resp   = self.post(req_type, req_datakey, req_data)
+                
+                resp                = make_response(json_resp)
 
                     #print('FROM:', req_publisher, '| METHOD:', req_method, '/', req_type, '| DATA:', req_data, '| KEY:', req_datakey)
                     
