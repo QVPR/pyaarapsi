@@ -9,7 +9,8 @@ import cv2
 from cv_bridge import CvBridge
 from tqdm.auto import tqdm
 
-from geometry_msgs.msg          import Quaternion
+from std_msgs.msg               import String
+from geometry_msgs.msg          import Quaternion, Pose, PoseWithCovariance, PoseStamped
 from sensor_msgs.msg            import Image, CompressedImage
 
 from tf.transformations         import quaternion_from_euler, euler_from_quaternion
@@ -17,6 +18,32 @@ from .helper_tools              import formatException, vis_dict
 from .enum_tools                import enum_name
 from .argparse_tools            import check_enum, check_positive_two_int_list, check_string, check_positive_float, check_positive_int, check_string_list
 from ..vpr_simple.vpr_helpers   import FeatureType, SVM_Tolerance_Mode
+
+def pose_covariance_to_stamped(pose: PoseWithCovariance, frame_id='map'):
+    '''
+    Convert a geometry_msgs/PoseWithCovariance to geometry_msgs/PoseStamped
+    
+    Inputs:
+    - pose:     PoseWithCovariance type
+    - frame_id: str type {default: 'map'}; specify PoseStamped header frame
+    Returns:
+    type PoseStamped
+    '''
+    out                 = PoseStamped(pose=pose.pose)
+    out.header.stamp    = rospy.Time.now()
+    out.header.frame_id = frame_id
+    return out
+
+def xyw_from_pose(pose: Pose):
+    '''
+    Extract x, y, and yaw from a geometry_msgs/Pose object
+
+    Inputs:
+    - pose: geometry_msgs/Pose ROS message object
+    Returns:
+    type list; [x, y, yaw]
+    '''
+    return [pose.position.x, pose.position.y, yaw_from_q(pose.orientation)]
 
 class SubscribeListener(rospy.SubscribeListener):
     '''
@@ -462,10 +489,10 @@ class ROS_Param:
 
         self.name       = name
         self.server     = server
+        self.updates_possible.append(self.name)
+        self.param_objects.append(self)
 
         if self.server is None:
-            self.updates_possible.append(self.name)
-            self.param_objects.append(self)
             self.get = self._get_no_server
         else:
             self.get = self._get_server
@@ -520,7 +547,10 @@ class ROS_Param:
         Returns:
         - parsed value of variable
         '''
-        return self.value
+        if self.server.autochecker:
+            return self.value
+        else:
+            return self._get_no_server()
 
     def _get_no_server(self):
         '''
@@ -586,6 +616,22 @@ class ROS_Param_Server:
         '''
         self.updates_possible   = []
         self.params             = {}
+        self.autochecker        = False
+        self.param_sub          = None
+
+        self.connection_timer   = rospy.Timer(rospy.Duration(5), self._check_server)
+
+    def _check_server(self, event):
+        if self.param_sub is None:
+            self.autochecker = False
+        elif self.param_sub.get_num_connections() > 0:
+            self.autochecker = True
+        else:
+            self.autochecker = False
+        return self.autochecker
+
+    def add_sub(self, topic, cb, queue_size=100):
+        self.param_sub = rospy.Subscriber(topic, String, cb, queue_size=queue_size)
 
     def add(self, name, value, evaluation, force=False):
         '''
@@ -612,6 +658,7 @@ class ROS_Param_Server:
         Returns:
         None 
         '''
+
         try:
             current_value = str(rospy.get_param(name))
         except:
@@ -723,8 +770,8 @@ class Base_ROS_Class:
         self.node_name   = node_name
         self.nodespace   = self.namespace + '/' + self.node_name
 
-        self.pubs       = {}
-        self.params     = ROS_Param_Server()
+        self.pubs        = {}
+        self.params      = ROS_Param_Server()
 
         self.hb          = Heartbeat(self.node_name, self.namespace, rate_num, node_state=NodeState.INIT, hb_topic=hb_topic, server=self)
 
@@ -789,6 +836,30 @@ class Base_ROS_Class:
                                        self.SVM_REF_BAG_NAME, self.SVM_REF_FILTERS, self.SVM_REF_SAMPLE_RATE, \
                                        self.SVM_FACTORS, self.SVM_TOL_MODE, self.SVM_TOL_THRES]
         self.SVM_DATA_NAMES         = [i.name for i in self.SVM_DATA_PARAMS]
+
+    def init_vars(self):
+        self.parameters_ready = True
+
+    def init_rospy(self):
+        self.rate_obj        = rospy.Rate(self.RATE_NUM.get())
+        self.params.add_sub(self.namespace + "/params_update", self.param_callback)
+
+    def param_callback(self, msg):
+        self.parameters_ready = False
+        if self.params.exists(msg.data):
+            if not self.params.update(msg.data):
+                self.print("Change to parameter [%s]; bad value." % msg.data, LogType.DEBUG)
+        
+            else:
+                self.print("Change to parameter [%s]; updated." % msg.data, LogType.DEBUG)
+
+                if msg.data == self.LOG_LEVEL.name:
+                    set_rospy_log_lvl(self.LOG_LEVEL.get())
+                elif msg.data == self.RATE_NUM.name:
+                    self.rate_obj = rospy.Rate(self.RATE_NUM.get())
+        else:
+            self.print("Change to untracked parameter [%s]; ignored." % msg.data, LogType.DEBUG)
+        self.parameters_ready = True
 
     def make_dataset_dict(self, path=False):
         if path:
