@@ -843,6 +843,7 @@ class Base_ROS_Class:
     def init_rospy(self):
         self.rate_obj        = rospy.Rate(self.RATE_NUM.get())
         self.params.add_sub(self.namespace + "/params_update", self.param_callback)
+        self.sublis          = SubscribeListener()
 
     def param_callback(self, msg):
         self.parameters_ready = False
