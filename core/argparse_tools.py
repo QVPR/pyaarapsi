@@ -156,6 +156,26 @@ def check_positive_two_int_list(value: any) -> List[int]:
     if not (ivalue[0] > 0 and ivalue[1] > 0):
         raise ap.ArgumentTypeError(error_text)
     return ivalue
+
+def check_float_list(value: any, _num: int = None) -> List[float]:
+    '''
+    Parse an input as a list of floats
+
+    Inputs:
+    - value: any
+    - _num:  int type {default: None}; number of elements in list (if None, doesn't check)
+    Returns:
+    - list of floats
+    '''
+    str_value = str(value) # force to string
+    value_list = str_value.replace(' ', '').replace('(','').replace(')','').replace('[','').replace(']','').split(',')
+    if not _num is None and not len(value_list) == _num:
+        raise ap.ArgumentTypeError("%s is an invalid list of floats: does not contain the correct number of elements." % (str(value))) 
+    try:
+        ivalue = [float(i) for i in value_list]
+    except:
+        raise ap.ArgumentTypeError("%s is an invalid list of floats: could not parse elements to float." % (str(value)))
+    return ivalue
     
 def check_valid_ip(value: any) -> str:
     '''
