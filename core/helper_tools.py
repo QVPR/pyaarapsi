@@ -16,6 +16,16 @@ def try_load_var(path, var_name):
 def save_var(path, var, var_name):
     np.savez(path+"/"+var_name, **{var_name: var})
 
+def normalize_angle(angle):
+    # Normalize angle [-pi, +pi]
+    if angle > np.pi:
+        norm_angle = angle - 2*np.pi
+    elif angle < -np.pi:
+        norm_angle = angle + 2*np.pi
+    else:
+        norm_angle = angle
+    return norm_angle
+
 def angle_wrap(angle_in, mode='DEG'):
     '''
     Wrap an angle after addition/subtraction to be the smallest equivalent
