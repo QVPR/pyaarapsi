@@ -9,8 +9,9 @@ import cv2
 from cv_bridge import CvBridge
 from tqdm.auto import tqdm
 
-from std_msgs.msg               import String
-from geometry_msgs.msg          import Quaternion, Pose, PoseWithCovariance, PoseStamped
+from std_msgs.msg               import String, Header
+from geometry_msgs.msg          import Quaternion, Pose, PoseWithCovariance, PoseStamped, Point
+from nav_msgs.msg               import Path
 from sensor_msgs.msg            import Image, CompressedImage
 
 from tf.transformations         import quaternion_from_euler, euler_from_quaternion
@@ -929,6 +930,24 @@ class Base_ROS_Class:
         None
         '''
         self.hb.set_state(state)
+
+    def generate_path(self, dataset, _every=3):
+        
+        px      = dataset['dataset']['px']
+        py      = dataset['dataset']['py']
+        pw      = dataset['dataset']['pw']
+        time    = dataset['dataset']['time']
+        new_path = Path(header=Header(stamp=rospy.Time.now(), frame_id="map"))
+        for (c, (x, y, w, t)) in enumerate(zip(px, py, pw, time)):
+            if not c % _every == 0:
+                continue
+            new_pose = PoseStamped(header=Header(stamp=rospy.Time.from_sec(t), frame_id="map", seq=c))
+            new_pose.pose.position = Point(x=x, y=y, z=0)
+            new_pose.pose.orientation = q_from_yaw(w)
+            new_path.poses.append(new_pose)
+            del new_pose
+
+        return new_path
 
     def print(self, text, logtype=LogType.INFO, throttle=0, ros=None, name=None, no_stamp=None):
         if ros is None:
