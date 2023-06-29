@@ -34,15 +34,18 @@ def pose_covariance_to_stamped(pose: PoseWithCovariance, frame_id='map'):
     out.header.frame_id = frame_id
     return out
 
-def xyw_from_pose(pose: Pose):
+def pose2xyw(pose: Pose, stamped=False):
     '''
     Extract x, y, and yaw from a geometry_msgs/Pose object
 
     Inputs:
-    - pose: geometry_msgs/Pose ROS message object
+    - pose:     geometry_msgs/Pose[Stamped] ROS message object
+    - stamped:  bool type {default: False}; if true, extracts Pose from PoseStamped
     Returns:
     type list; [x, y, yaw]
     '''
+    if stamped:
+        pose = pose.pose
     return [pose.position.x, pose.position.y, yaw_from_q(pose.orientation)]
 
 class SubscribeListener(rospy.SubscribeListener):
