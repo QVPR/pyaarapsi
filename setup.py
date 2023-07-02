@@ -11,8 +11,8 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 
 install_require_list = [
     'numpy', 'torch', 'torchvision',
-    'tqdm', 'scipy', 'Pillow', 'scikit-learn',
-    'faiss', 'natsort', 'matplotlib', 'pickle']
+    'tqdm', 'scipy', 'Pillow', 'scikit-learn', 
+    'natsort', 'matplotlib']
 
 # workaround as opencv-python does not show up in "pip list" within a conda environment
 # we do not care as conda recipe has py-opencv requirement anyhow
