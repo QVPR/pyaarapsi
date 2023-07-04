@@ -15,7 +15,7 @@ from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
 
 class VPRDatasetProcessor: # main ROS class
-    def __init__(self, dataset_params: dict, try_gen=True, init_netvlad=False, init_hybridnet=False, cuda=False, use_tqdm=False, autosave=False, ros=True, root=None):
+    def __init__(self, dataset_params: dict, try_gen=True, init_netvlad=False, init_hybridnet=False, cuda=False, use_tqdm=False, autosave=False, ros=True, root=None, printer=None):
         '''
         Initialisation
 
@@ -47,6 +47,7 @@ class VPRDatasetProcessor: # main ROS class
         self.autosave       = autosave
         self.init_netvlad   = init_netvlad
         self.init_hybridnet = init_hybridnet
+        self.printer        = printer
 
         if root is None:
             self.root       = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__)))
@@ -64,18 +65,22 @@ class VPRDatasetProcessor: # main ROS class
             self.hybridnet  = HybridNet_Container(cuda=self.cuda, logger=self.print)
 
         if not (dataset_params is None): # If parameters have been provided:
-            self.print("[VPRDatasetProcessor] Loading model from parameters...")
+            self.print("Loading model from parameters...")
             self.load_dataset(dataset_params, try_gen=try_gen)
 
             if not self.dataset_ready:
                 raise Exception("Dataset load failed.")
-            self.print("[VPRDatasetProcessor] Dataset Ready.")
+            self.print("Dataset Ready.")
 
         else: # None-case needed for SVM training
-            self.print("[VPRDatasetProcessor] Ready; no dataset loaded.")
+            self.print("Ready; no dataset loaded.")
 
     def print(self, text, logtype=LogType.INFO, throttle=0):
-        roslogger(text, logtype, throttle=throttle, ros=self.ros)
+        text = '[VPRDatasetProcessor] ' + text
+        if self.printer is None:
+            roslogger(text, logtype, throttle=throttle, ros=self.ros)
+        else:
+            self.printer(text, logtype, throttle=throttle, ros=self.ros)
 
     def prep_netvlad(self, cuda=None, load=True, prep=True):
         '''
@@ -90,7 +95,7 @@ class VPRDatasetProcessor: # main ROS class
         '''
         if not (cuda is None):
             cuda = self.cuda
-        self.netvlad        = NetVLAD_Container(cuda=cuda, ngpus=int(self.cuda), logger=lambda x: self.print(x, LogType.DEBUG), load=load, prep=prep)
+        self.netvlad        = NetVLAD_Container(cuda=cuda, ngpus=int(self.cuda), logger=self.print, load=load, prep=prep)
         self.init_netvlad   = True
 
     def prep_hybridnet(self, cuda=None, load=True):
@@ -105,7 +110,7 @@ class VPRDatasetProcessor: # main ROS class
         '''
         if not (cuda is None):
             cuda = self.cuda
-        self.hybridnet  = HybridNet_Container(cuda=cuda, logger=lambda x: self.print(x, LogType.DEBUG), load=load)
+        self.hybridnet  = HybridNet_Container(cuda=cuda, logger=self.print, load=load)
         self.init_hybridnet   = True
 
     def pass_nns(self, processor, netvlad=True, hybridnet=True):
