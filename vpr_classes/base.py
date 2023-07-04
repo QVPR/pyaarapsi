@@ -18,7 +18,7 @@ from ..vpr_simple.vpr_helpers   import FeatureType, SVM_Tolerance_Mode
 
 def base_optional_args(parser: ap.ArgumentParser, node_name: str = 'node_name', rate: float = 10.0, 
                        anon: bool = False, namespace: str = '/vpr_nodes', log_level: float = 2, reset: bool = True,
-                       order_id: int = None):
+                       order_id: int = None) -> ap.ArgumentParser:
     
     levels = enum_value_options(LogType)[0]
     parser.add_argument('--node-name', '-N',  type=check_string,          default=node_name, help="Specify node name (default: %(default)s).")
@@ -62,7 +62,7 @@ class Base_ROS_Class:
         - debug:        bool type {default: True};       Whether or not to create a subscriber and callback for debugging
         - hb_topic:     str type {default: /heartbeats}; Which topic to publish heartbeat messages on
         Returns:
-        - bool, True on success (False on Exception)
+        None
         '''
 
         self.namespace   = namespace
@@ -101,9 +101,8 @@ class Base_ROS_Class:
             super(type(self), self).print('\033[96mStarting %s node.\033[0m' % (self.node_name), log_level=log_level)
         else:
             super(type(self), self).print('Starting %s node.' % (self.node_name), log_level=log_level)
-        return True
     
-    def init_params(self, rate_num, log_level, reset):
+    def init_params(self, rate_num, log_level, reset) -> None:
         self.SIMULATION             = self.params.add(self.namespace + "/simulation",               None,       check_bool,                                     force=False)
 
         self.FEAT_TYPE              = self.params.add(self.namespace + "/feature_type",             None,       lambda x: check_enum(x, FeatureType),           force=False)
@@ -146,23 +145,23 @@ class Base_ROS_Class:
                                        self.SVM_FACTORS, self.SVM_TOL_MODE, self.SVM_TOL_THRES]
         self.SVM_DATA_NAMES         = [i.name for i in self.SVM_DATA_PARAMS]
 
-    def init_vars(self):
+    def init_vars(self) -> None:
         self.parameters_ready = True
 
-    def init_rospy(self):
+    def init_rospy(self) -> None:
         self.rate_obj        = rospy.Rate(self.RATE_NUM.get())
         self.params.add_sub(self.namespace + "/params_update", self.param_callback)
         self.sublis          = SubscribeListener(printer=self.print)
 
-    def node_ready(self, order_id):
+    def node_ready(self, order_id) -> None:
         self.main_ready      = True
         if not order_id is None: 
             rospy.set_param(self.namespace + '/launch_step', order_id + 1)
 
-    def param_helper(self, msg):
+    def param_helper(self, msg) -> None:
         pass
 
-    def param_callback(self, msg):
+    def param_callback(self, msg) -> None:
         self.parameters_ready = False
         if self.params.exists(msg.data):
             if not self.params.update(msg.data):
@@ -181,7 +180,7 @@ class Base_ROS_Class:
             self.print("Change to untracked parameter [%s]; ignored." % msg.data, LogType.DEBUG)
         self.parameters_ready = True
 
-    def make_dataset_dict(self, path=False):
+    def make_dataset_dict(self, path=False) -> dict:
         if path:
             bag_name    = self.PATH_BAG.get()
             odom_topic  = self.PATH_ODOM.get()
@@ -194,7 +193,7 @@ class Base_ROS_Class:
                     odom_topic=odom_topic, img_topics=img_topics, sample_rate=self.REF_SAMPLE_RATE.get(), \
                     ft_types=enum_name(self.FEAT_TYPE.get(),wrap=True), img_dims=self.IMG_DIMS.get(), filters='{}')
     
-    def make_svm_model_params(self):
+    def make_svm_model_params(self) -> dict:
         qry_dict = dict(bag_name=self.SVM_QRY_BAG_NAME.get(), npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), \
                         odom_topic=self.SLAM_ODOM_TOPIC.get(), img_topics=[self.IMG_TOPIC.get()], sample_rate=self.SVM_REF_SAMPLE_RATE.get(), \
                         ft_types=enum_name(self.FEAT_TYPE.get(),wrap=True), img_dims=self.IMG_DIMS.get(), filters='{}')
@@ -204,7 +203,7 @@ class Base_ROS_Class:
         svm_dict = dict(factors=self.SVM_FACTORS.get(), tol_thres=self.SVM_TOL_THRES.get(), tol_mode=enum_name(self.SVM_TOL_MODE.get()))
         return dict(ref=ref_dict, qry=qry_dict, svm=svm_dict, npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), svm_dbp=self.SVM_DBP.get())
     
-    def debug_cb(self, msg):
+    def debug_cb(self, msg) -> None:
         if msg.node_name == self.node_name:
             try:
                 if msg.instruction == 0:
@@ -218,7 +217,7 @@ class Base_ROS_Class:
             except:
                 self.print("Debug operation failed.", LogType.DEBUG)
 
-    def add_pub(self, topic, data_class, queue_size=1, latch=False, subscriber_listener=None):
+    def add_pub(self, topic, data_class, queue_size=1, latch=False, subscriber_listener=None) -> ROS_Publisher:
         '''
         Add new ROS_Publisher
 
@@ -235,7 +234,7 @@ class Base_ROS_Class:
         self.pubs[topic] = ROS_Publisher(topic, data_class, queue_size, latch, server=self, subscriber_listener=subscriber_listener)
         return self.pubs[topic]
 
-    def set_state(self, state: NodeState):
+    def set_state(self, state: NodeState) -> None:
         '''
         Set heartbeat node_state
 
@@ -246,7 +245,7 @@ class Base_ROS_Class:
         '''
         self.hb.set_state(state)
 
-    def generate_path(self, dataset, _every=3):
+    def generate_path(self, dataset, _every=3) -> Path:
         
         px      = dataset['dataset']['px']
         py      = dataset['dataset']['py']
@@ -264,7 +263,7 @@ class Base_ROS_Class:
 
         return new_path
 
-    def print(self, text, logtype=LogType.INFO, throttle=0, ros=None, name=None, no_stamp=None, log_level=None):
+    def print(self, text, logtype=LogType.INFO, throttle=0, ros=None, name=None, no_stamp=None, log_level=None) -> bool:
         if ros is None:
             ros = True
         if name is None:
@@ -275,6 +274,6 @@ class Base_ROS_Class:
             no_stamp = self.LOG_LEVEL.get()
         return roslogger(text, logtype, throttle=throttle, ros=ros, name=name, no_stamp=no_stamp, log_level=log_level)
 
-    def exit(self):
+    def exit(self) -> None:
         self.print("Quit received")
         sys.exit()
