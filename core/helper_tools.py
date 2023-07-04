@@ -5,6 +5,12 @@ import sys
 import traceback
 import numpy as np
 import pickle
+from enum import Enum
+
+class Bool(Enum):
+    UNSET = -1
+    FALSE = 0
+    TRUE  = 1
 
 def try_load_var(path, var_name):
     try:
