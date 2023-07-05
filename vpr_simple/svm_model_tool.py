@@ -264,6 +264,10 @@ class SVMModelProcessor:
         self.X_train_scaled = self.scaler.fit_transform(self.X_train)
 
         # Define and train the Support Vector Machine
+        classes = {unique: count for unique, count in np.unique(self.y_train, return_counts=True)}
+        if len(classes.keys()) < 2:
+            self.print('Bad class state! Could not define two classes based on parameters provided. Classes: %s' % str(classes), LogType.ERROR)
+        
         self.svm_model.fit(self.X_train_scaled, self.y_train)
 
         # Make predictions on calibration set to assess performance
