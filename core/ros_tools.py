@@ -17,7 +17,13 @@ from .helper_tools              import formatException
 from .enum_tools                import enum_name
 from .roslogger                 import LogType, roslogger
 
-def pose_covariance_to_stamped(pose: PoseWithCovariance, frame_id='map'):
+def compressed2np(msg: CompressedImage, bridge: CvBridge) -> np.ndarray:
+    return bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
+
+def raw2np(msg: Image, bridge: CvBridge) -> np.ndarray:
+    return bridge.imgmsg_to_cv2(msg, "passthrough")
+
+def pose_covariance_to_stamped(pose: PoseWithCovariance, frame_id='map') -> PoseStamped:
     '''
     Convert a geometry_msgs/PoseWithCovariance to geometry_msgs/PoseStamped
     
