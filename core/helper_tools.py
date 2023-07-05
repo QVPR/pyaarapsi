@@ -12,17 +12,17 @@ class Bool(Enum):
     FALSE = 0
     TRUE  = 1
 
-def try_load_var(path, var_name):
+def try_load_var(path: str, var_name: str) -> object:
     try:
         return np.load(path+"/"+var_name+".npz", allow_pickle=True)[var_name]
     except FileNotFoundError as e:
         print(var_name + " missing.")
         return None
 
-def save_var(path, var, var_name):
+def save_var(path: str, var: object, var_name: str) -> None:
     np.savez(path+"/"+var_name, **{var_name: var})
 
-def normalize_angle(angle):
+def normalize_angle(angle: float) -> float:
     # Normalize angle [-pi, +pi]
     if angle > np.pi:
         norm_angle = angle - 2*np.pi
@@ -32,7 +32,7 @@ def normalize_angle(angle):
         norm_angle = angle
     return norm_angle
 
-def angle_wrap(angle_in, mode='DEG'):
+def angle_wrap(angle_in: float, mode: str = 'DEG') -> float:
     '''
     Wrap an angle after addition/subtraction to be the smallest equivalent
     Inputs:
@@ -48,16 +48,16 @@ def angle_wrap(angle_in, mode='DEG'):
     else:
         raise Exception('Mode must be either DEG or RAD.')
 
-def np_ndarray_to_uint8_list(ndarray):
+def np_ndarray_to_uint8_list(ndarray: np.ndarray) -> list:
     '''
     Convert any numpy ndarray into a list of uint8 representing byte information
     For use with transferring numpy ndarray data agnostic of dtype, shape
     '''
     byte_string = pickle.dumps(ndarray)
-    uint8_list  = [i for i in byte_string]
+    uint8_list  = list(byte_string)
     return uint8_list
 
-def uint8_list_to_np_ndarray(uint8_list):
+def uint8_list_to_np_ndarray(uint8_list: list) -> np.ndarray:
     '''
     Convert any list of uint8 representing byte information back into a numpy ndarray
     For use with transferring numpy ndarray data agnostic of dtype, shape
@@ -67,18 +67,18 @@ def uint8_list_to_np_ndarray(uint8_list):
     return np_ndarray
 
 class Timer:
-    def __init__(self,rospy_on=False):
+    def __init__(self, rospy_on: bool = False):
         self.points = []
         self.rospy_on = rospy_on
         self.add_bounds = False
 
-    def add(self):
+    def add(self) -> None:
         self.points.append(time.perf_counter())
     
-    def addb(self):
+    def addb(self) -> None:
         self.add_bounds = True
 
-    def calc(self, thresh=0.001):
+    def calc(self, thresh: float = 0.001) -> list:
         times = []
         for i in range(len(self.points) - 1):
             this_time = abs(self.points[i+1]-self.points[i])
@@ -89,7 +89,7 @@ class Timer:
             times.append(abs(self.points[-1] - self.points[0]))
         return times
 
-    def show(self, name=None, thresh=0.001):
+    def show(self, name: str = None, thresh: float = 0.001) -> None:
         times = self.calc(thresh)
         string = str(["%8.4f" % i for i in times]).replace(' ','')
         if not (name is None):
@@ -97,11 +97,11 @@ class Timer:
         self.print(string)
         self.clear()
 
-    def clear(self):
+    def clear(self) -> None:
         self.points[:] = []
         self.add_bounds = False
 
-    def print(self, string):
+    def print(self, string: str) -> None:
         if self.rospy_on:
             try:
                 rospy.loginfo(string)
@@ -110,7 +110,7 @@ class Timer:
                 pass
         print(string)
 
-def formatException(dump=False):
+def formatException(dump: bool = False) -> str:
     # https://www.adamsmith.haus/python/answers/how-to-retrieve-the-file,-line-number,-and-type-of-an-exception-in-python
     exception_type, e, exception_traceback = sys.exc_info()
     filename = exception_traceback.tb_frame.f_code.co_filename
@@ -127,7 +127,7 @@ def formatException(dump=False):
     return "Exception Caught.\n\tDetails: %s %s\n\tFile %s [Line %s]\n\tTrace: %s" \
         % (str(exception_type), str(e), str(filename), str(line_number), traceback_string)
 
-def getArrayDetails(arr):
+def getArrayDetails(arr: np.ndarray) -> str:
     _shape  = str(np.shape(arr))
     _type   = str(type((arr.flatten())[0]))
     _min    = str(np.min(arr))
@@ -137,7 +137,7 @@ def getArrayDetails(arr):
     string_to_ret = "%s%s %s<%s<%s [%s]" % (_shape, _type, _min, _mean, _max, _range)
     return string_to_ret
 
-def combine_dicts(dicts, cast=list):
+def combine_dicts(dicts: list, cast: object = list) -> dict:
     keys = []
     for d in dicts:
         keys.extend(list(d.keys()))
@@ -147,10 +147,10 @@ def combine_dicts(dicts, cast=list):
             for k in set(keys) # define iterations for k
             }
 
-def get_num_decimals(num):
+def get_num_decimals(num: float) -> int:
     return str(num)[::-1].find('.')
 
-def vis_dict(input, printer=print):
+def vis_dict(input: dict, printer=print) -> str:
     def sub_dict_struct(input, lvl, key):
         if lvl == 0: indent = ''
         else: indent = '\t'*lvl
