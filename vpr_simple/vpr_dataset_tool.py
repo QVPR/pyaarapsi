@@ -15,7 +15,8 @@ from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
 
 class VPRDatasetProcessor: # main ROS class
-    def __init__(self, dataset_params: dict, try_gen=True, init_netvlad=False, init_hybridnet=False, cuda=False, use_tqdm=False, autosave=False, ros=True, root=None, printer=None):
+    def __init__(self, dataset_params: dict, try_gen: bool = True, init_netvlad: bool = False, init_hybridnet: bool = False, 
+                 cuda: bool = False, use_tqdm: bool = False, autosave: bool = False, ros: bool = True, root: str = None, printer=None):
         '''
         Initialisation
 
@@ -75,14 +76,14 @@ class VPRDatasetProcessor: # main ROS class
         else: # None-case needed for SVM training
             self.print("Ready; no dataset loaded.")
 
-    def print(self, text, logtype=LogType.INFO, throttle=0):
+    def print(self, text: str, logtype: LogType = LogType.INFO, throttle: float = 0) -> None:
         text = '[VPRDatasetProcessor] ' + text
         if self.printer is None:
             roslogger(text, logtype, throttle=throttle, ros=self.ros)
         else:
             self.printer(text, logtype, throttle=throttle, ros=self.ros)
 
-    def prep_netvlad(self, cuda=None, load=True, prep=True):
+    def prep_netvlad(self, cuda: bool = None, load: bool = True, prep: bool = True):
         '''
         Prepare netvlad for use
 
@@ -98,7 +99,7 @@ class VPRDatasetProcessor: # main ROS class
         self.netvlad        = NetVLAD_Container(cuda=cuda, ngpus=int(self.cuda), logger=self.print, load=load, prep=prep)
         self.init_netvlad   = True
 
-    def prep_hybridnet(self, cuda=None, load=True):
+    def prep_hybridnet(self, cuda: bool = None, load: bool = True):
         '''
         Prepare hybridnet for use
 
@@ -113,7 +114,7 @@ class VPRDatasetProcessor: # main ROS class
         self.hybridnet  = HybridNet_Container(cuda=cuda, logger=self.print, load=load)
         self.init_hybridnet   = True
 
-    def pass_nns(self, processor, netvlad=True, hybridnet=True):
+    def pass_nns(self, processor, netvlad: bool = True, hybridnet: bool = True):
         '''
         Overwrite this VPRDatasetProcessor's instances of netvlad and hybridnet with another's instantiations
         Will check and, if initialised, destroy existing netvlad/hybridnet
@@ -236,7 +237,7 @@ class VPRDatasetProcessor: # main ROS class
             del sub_dataset
         return self
 
-    def extend_dataset(self, new_ft_type, try_gen=False, save=False):
+    def extend_dataset(self, new_ft_type: FeatureType, try_gen: bool = False, save: bool = False):
         '''
         
         '''
