@@ -4,8 +4,11 @@ import rosbag
 import logging
 import numpy as np
 from enum import Enum
+
 import cv2
 from cv_bridge import CvBridge
+from cv_bridge.boost.cv_bridge_boost import cvtColor2
+
 from tqdm.auto import tqdm
 
 from std_msgs.msg               import String
@@ -17,11 +20,23 @@ from .helper_tools              import formatException
 from .enum_tools                import enum_name
 from .roslogger                 import LogType, roslogger
 
-def compressed2np(msg: CompressedImage, bridge: CvBridge) -> np.ndarray:
-    return bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
+def compressed2np(msg: CompressedImage, encoding: str = "passthrough") -> np.ndarray:
+    buf     = np.ndarray(shape=(1, len(msg.data)), dtype=np.uint8, buffer=msg.data)
+    img_in  = cv2.imdecode(buf, cv2.IMREAD_UNCHANGED)
+    if encoding == "passthrough":
+        img_out = img_in
+    else:
+        img_out = cvtColor2(img_in, "bgr8", encoding)
+    return img_out
+
+def np2compressed(img_in: np.ndarray, encoding: str = "jpg"):
+    msg_out = CompressedImage()
+    msg_out.format = encoding
+    msg_out.data = np.array(cv2.imencode('.' + encoding, img_in)[1]).tostring()
+    return msg_out
 
 def raw2np(msg: Image, bridge: CvBridge) -> np.ndarray:
-    return bridge.imgmsg_to_cv2(msg, "passthrough")
+    return bridge.imgmsg_to_cv2(msg)
 
 def pose_covariance_to_stamped(pose: PoseWithCovariance, frame_id='map') -> PoseStamped:
     '''
@@ -404,6 +419,24 @@ def q_from_yaw(yaw):
     - geometry_msgs/Quaternion, quaternion equivalent
     '''
     q = quaternion_from_euler(0, 0, yaw) # roll, pitch, yaw
+    return Quaternion(x=q[0], y=q[1], z=q[2], w=q[3])
+
+def q_from_rpy(r,p,y, mode='RAD'):
+    '''
+    Convert a float roll, pitch, and yaw into a geometry_msgs/Quaternion
+
+    Inputs:
+    - r: float type; roll
+    - p: float type; pitch
+    - w: float type; yaw
+    Returns:
+    - geometry_msgs/Quaternion, quaternion equivalent
+    '''
+    if not mode == 'RAD':
+        r = r * 180 / np.pi
+        p = p * 180 / np.pi
+        y = y * 180 / np.pi
+    q = quaternion_from_euler(r, p, y) # roll, pitch, yaw
     return Quaternion(x=q[0], y=q[1], z=q[2], w=q[3])
 
 class ROS_Param:

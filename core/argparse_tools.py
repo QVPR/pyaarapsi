@@ -29,6 +29,22 @@ def check_positive_int(value: any) -> int:
         raise ap.ArgumentTypeError(error_text)
     return ivalue
 
+def check_float(value: any) -> float:
+    '''
+    Parse an input as a float.
+
+    Inputs:
+    - any
+    Returns:
+    - float
+    '''
+    error_text = "%s is an invalid float value." % (str(value))
+    try:
+        ivalue = float(value)
+    except:
+        raise ap.ArgumentTypeError(error_text)
+    return ivalue
+
 def check_positive_float(value: any) -> float:
     '''
     Parse an input as a positive (>= 0) float.

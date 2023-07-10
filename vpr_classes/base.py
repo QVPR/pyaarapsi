@@ -4,15 +4,17 @@ import rospy
 import numpy as np
 import argparse as ap
 import sys
+import genpy
 
-from std_msgs.msg               import Header
+from std_msgs.msg               import Header, String
 from geometry_msgs.msg          import Point, PoseStamped
 from nav_msgs.msg               import Path
+from aarapsi_robot_pack.msg     import Debug
 
 from ..core.ros_tools           import LogType, ROS_Param_Server, Heartbeat, NodeState, SubscribeListener, set_rospy_log_lvl, ROS_Publisher, q_from_yaw
-from ..core.enum_tools          import enum_value, enum_name, enum_value_options, enum_get
+from ..core.enum_tools          import enum_value, enum_name, enum_get
 from ..core.helper_tools        import vis_dict
-from ..core.argparse_tools      import check_bool, check_enum, check_positive_float, check_string, check_positive_two_int_list, check_string_list, check_positive_int
+from ..core.argparse_tools      import check_bool, check_enum, check_positive_float, check_string, check_positive_two_int_list, check_string_list
 from ..core.roslogger           import roslogger, LogType
 from ..vpr_simple.vpr_helpers   import FeatureType, SVM_Tolerance_Mode
 
@@ -20,14 +22,13 @@ def base_optional_args(parser: ap.ArgumentParser, node_name: str = 'node_name', 
                        anon: bool = False, namespace: str = '/vpr_nodes', log_level: float = 2, reset: bool = True,
                        order_id: int = None) -> ap.ArgumentParser:
     
-    levels = enum_value_options(LogType)[0]
-    parser.add_argument('--node-name', '-N',  type=check_string,          default=node_name, help="Specify node name (default: %(default)s).")
-    parser.add_argument('--rate_num',  '-r',  type=check_positive_float,  default=rate,      help='Specify node rate (default: %(default)s).')
-    parser.add_argument('--anon',      '-a',  type=check_bool,            default=anon,      help="Specify whether node should be anonymous (default: %(default)s).")
-    parser.add_argument('--namespace', '-n',  type=check_string,          default=namespace, help="Specify ROS namespace (default: %(default)s).")
-    parser.add_argument('--log-level', '-V',  type=float, choices=levels, default=log_level, help="Specify ROS log level (default: %(default)s).")
-    parser.add_argument('--reset',     '-R',  type=check_bool,            default=reset,     help='Force reset of parameters to specified ones (default: %(default)s)')
-    parser.add_argument('--order-id',  '-ID', type=int,                   default=order_id,  help='Specify boot order of pipeline nodes (default: %(default)s).')
+    parser.add_argument('--node-name', '-N',  type=check_string,                     default=node_name, help="Specify node name (default: %(default)s).")
+    parser.add_argument('--rate_num',  '-r',  type=check_positive_float,             default=rate,      help='Specify node rate (default: %(default)s).')
+    parser.add_argument('--anon',      '-a',  type=check_bool,                       default=anon,      help="Specify whether node should be anonymous (default: %(default)s).")
+    parser.add_argument('--namespace', '-n',  type=check_string,                     default=namespace, help="Specify ROS namespace (default: %(default)s).")
+    parser.add_argument('--log-level', '-V',  type=lambda x: check_enum(x, LogType), default=log_level, help="Specify ROS log level (default: %(default)s).")
+    parser.add_argument('--reset',     '-R',  type=check_bool,                       default=reset,     help='Force reset of parameters to specified ones (default: %(default)s)')
+    parser.add_argument('--order-id',  '-ID', type=int,                              default=order_id,  help='Specify boot order of pipeline nodes (default: %(default)s).')
 
     return parser
 
@@ -44,8 +45,9 @@ class Base_ROS_Class:
     - Optionally colours the init_node message (blue)
     '''
 
-    def __init__(self, node_name, namespace, rate_num, anon, log_level, \
-                 order_id=None, throttle=30, colour=True, debug=True, disable_signals=False, reset=True, hb_topic='/heartbeats', *args, **kwargs):
+    def __init__(self, node_name: str, namespace: str, rate_num: float, anon: bool, log_level: LogType, \
+                 order_id: int = None, throttle: float = 30, colour: bool = True, debug: bool = True, \
+                 disable_signals: bool = False, reset: bool = True, hb_topic: str = '/heartbeats', *args, **kwargs):
         '''
         Initialisation
 
@@ -83,8 +85,7 @@ class Base_ROS_Class:
         self.hb          = Heartbeat(self.node_name, self.namespace, rate_num, node_state=NodeState.INIT, hb_topic=hb_topic, server=self)
 
         if debug:
-            from aarapsi_robot_pack.msg import Debug # Our custom msg structures
-            self._debug_sub  = rospy.Subscriber(self.namespace + '/debug', Debug, self.debug_cb, queue_size=1)
+            self._debug_sub = rospy.Subscriber(self.namespace + '/debug', Debug, self.debug_cb, queue_size=1)
 
         if not order_id is None:
             launch_step = rospy.get_param(self.namespace + '/launch_step')
@@ -102,7 +103,7 @@ class Base_ROS_Class:
         else:
             super(type(self), self).print('Starting %s node.' % (self.node_name), log_level=log_level)
     
-    def init_params(self, rate_num, log_level, reset) -> None:
+    def init_params(self, rate_num: float, log_level: float, reset: bool) -> None:
         self.SIMULATION             = self.params.add(self.namespace + "/simulation",               None,       check_bool,                                     force=False)
 
         self.FEAT_TYPE              = self.params.add(self.namespace + "/feature_type",             None,       lambda x: check_enum(x, FeatureType),           force=False)
@@ -134,7 +135,7 @@ class Base_ROS_Class:
         self.SVM_TOL_THRES          = self.params.add(self.namespace + "/svm/tolerance/threshold",  None,       check_positive_float,                           force=False)
         
         self.RATE_NUM               = self.params.add(self.nodespace + "/rate",                     rate_num,   check_positive_float,                           force=reset)
-        self.LOG_LEVEL              = self.params.add(self.nodespace + "/log_level",                log_level,  check_positive_int,                             force=reset)
+        self.LOG_LEVEL              = self.params.add(self.nodespace + "/log_level",                log_level,  lambda x: check_enum(x, LogType),               force=reset)
 
         self.REF_DATA_PARAMS        = [self.NPZ_DBP, self.BAG_DBP, self.REF_BAG_NAME, self.REF_FILTERS, self.REF_SAMPLE_RATE, self.IMG_TOPIC, self.SLAM_ODOM_TOPIC, self.FEAT_TYPE, self.IMG_DIMS]
         self.REF_DATA_NAMES         = [i.name for i in self.REF_DATA_PARAMS]
@@ -153,15 +154,16 @@ class Base_ROS_Class:
         self.params.add_sub(self.namespace + "/params_update", self.param_callback)
         self.sublis          = SubscribeListener(printer=self.print)
 
-    def node_ready(self, order_id) -> None:
+    def node_ready(self, order_id: int) -> None:
         self.main_ready      = True
         if not order_id is None: 
-            rospy.set_param(self.namespace + '/launch_step', order_id + 1)
+            if rospy.get_param(self.namespace + '/launch_step') == order_id:
+                rospy.set_param(self.namespace + '/launch_step', order_id + 1)
 
-    def param_helper(self, msg) -> None:
+    def param_helper(self, msg: String) -> None:
         pass
 
-    def param_callback(self, msg) -> None:
+    def param_callback(self, msg: String) -> None:
         self.parameters_ready = False
         if self.params.exists(msg.data):
             if not self.params.update(msg.data):
@@ -171,7 +173,7 @@ class Base_ROS_Class:
                 self.print("Change to parameter [%s]; updated." % msg.data, LogType.DEBUG)
 
                 if msg.data == self.LOG_LEVEL.name:
-                    set_rospy_log_lvl(self.LOG_LEVEL.get())
+                    set_rospy_log_lvl(enum_value(self.LOG_LEVEL.get()))
                 elif msg.data == self.RATE_NUM.name:
                     self.rate_obj = rospy.Rate(self.RATE_NUM.get())
 
@@ -180,7 +182,7 @@ class Base_ROS_Class:
             self.print("Change to untracked parameter [%s]; ignored." % msg.data, LogType.DEBUG)
         self.parameters_ready = True
 
-    def make_dataset_dict(self, path=False) -> dict:
+    def make_dataset_dict(self, path: bool = False) -> dict:
         if path:
             bag_name    = self.PATH_BAG.get()
             odom_topic  = self.PATH_ODOM.get()
@@ -203,7 +205,7 @@ class Base_ROS_Class:
         svm_dict = dict(factors=self.SVM_FACTORS.get(), tol_thres=self.SVM_TOL_THRES.get(), tol_mode=enum_name(self.SVM_TOL_MODE.get()))
         return dict(ref=ref_dict, qry=qry_dict, svm=svm_dict, npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), svm_dbp=self.SVM_DBP.get())
     
-    def debug_cb(self, msg) -> None:
+    def debug_cb(self, msg: Debug) -> None:
         if msg.node_name == self.node_name:
             try:
                 if msg.instruction == 0:
@@ -217,7 +219,8 @@ class Base_ROS_Class:
             except:
                 self.print("Debug operation failed.", LogType.DEBUG)
 
-    def add_pub(self, topic, data_class, queue_size=1, latch=False, subscriber_listener=None) -> ROS_Publisher:
+    def add_pub(self, topic: str, data_class: genpy.Message, queue_size: int = 1, latch: bool = False, 
+                subscriber_listener: SubscribeListener = None) -> ROS_Publisher:
         '''
         Add new ROS_Publisher
 
@@ -245,7 +248,7 @@ class Base_ROS_Class:
         '''
         self.hb.set_state(state)
 
-    def generate_path(self, dataset, _every=3) -> Path:
+    def generate_path(self, dataset: dict, _every: int = 3) -> Path:
         
         px      = dataset['dataset']['px']
         py      = dataset['dataset']['py']
@@ -263,7 +266,8 @@ class Base_ROS_Class:
 
         return new_path
 
-    def print(self, text, logtype=LogType.INFO, throttle=0, ros=None, name=None, no_stamp=None, log_level=None) -> bool:
+    def print(self, text: str, logtype: LogType = LogType.INFO, throttle: float = 0, 
+              ros: bool = None, name: str = None, no_stamp: bool = None, log_level: LogType = None) -> bool:
         if ros is None:
             ros = True
         if name is None:

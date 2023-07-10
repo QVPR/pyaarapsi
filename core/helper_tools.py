@@ -5,12 +5,19 @@ import sys
 import traceback
 import numpy as np
 import pickle
+from fastdist import fastdist
 from enum import Enum
 
 class Bool(Enum):
     UNSET = -1
     FALSE = 0
     TRUE  = 1
+
+def m2m_dist(arr_1, arr_2, flatten=False):
+    out = fastdist.matrix_to_matrix_distance(np.matrix(arr_1), np.matrix(arr_2), fastdist.euclidean, "euclidean")
+    if flatten:
+        out = out.flatten()
+    return out
 
 def try_load_var(path: str, var_name: str) -> object:
     try:
@@ -22,15 +29,20 @@ def try_load_var(path: str, var_name: str) -> object:
 def save_var(path: str, var: object, var_name: str) -> None:
     np.savez(path+"/"+var_name, **{var_name: var})
 
-def normalize_angle(angle: float) -> float:
+def normalize_angle(angle: float, iter=False) -> float:
     # Normalize angle [-pi, +pi]
-    if angle > np.pi:
-        norm_angle = angle - 2*np.pi
-    elif angle < -np.pi:
-        norm_angle = angle + 2*np.pi
+    if iter:
+        angle[angle>np.pi] = angle[angle>np.pi] - 2*np.pi
+        angle[angle<-np.pi] = angle[angle<-np.pi] + 2*np.pi
+        return angle
     else:
-        norm_angle = angle
-    return norm_angle
+        if angle > np.pi:
+            norm_angle = angle - 2*np.pi
+        elif angle < -np.pi:
+            norm_angle = angle + 2*np.pi
+        else:
+            norm_angle = angle
+        return norm_angle
 
 def angle_wrap(angle_in: float, mode: str = 'DEG') -> float:
     '''
@@ -150,7 +162,7 @@ def combine_dicts(dicts: list, cast: object = list) -> dict:
 def get_num_decimals(num: float) -> int:
     return str(num)[::-1].find('.')
 
-def vis_dict(input: dict, printer=print) -> str:
+def vis_dict(input: dict, printer = print) -> str:
     def sub_dict_struct(input, lvl, key):
         if lvl == 0: indent = ''
         else: indent = '\t'*lvl
