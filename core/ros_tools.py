@@ -29,10 +29,12 @@ def compressed2np(msg: CompressedImage, encoding: str = "passthrough") -> np.nda
         img_out = cvtColor2(img_in, "bgr8", encoding)
     return img_out
 
-def np2compressed(img_in: np.ndarray, encoding: str = "jpg"):
+def np2compressed(img_in: np.ndarray, encoding: str = "jpg", add_stamp: bool = True):
     msg_out = CompressedImage()
     msg_out.format = encoding
     msg_out.data = np.array(cv2.imencode('.' + encoding, img_in)[1]).tostring()
+    if add_stamp:
+        msg_out.header.stamp = rospy.Time.now()
     return msg_out
 
 def raw2np(msg: Image, bridge: CvBridge) -> np.ndarray:
