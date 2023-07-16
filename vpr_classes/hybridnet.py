@@ -4,14 +4,18 @@ import rospkg
 import os
 from os.path import join, exists, isfile
 from os import makedirs
-os.environ['GLOG_minloglevel'] = '2' # must be done prior to importing caffe to suppress excessive logging.
-import caffe
 import numpy as np
 import torch
 from tqdm.auto import tqdm
 import cv2
 from PIL import Image
 from .download_models import download_hybridnet_models, MODELS_DIR
+try:
+    os.environ['GLOG_minloglevel'] = '2' # must be done prior to importing caffe to suppress excessive logging.
+    import caffe
+    CAFFE_OK = True
+except:
+    CAFFE_OK = False
 
 class PlaceDataset(torch.utils.data.Dataset):
     def __init__(self, image_data, dims=None):
@@ -60,6 +64,7 @@ class PlaceDataset(torch.utils.data.Dataset):
 
 class HybridNet_Container:
     def __init__(self, logger=print, cuda=False, target_layer='fc7_new', load=True):
+        global CAFFE_OK
         
         self.cuda           = cuda
         self.logger         = logger
@@ -68,6 +73,10 @@ class HybridNet_Container:
         self.layerLabs      = ['conv3', 'conv4', 'conv5', 'conv6' ,'pool1', 'pool2', 'fc7_new', 'fc8_new']
         self.layerDims      = [64896, 64896, 43264, 43264, 69984, 43264, 4096, 2543]
         self.layerDict      = dict(zip(self.layerLabs, self.layerDims))
+
+        if not CAFFE_OK:
+            self.logger('Could not import caffe for HybridNet Container. Using the container will trigger crashes. Please correct your caffe installation.')
+            return
 
         if self.cuda:
             caffe.set_mode_gpu()
