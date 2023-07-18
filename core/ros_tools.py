@@ -17,7 +17,7 @@ from sensor_msgs.msg            import Image, CompressedImage
 
 from tf.transformations         import quaternion_from_euler, euler_from_quaternion
 from .helper_tools              import formatException
-from .enum_tools                import enum_name
+from .enum_tools                import enum_name, enum_get, enum_value
 from .roslogger                 import LogType, roslogger
 
 def compressed2np(msg: CompressedImage, encoding: str = "passthrough") -> np.ndarray:
@@ -172,18 +172,35 @@ def rip_bag(bag_path, sample_rate, topics_in, printer=print, use_tqdm=True):
                 
     return data
 
-def set_rospy_log_lvl(log_level):
+
+
+class LogTypeMap(Enum):
+    '''
+    LogTypeMap Enumeration
+
+    For use with set_rospy_log_lvl
+    '''
+
+    ROS_DEBUG   = 1
+    DEBUG       = 2
+    INFO        = 2
+    WARN        = 4
+    ERROR       = 8
+    FATAL       = 16
+
+def set_rospy_log_lvl(log_level: LogType = LogType.INFO):
     '''
     Change a ROS node's log_level after init_node has been performed.
     Source: https://answers.ros.org/question/9802/change-rospy-node-log-level-while-running/
 
     Inputs:
-    - log_level: rospy log_level, either an integer or rospy enum (i.e. to set to debug, use either 1 or rospy.DEBUG)
+    - log_level: LogType type {default: LogType.INFO}
     Returns:
     None
     '''
     logger = logging.getLogger('rosout')
-    logger.setLevel(rospy.impl.rosout._rospy_to_logging_levels[log_level])
+    log_level_rospy = enum_value(enum_get(enum_name(log_level), LogTypeMap))
+    logger.setLevel(rospy.impl.rosout._rospy_to_logging_levels[log_level_rospy])
 
 def imgmsgtrans(msg, transform, bridge=None):
     '''

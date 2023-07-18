@@ -173,7 +173,7 @@ class Base_ROS_Class:
                 self.print("Change to parameter [%s]; updated." % msg.data, LogType.DEBUG)
 
                 if msg.data == self.LOG_LEVEL.name:
-                    set_rospy_log_lvl(enum_value(self.LOG_LEVEL.get()))
+                    set_rospy_log_lvl(self.LOG_LEVEL.get())
                 elif msg.data == self.RATE_NUM.name:
                     self.rate_obj = rospy.Rate(self.RATE_NUM.get())
 

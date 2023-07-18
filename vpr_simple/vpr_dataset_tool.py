@@ -67,11 +67,11 @@ class VPRDatasetProcessor: # main ROS class
 
         if not (dataset_params is None): # If parameters have been provided:
             self.print("Loading model from parameters...")
-            self.load_dataset(dataset_params, try_gen=try_gen)
+            name = self.load_dataset(dataset_params, try_gen=try_gen)
 
             if not self.dataset_ready:
                 raise Exception("Dataset load failed.")
-            self.print("Dataset Ready.")
+            self.print("Dataset Ready (loaded: %s)." % str(name))
 
         else: # None-case needed for SVM training
             self.print("Ready; no dataset loaded.")
@@ -302,13 +302,13 @@ class VPRDatasetProcessor: # main ROS class
             if len(dataset_params['ft_types']) > 1:
                 for ft_type in dataset_params['ft_types'][1:]:
                     if not self.extend_dataset(ft_type, try_gen=try_gen, save=try_gen):
-                        return False
-            return True
+                        return ''
+            return name
         else: 
             if try_gen:
                 self.generate_dataset(**dataset_params)
-                return True
-            return False
+                return 'NEW GENERATION'
+            return ''
     
     def swap(self, dataset_params, generate=False, allow_false=True):
         # Check if we can just extend the current dataset:
