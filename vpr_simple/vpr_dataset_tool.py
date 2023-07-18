@@ -306,6 +306,7 @@ class VPRDatasetProcessor: # main ROS class
             return name
         else: 
             if try_gen:
+                self.print('Generating dataset with params: %s' % (str(dataset_params)), LogType.DEBUG)
                 self.generate_dataset(**dataset_params)
                 return 'NEW GENERATION'
             return ''
