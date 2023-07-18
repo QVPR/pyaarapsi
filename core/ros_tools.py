@@ -172,22 +172,6 @@ def rip_bag(bag_path, sample_rate, topics_in, printer=print, use_tqdm=True):
                 
     return data
 
-
-
-class LogTypeMap(Enum):
-    '''
-    LogTypeMap Enumeration
-
-    For use with set_rospy_log_lvl
-    '''
-
-    ROS_DEBUG   = 1
-    DEBUG       = 2
-    INFO        = 2
-    WARN        = 4
-    ERROR       = 8
-    FATAL       = 16
-
 def set_rospy_log_lvl(log_level: LogType = LogType.INFO):
     '''
     Change a ROS node's log_level after init_node has been performed.
@@ -199,7 +183,7 @@ def set_rospy_log_lvl(log_level: LogType = LogType.INFO):
     None
     '''
     logger = logging.getLogger('rosout')
-    log_level_rospy = enum_value(enum_get(enum_name(log_level), LogTypeMap))
+    log_level_rospy = int(enum_value(log_level) + 0.5)
     logger.setLevel(rospy.impl.rosout._rospy_to_logging_levels[log_level_rospy])
 
 def imgmsgtrans(msg, transform, bridge=None):
