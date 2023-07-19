@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import time
-import rospy
 import sys
 import traceback
 import numpy as np
@@ -113,10 +112,10 @@ class Timer:
         self.points[:] = []
         self.add_bounds = False
 
-    def print(self, string: str) -> None:
+    def print(self, string: str, printer=print) -> None:
         if self.rospy_on:
             try:
-                rospy.loginfo(string)
+                print(string)
                 return
             except:
                 pass

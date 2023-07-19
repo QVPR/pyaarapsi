@@ -2,8 +2,6 @@
 
 import configparser
 import os
-from os.path import join, exists, isfile
-from os import makedirs
 
 from tqdm.auto import tqdm
 import torch
@@ -97,10 +95,10 @@ class NetVLAD_Container:
             resume_ckpt = self.config['global_params']['resumePath'] + '.pth.tar'
 
         file_path = MODELS_DIR + resume_ckpt
-        if not isfile(file_path):
+        if not os.path.isfile(file_path):
             download_netvlad_models()
 
-        if isfile(file_path):
+        if os.path.isfile(file_path):
             self.logger("=> Trying to load checkpoint '{}'".format(file_path))
             checkpoint = torch.load(file_path, map_location=lambda storage, loc: storage)
             if bool(self.num_pcs):
@@ -233,9 +231,9 @@ class NetVLAD_Container:
         dataset_clean.destroy()
 
         if not (save_dir is None):
-            if not exists(save_dir):
-                makedirs(save_dir)
-            output_global_features_filename = join(save_dir, 'NetVLAD_feats.npy')
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            output_global_features_filename = os.path.join(save_dir, 'NetVLAD_feats.npy')
             np.save(output_global_features_filename, db_feat)
 
         return db_feat

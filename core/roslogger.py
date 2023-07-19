@@ -1,10 +1,106 @@
 #!/usr/bin/env python3
-from rospy.core import _frame_to_caller_id, _logging_once, _logging_identical, _logging_throttle, is_initialized
+
 import inspect
 import logging
+import pickle
+from hashlib import md5
 from enum import Enum
 from .enum_tools import enum_name, enum_value, enum_get
 from .vars import C_I_GREEN, C_I_YELLOW, C_I_RED, C_I_BLUE, C_RESET, C_CLEAR
+
+##############################################################################
+############# FROM ROSPY.CORE ################################################
+############# vvvvvvvvvvvvvvv ################################################
+##############################################################################
+
+try:
+    import rospy
+
+    def is_initialized():
+        return rospy.core._client_ready
+    
+    ROSPY_ACCESSIBLE = True
+except:
+    
+    def is_initialized():
+        return False
+    
+    ROSPY_ACCESSIBLE = False
+
+class LoggingThrottle(object):
+
+    last_logging_time_table = {}
+
+    def __call__(self, caller_id, period):
+        """Do logging specified message periodically.
+
+        - caller_id (str): Id to identify the caller
+        - logging_func (function): Function to do logging.
+        - period (float): Period to do logging in second unit.
+        - msg (object): Message to do logging.
+        """
+        now = rospy.Time.now()
+
+        last_logging_time = self.last_logging_time_table.get(caller_id)
+
+        if (last_logging_time is None or
+              (now - last_logging_time) > rospy.Duration(period)):
+            self.last_logging_time_table[caller_id] = now
+            return True
+        elif last_logging_time > now:
+            self.last_logging_time_table = {}
+            self.last_logging_time_table[caller_id] = now
+            return True
+        return False
+
+
+_logging_throttle = LoggingThrottle()
+
+class LoggingIdentical(object):
+
+    last_logging_msg_table = {}
+
+    def __call__(self, caller_id, msg):
+        """Do logging specified message only if distinct from last message.
+
+        - caller_id (str): Id to identify the caller
+        - msg (str): Contents of message to log
+        """
+        msg_hash = md5(msg.encode()).hexdigest()
+
+        if msg_hash != self.last_logging_msg_table.get(caller_id):
+            self.last_logging_msg_table[caller_id] = msg_hash
+            return True
+        return False
+
+
+_logging_identical = LoggingIdentical()
+
+class LoggingOnce(object):
+
+    called_caller_ids = set()
+
+    def __call__(self, caller_id):
+        if caller_id not in self.called_caller_ids:
+            self.called_caller_ids.add(caller_id)
+            return True
+        return False
+
+_logging_once = LoggingOnce()
+
+def _frame_to_caller_id(frame):
+    # from rospy.core
+    caller_id = (
+        inspect.getabsfile(frame),
+        frame.f_lineno,
+        frame.f_lasti,
+    )
+    return pickle.dumps(caller_id)
+
+##############################################################################
+############# ^^^^^^^^^^^^^^^ ################################################
+############# FROM ROSPY.CORE ################################################
+##############################################################################
 
 class LogType(Enum):
     '''
@@ -55,6 +151,7 @@ def _roslogger(logfunc, logtype, ros, text, no_stamp=True):
 
 def roslogger(text, logtype: LogType = LogType.INFO, throttle: float = None, ros: bool =True, name: str = None, no_stamp: bool = True,
                  once: bool = False, throttle_identical: bool = False, log_level: LogType = None):
+    global ROSPY_ACCESSIBLE
     '''
     Print function helper; overrides rospy.core._base_logger
     For use with integration with ROS
@@ -85,6 +182,9 @@ def roslogger(text, logtype: LogType = LogType.INFO, throttle: float = None, ros
     rospy_logger = logging.getLogger('rosout')
     if log_level is None:
         log_level = log_level_to_type(rospy_logger.level)
+
+    if not ROSPY_ACCESSIBLE:
+        ros = False
 
     if ros:
         if enum_value(logtype) in roslog_rospy_types.keys():

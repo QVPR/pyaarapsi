@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 
-import rospkg
 import os
-from os.path import join, exists, isfile
-from os import makedirs
 import numpy as np
 import torch
 from tqdm.auto import tqdm
@@ -89,7 +86,7 @@ class HybridNet_Container:
     def load(self):
 
         model_file_path = os.path.join(MODELS_DIR, 'HybridNet.caffemodel')
-        if not isfile(model_file_path):
+        if not os.path.isfile(model_file_path):
             download_hybridnet_models()
         self.logger('Loading HybridNet model')
 
@@ -180,9 +177,9 @@ class HybridNet_Container:
             db_feat = np.array(feats)
 
         if not (save_dir is None):
-            if not exists(save_dir):
-                makedirs(save_dir)
-            output_global_features_filename = join(save_dir, 'NetVLAD_feats.npy')
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            output_global_features_filename = os.path.join(save_dir, 'NetVLAD_feats.npy')
             np.save(output_global_features_filename, db_feat)
 
         return db_feat

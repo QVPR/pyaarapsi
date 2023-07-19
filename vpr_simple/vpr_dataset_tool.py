@@ -2,12 +2,21 @@
 
 import numpy as np
 import copy
-import rospkg
+import logging
 import os
+try:
+    import rospkg
+    ROSPKG_ROOT = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__)))
+except:
+    logging.warn('Could not access rospkg; ensure you specify root if using this tool.')
 import datetime
 from pathlib import Path
 from ..core.enum_tools import enum_name, enum_get
-from ..core.ros_tools import process_bag, LogType, roslogger
+try:
+    from ..core.ros_tools import process_bag
+except:
+    logging.warn('Could not access ros_tools; generating features from rosbags will fail.')
+from ..core.roslogger import LogType, roslogger
 from ..core.helper_tools import formatException
 from ..core.file_system_tools import scan_directory
 from .vpr_helpers import *
@@ -51,7 +60,7 @@ class VPRDatasetProcessor: # main ROS class
         self.printer        = printer
 
         if root is None:
-            self.root       = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__)))
+            self.root       = ROSPKG_ROOT
         else:
             self.root       = root
 
