@@ -29,7 +29,7 @@ def compressed2np(msg: CompressedImage, encoding: str = "passthrough") -> np.nda
         img_out = cvtColor2(img_in, "bgr8", encoding)
     return img_out
 
-def np2compressed(img_in: np.ndarray, encoding: str = "jpg", add_stamp: bool = True):
+def np2compressed(img_in: np.ndarray, encoding: str = "jpeg", add_stamp: bool = True):
     msg_out = CompressedImage()
     msg_out.format = encoding
     msg_out.data = np.array(cv2.imencode('.' + encoding, img_in)[1]).tostring()
