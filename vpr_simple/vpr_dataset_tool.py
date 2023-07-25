@@ -48,6 +48,7 @@ class VPRDatasetProcessor: # main ROS class
             autosave:       bool type {default: False}; whether or not to automatically save any generated datasets
             ros:            bool type {default: True}; whether or not to use rospy logging (requires operation within ROS node scope)
             root:           str type {default: None}; base root inserted in front of npz_dbp, bag_dbp, and svm_dbp
+            printer:        method {default: None}; if provided, overrides logging and will pass inputs to specified method on print
         Returns:
             self
         '''
