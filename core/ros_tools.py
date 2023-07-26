@@ -621,7 +621,7 @@ class ROS_Param_Server:
     def add_sub(self, topic, cb, queue_size=100):
         self.param_sub = rospy.Subscriber(topic, String, cb, queue_size=queue_size)
 
-    def add(self, name, value, evaluation, force=False):
+    def add(self, name: str, value, evaluation, force: bool = False) -> ROS_Param:
         '''
         Add new ROS_Param
 
@@ -637,7 +637,7 @@ class ROS_Param_Server:
         self.updates_possible.append(name)
         return self.params[name]
 
-    def update(self, name):
+    def update(self, name: str) -> None:
         '''
         Update specified parameter / ROS_Param
 
@@ -657,7 +657,7 @@ class ROS_Param_Server:
                       % (str(name), current_value, str(self.params[name].value)), LogType.ERROR)
         return update_status
 
-    def exists(self, name):
+    def exists(self, name: str):
         '''
         Check if specified parameter / ROS_Param exists on server
 
@@ -677,7 +677,7 @@ class ROS_Publisher:
     Purpose:
     - Wrapper class for ROS Publishers
     '''
-    def __init__(self, topic, data_class, queue_size=1, latch=False, server=None, subscriber_listener=None):
+    def __init__(self, topic: str, data_class, queue_size: int = 1, latch: bool = False, server = None, subscriber_listener: SubscribeListener = None):
         '''
         Initialisation
 
