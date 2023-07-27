@@ -114,6 +114,8 @@ class Base_ROS_Class:
         self.IMG_TOPIC              = self.params.add(self.namespace + "/img_topic",                None,       check_string,                                   force=False)
         self.SLAM_ODOM_TOPIC        = self.params.add(self.namespace + "/slam_odom_topic",          None,       check_string,                                   force=False)
         
+        self.IMG_HFOV               = self.params.add(self.namespace + "/img_hfov",                 None,       check_positive_float,                           force=False)
+
         self.PATH_BAG               = self.params.add(self.namespace + "/path/bag_name",            None,       check_string,                                   force=False)
         self.PATH_ODOM              = self.params.add(self.namespace + "/path/odom_topic",          None,       check_string,                                   force=False)
         self.PATH_IMG               = self.params.add(self.namespace + "/path/img_topic",           None,       check_string,                                   force=False)
