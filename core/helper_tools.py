@@ -12,6 +12,18 @@ class Bool(Enum):
     FALSE = 0
     TRUE  = 1
 
+def roll(img: np.ndarray, i: int, fill=0) -> np.ndarray:
+    if abs(i) > img.shape[1]:
+            return np.ones(img.shape) * fill
+    if i == 0:
+        return img
+    i = i * -1 # set direction to be consistent with np.roll
+    _m = img[:,np.max([i, 0]):np.min([i+img.shape[1],img.shape[1]])]
+    _e = np.ones((img.shape[0], np.max([i,0]))) * fill
+    _s = np.ones((img.shape[0], img.shape[1] - np.min([i+img.shape[1],img.shape[1]]))) * fill
+    img_out = np.concatenate([_s, _m, _e], axis=1)
+    return np.array(img_out, dtype=img.dtype)
+
 def m2m_dist(arr_1, arr_2, flatten=False):
     out = fastdist.matrix_to_matrix_distance(np.matrix(arr_1), np.matrix(arr_2), fastdist.euclidean, "euclidean")
     if flatten:
