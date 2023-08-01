@@ -35,6 +35,9 @@ This is a legacy tool. It has been superseded by vpr_dataset_tool.
 
 class VPRImageProcessor: # main ROS class
     def __init__(self, ros=False, init_netvlad=False, init_hybridnet=False, cuda=False, dims=None):
+
+        print('This is a legacy tool. It has been superseded by vpr_dataset_tool. Use at own risk')
+        
         global PYTHON_LIBRARY_STATUS
         self.clearImageVariables()
         self.clearOdomVariables()
