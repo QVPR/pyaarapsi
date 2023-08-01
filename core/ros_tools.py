@@ -5,10 +5,6 @@ import logging
 import numpy as np
 from enum import Enum
 
-import cv2
-from cv_bridge import CvBridge
-from cv_bridge.boost.cv_bridge_boost import cvtColor2
-
 from tqdm.auto import tqdm
 
 from std_msgs.msg               import String
@@ -19,26 +15,7 @@ from tf.transformations         import quaternion_from_euler, euler_from_quatern
 from .helper_tools              import formatException
 from .enum_tools                import enum_name, enum_get, enum_value
 from .roslogger                 import LogType, roslogger
-
-def compressed2np(msg: CompressedImage, encoding: str = "passthrough") -> np.ndarray:
-    buf     = np.ndarray(shape=(1, len(msg.data)), dtype=np.uint8, buffer=msg.data)
-    img_in  = cv2.imdecode(buf, cv2.IMREAD_UNCHANGED)
-    if encoding == "passthrough":
-        img_out = img_in
-    else:
-        img_out = cvtColor2(img_in, "bgr8", encoding)
-    return img_out
-
-def np2compressed(img_in: np.ndarray, encoding: str = "jpeg", add_stamp: bool = True):
-    msg_out = CompressedImage()
-    msg_out.format = encoding
-    msg_out.data = np.array(cv2.imencode('.' + encoding, img_in)[1]).tostring()
-    if add_stamp:
-        msg_out.header.stamp = rospy.Time.now()
-    return msg_out
-
-def raw2np(msg: Image, bridge: CvBridge) -> np.ndarray:
-    return bridge.imgmsg_to_cv2(msg)
+from .image_transforms          import *
 
 def pose_covariance_to_stamped(pose: PoseWithCovariance, frame_id='map') -> PoseStamped:
     '''
@@ -94,11 +71,8 @@ def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, us
     data = rip_bag(bag_path, sample_rate, topic_list, printer=printer, use_tqdm=use_tqdm)
 
     printer("Converting stored messages (%s)" % (str(len(data))))
-    bridge          = CvBridge()
     new_dict        = {key: [] for key in img_topics + ['px', 'py', 'pw', 'vx', 'vy', 'vw', 't']}
 
-    compress_func   = lambda msg: bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
-    raw_img_func    = lambda msg: bridge.imgmsg_to_cv2(msg, "passthrough")
     none_rows       =   0
     if len(data) < 1:
         raise Exception('No usable data!')
@@ -121,9 +95,9 @@ def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, us
 
         for topic in img_topics:
             if "/compressed" in topic:
-                new_dict[topic].append(compress_func(row[1 + topic_list.index(topic)]))
+                new_dict[topic].append(compressed2np(row[1 + topic_list.index(topic)]))
             else:
-                new_dict[topic].append(raw_img_func(row[1 + topic_list.index(topic)]))
+                new_dict[topic].append(raw2np(row[1 + topic_list.index(topic)]))
     printer("%0.2f%% of %d rows contained NoneType; these were ignored." % (100 * none_rows / len(data), len(data)))
     return {key: np.array(new_dict[key]) for key in new_dict}
 
@@ -185,75 +159,6 @@ def set_rospy_log_lvl(log_level: LogType = LogType.INFO):
     logger = logging.getLogger('rosout')
     log_level_rospy = int(enum_value(log_level) + 0.5)
     logger.setLevel(rospy.impl.rosout._rospy_to_logging_levels[log_level_rospy])
-
-def imgmsgtrans(msg, transform, bridge=None):
-    '''
-    Transform ROS image data
-
-    Inputs:
-    - msg:          sensor_msgs/(Compressed)Image
-    - transform:    handle to function to be applied
-    - bridge:       CvBridge object, or none (function will initialise)
-    Returns:
-    - transformed image of type input msg
-    '''
-    if bridge is None:
-        bridge = CvBridge()
-
-    if isinstance(msg, CompressedImage):
-        img         = bridge.compressed_imgmsg_to_cv2(msg, "passthrough")
-        img_trans   = transform(img)
-        msg_trans   = bridge.cv2_to_compressed_imgmsg(img_trans, "jpeg")
-    elif isinstance(msg, Image):
-        img         = bridge.imgmsg_to_cv2(msg, "passthrough")
-        img_trans   = transform(img)
-        msg_trans   = bridge.cv2_to_imgmsg(img_trans, "bgr8")
-    else:
-        raise Exception("Type not CompressedImage or Image.")
-    return msg_trans
-
-def msg2img(msg, bridge=None):
-    '''
-    Convert ROS msg to cv2 image
-
-    Inputs:
-    - msg:      sensor_msgs/(Compressed)Image
-    - bridge:   CvBridge object, or none (function will initialise)
-    Returns:
-    - converted image as cv2 array
-    '''
-    if bridge is None:
-        bridge = CvBridge()
-
-    if isinstance(msg, CompressedImage):
-        img         = bridge.compressed_imgmsg_to_cv2(msg, "passthrough")
-    elif isinstance(msg, Image):
-        img         = bridge.imgmsg_to_cv2(msg, "passthrough")
-    else:
-        raise Exception("Type not CompressedImage or Image.")
-    return img
-
-def img2msg(img, mode, bridge=None):
-    '''
-    Convert cv2 img to ROS msg
-
-    Inputs:
-    - img:      cv2 image array
-    - mode:     string, either 'Image' or 'CompressedImage'
-    - bridge:   CvBridge object, or none (function will initialise)
-    Returns:
-    - sensor_msgs/(Compressed)Image
-    '''
-    if bridge is None:
-        bridge = CvBridge()
-
-    if mode == 'CompressedImage':
-        msg = bridge.cv2_to_compressed_imgmsg(img, "jpeg")
-    elif mode == 'Image':
-        msg = bridge.cv2_to_imgmsg(img, "bgr8")
-    else:
-        raise Exception("Mode not 'CompressedImage' or 'Image'.")
-    return msg
 
 class NodeState(Enum):
     '''
