@@ -11,14 +11,14 @@ def compressed2np(msg: CompressedImage) -> np.ndarray:
     #img_in  = cv2.imdecode(buf, cv2.IMREAD_UNCHANGED)
     # return img_in
     global __bridge
-    return __bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
+    return __bridge.compressed_imgmsg_to_cv2(msg, "rgb8")
 
 def np2compressed(img_in: np.ndarray, add_stamp: bool = True) -> CompressedImage:
     # msg_out = CompressedImage()
     # msg_out.format = 'jpeg'
     # msg_out.data = np.array(cv2.imencode('.' + 'jpeg', img_in)[1]).tostring()
     global __bridge
-    msg_out = __bridge.cv2_to_compressed_imgmsg(img_in, "jpeg")
+    msg_out = __bridge.cv2_to_compressed_imgmsg(img_in[:,:,::-1], "jpeg")
     if add_stamp:
         msg_out.header.stamp = rospy.Time.now()
     return msg_out
