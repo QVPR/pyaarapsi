@@ -115,11 +115,7 @@ class Base_ROS_Class:
         self.SLAM_ODOM_TOPIC        = self.params.add(self.namespace + "/slam_odom_topic",          None,       check_string,                                   force=False)
         
         self.IMG_HFOV               = self.params.add(self.namespace + "/img_hfov",                 None,       check_positive_float,                           force=False)
-
-        self.PATH_BAG               = self.params.add(self.namespace + "/path/bag_name",            None,       check_string,                                   force=False)
-        self.PATH_ODOM              = self.params.add(self.namespace + "/path/odom_topic",          None,       check_string,                                   force=False)
-        self.PATH_IMG               = self.params.add(self.namespace + "/path/img_topic",           None,       check_string,                                   force=False)
-
+        
         self.REF_BAG_NAME           = self.params.add(self.namespace + "/ref/bag_name",             None,       check_string,                                   force=False)
         self.REF_FILTERS            = self.params.add(self.namespace + "/ref/filters",              None,       check_string,                                   force=False)
         self.REF_SAMPLE_RATE        = self.params.add(self.namespace + "/ref/sample_rate",          None,       check_positive_float,                           force=False) # Hz
