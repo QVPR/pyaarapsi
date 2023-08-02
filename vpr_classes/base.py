@@ -184,17 +184,9 @@ class Base_ROS_Class:
             self.print("Change to untracked parameter [%s]; ignored." % msg.data, LogType.DEBUG)
         self.parameters_ready = True
 
-    def make_dataset_dict(self, path: bool = False) -> dict:
-        if path:
-            bag_name    = self.PATH_BAG.get()
-            odom_topic  = self.PATH_ODOM.get()
-            img_topics  = [self.PATH_IMG.get()]
-        else:
-            bag_name = self.REF_BAG_NAME.get()
-            odom_topic  = self.SLAM_ODOM_TOPIC.get()
-            img_topics  = [self.IMG_TOPIC.get()]
-        return dict(bag_name=bag_name, npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), \
-                    odom_topic=odom_topic, img_topics=img_topics, sample_rate=self.REF_SAMPLE_RATE.get(), \
+    def make_dataset_dict(self) -> dict:
+        return dict(bag_name=self.REF_BAG_NAME.get(), npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), \
+                    odom_topic=self.SLAM_ODOM_TOPIC.get(), img_topics=[self.IMG_TOPIC.get()], sample_rate=self.REF_SAMPLE_RATE.get(), \
                     ft_types=enum_name(self.FEAT_TYPE.get(),wrap=True), img_dims=self.IMG_DIMS.get(), filters='{}')
     
     def make_svm_model_params(self) -> dict:
