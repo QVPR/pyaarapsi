@@ -14,7 +14,7 @@ from nav_msgs.msg           import Path, Odometry
 from std_msgs.msg           import String
 from geometry_msgs.msg      import PoseStamped, Twist
 from visualization_msgs.msg import MarkerArray
-from sensor_msgs.msg        import Joy
+from sensor_msgs.msg        import Joy, CompressedImage
 from aarapsi_robot_pack.msg import ControllerStateInfo, MonitorDetails, RequestDataset, ResponseDataset, xyw
 
 from pyaarapsi.core.ros_tools               import LogType, pose2xyw
@@ -47,6 +47,7 @@ class Main_ROS_Class(Base_ROS_Class):
         self.ROBOT_ODOM_TOPIC       = self.params.add(self.namespace + "/robot_odom_topic",         None,               check_string,                           force=False)
         self.VPR_ODOM_TOPIC         = self.params.add(self.namespace + "/vpr_odom_topic",           None,               check_string,                           force=False)
 
+        self.PUBLISH_ROLLMATCH      = self.params.add(self.nodespace + "/publish_rollmatch",        True,               check_bool,                             force=reset)
         self.REJECT_MODE            = self.params.add(self.nodespace + "/reject_mode",              Reject_Mode.OLD,    lambda x: check_enum(x, Reject_Mode),   force=reset)
         self.LOOP_PATH              = self.params.add(self.nodespace + "/loop_path",                True,               check_bool,                             force=reset)
         self.PRINT_DISPLAY          = self.params.add(self.nodespace + "/print_display",            True,               check_bool,                             force=reset)
@@ -64,7 +65,7 @@ class Main_ROS_Class(Base_ROS_Class):
         self.slam_ego           = []
         self.robot_ego          = []
         self.old_robot_ego      = []
-        self.lookahead          = 1
+        self.lookahead          = 1.0
         self.lookahead_mode     = Lookahead_Mode.DISTANCE
         self.dt                 = 1/self.RATE_NUM.get()
         self.print_lines        = 0
@@ -131,10 +132,12 @@ class Main_ROS_Class(Base_ROS_Class):
         self.path_pub           = self.add_pub(     self.namespace + '/path',       Path,                                       queue_size=1, latch=True, subscriber_listener=self.sublis)
         self.COR_pub            = self.add_pub(     self.namespace + '/cor',        PoseStamped,                                queue_size=1)
         self.goal_pub           = self.add_pub(     self.namespace + '/path_goal',  PoseStamped,                                queue_size=1)
+        self.slam_pub           = self.add_pub(     self.namespace + '/slam_pose',  PoseStamped,                                queue_size=1)
         self.speed_pub          = self.add_pub(     self.namespace + '/speeds',     MarkerArray,                                queue_size=1, latch=True, subscriber_listener=self.sublis)
         self.zones_pub          = self.add_pub(     self.namespace + '/zones',      MarkerArray,                                queue_size=1, latch=True, subscriber_listener=self.sublis)
         self.cmd_pub            = self.add_pub(     self.CMD_TOPIC.get(),           Twist,                                      queue_size=1)
         self.info_pub           = self.add_pub(     self.nodespace + '/info',       ControllerStateInfo,                        queue_size=1)
+        self.rollmatch_pub      = self.add_pub(     self.nodespace + '/rollmatch/compressed',  CompressedImage,                 queue_size=1)
         self.ds_requ_pub        = self.add_pub(     ds_requ + "request",            RequestDataset,                             queue_size=1)
         self.ds_requ_sub        = rospy.Subscriber( ds_requ + "ready",              ResponseDataset,        self.ds_requ_cb,    queue_size=1)
         self.state_sub          = rospy.Subscriber( self.namespace + '/state',      MonitorDetails,         self.state_cb,      queue_size=1)
@@ -307,7 +310,7 @@ class Main_ROS_Class(Base_ROS_Class):
             except:
                 self.dataset_loaded = False
 
-    def publish_controller_info(self, current_ind: int, target_ind: int, current_yaw: float, zone: int):
+    def publish_controller_info(self, current_ind: int, target_ind: int, current_yaw: float, zone: int, adj_lookahead: float):
         msg                         = ControllerStateInfo()
         msg.header.stamp            = rospy.Time.now()
         msg.header.frame_id         = 'map'
@@ -343,7 +346,7 @@ class Main_ROS_Class(Base_ROS_Class):
             pass
         self.new_slam_ego = False
 
-        msg.group.lookahead         = self.lookahead
+        msg.group.lookahead         = adj_lookahead
         msg.group.lookahead_mode    = enum_name(self.lookahead_mode)
 
         msg.group.zone_indices      = self.zone_indices
