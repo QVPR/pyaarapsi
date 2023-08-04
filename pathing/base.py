@@ -70,8 +70,8 @@ class Main_ROS_Class(Base_ROS_Class):
         self.dt                 = 1/self.RATE_NUM.get()
         self.print_lines        = 0
 
-        self.old_linear         = 0.0
-        self.old_angular        = 0.0
+        self.old_lin            = 0.0
+        self.old_ang            = 0.0
         self.zone_index         = None
         self.return_stage       = Return_Stage.UNSET
 
@@ -109,6 +109,12 @@ class Main_ROS_Class(Base_ROS_Class):
 
         self.feat_arr           = { self.raw_ind: FeatureType.RAW,           self.patchnorm_ind: FeatureType.PATCHNORM, 
                                     self.netvlad_ind: FeatureType.NETVLAD,   self.hybridnet_ind: FeatureType.HYBRIDNET }
+        
+        self.lin_lim            = { Safety_Mode.SLOW: self.SLOW_LIN_VEL_MAX.get(), Safety_Mode.FAST: self.FAST_LIN_VEL_MAX.get() }
+        self.ang_lim            = { Safety_Mode.SLOW: self.SLOW_ANG_VEL_MAX.get(), Safety_Mode.FAST: self.FAST_ANG_VEL_MAX.get() }
+
+        self.reject_lambda      = { Reject_Mode.STOP: lambda x: 0.0,        Reject_Mode.OLD: lambda x: x * 1,
+                                    Reject_Mode.OLD_50: lambda x: x * 0.5,  Reject_Mode.OLD_90: lambda x: x * 0.9 }
 
         self.twist_msg          = Twist()
 
@@ -377,7 +383,7 @@ class Main_ROS_Class(Base_ROS_Class):
         self.print('Bluetooth controller not found! Shutting down.', LogType.FATAL)
         sys.exit()
 
-    def print_display(self, new_linear, new_angular, current_ind, error_v, error_y, error_yaw, zone, lin_path_err, ang_path_err):
+    def print_display(self, new_linear, new_angular, current_ind, speed, error_yaw, zone, lin_path_err, ang_path_err):
 
         if self.command_mode == Command_Mode.STOP:
             command_mode_string = C_I_GREEN + 'STOPPED' + C_RESET
@@ -401,13 +407,13 @@ class Main_ROS_Class(Base_ROS_Class):
 
         base_pos_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '% 5.2f ' for i in 'xyw']) + C_RESET
         base_vel_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '% 5.2f ' for i in ['LIN','ANG']]) + C_RESET
-        base_err_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '% 5.2f ' for i in ['VEL', 'C-T','YAW']]) + C_RESET
+        base_err_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '% 5.2f ' for i in ['VEL', 'eYAW']]) + C_RESET
         base_ind_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '%4d ' for i in ['CUR']]) + C_RESET
         base_svm_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '%s ' for i in ['OVERRIDE','SVM']]) + C_RESET
         vpr_pos_string  = base_pos_string % tuple(self.vpr_ego)
         slam_pos_string = base_pos_string % tuple(self.slam_ego)
         speed_string    = base_vel_string % (new_linear, new_angular)
-        errors_string   = base_err_string % (error_v, error_y, error_yaw)
+        errors_string   = base_err_string % (speed, error_yaw)
         index_string    = base_ind_string % (current_ind)
         path_err_string = base_vel_string % (lin_path_err, ang_path_err)
         svm_string      = base_svm_string % (enum_name(self.REJECT_MODE.get()), str(self.state_msg.mStateBin))
@@ -419,8 +425,8 @@ class Main_ROS_Class(Base_ROS_Class):
                  TAB + '    Safety Mode: %s' % safety_mode_string,
                  TAB + '   VPR Position: %s' % vpr_pos_string,
                  TAB + '  SLAM Position: %s' % slam_pos_string,
+                 TAB + '   Measurements: %s' % errors_string,
                  TAB + ' Speed Commands: %s' % speed_string,
-                 TAB + '         Errors: %s' % errors_string,
                  TAB + '     Index Info: %s' % index_string,
                  TAB + '    Zone Number: %d' % zone,
                  TAB + '     Path Error: %s' % path_err_string,
