@@ -55,7 +55,7 @@ class Main_ROS_Class(Base_ROS_Class):
         self.LINSTOP_OVERRIDE       = self.params.add(self.nodespace + "/override/lin_error",       0.4,                check_positive_float,                   force=reset)
         self.ANGSTOP_OVERRIDE       = self.params.add(self.nodespace + "/override/ang_error",       80*np.pi/180,       check_positive_float,                   force=reset)
         self.SAFETY_OVERRIDE        = self.params.add(self.nodespace + "/override/safety",          Safety_Mode.UNSET,  lambda x: check_enum(x, Safety_Mode),   force=reset)
-        self.AUTONOMOUS_OVERRIDE    = self.params.add(self.nodespace + "/override/autonomous",      Command_Mode.UNSET, lambda x: check_enum(x, Command_Mode),  force=reset)
+        self.AUTONOMOUS_OVERRIDE    = self.params.add(self.nodespace + "/override/autonomous",      Command_Mode.STOP,  lambda x: check_enum(x, Command_Mode),  force=reset)
 
     def init_vars(self):
         super().init_vars()
@@ -88,9 +88,8 @@ class Main_ROS_Class(Base_ROS_Class):
         self.dataset_queue      = []
         self.dataset_loaded     = False
 
-        self.command_mode       = Command_Mode.STOP
-
-        self.safety_mode        = Safety_Mode.STOP
+        self.set_command_mode(Command_Mode.STOP)
+        self.set_safety_mode(Safety_Mode.STOP)
 
         self.vpr_mode_ind       = enum_value(PS4_Buttons.Square)
         self.stop_mode_ind      = enum_value(PS4_Buttons.X)
@@ -181,7 +180,7 @@ class Main_ROS_Class(Base_ROS_Class):
             return
         
         if abs(rospy.Time.now().to_sec() - msg.header.stamp.to_sec()) > 0.5: # if joy message was generated longer ago than half a second:
-            self.safety_mode = Safety_Mode.STOP
+            self.set_safety_mode(Safety_Mode.STOP)
             if not self.SIMULATION.get():
                 self.print("Bad joy data.", LogType.WARN, throttle=5)
             else:
@@ -191,22 +190,22 @@ class Main_ROS_Class(Base_ROS_Class):
         # Toggle command mode:
         if msg.buttons[self.slam_mode_ind] > 0:
             if not self.command_mode == Command_Mode.SLAM:
-                self.command_mode = Command_Mode.SLAM
-                self.print("Autonomous Commands: SLAM", LogType.WARN)
+                if self.set_command_mode(Command_Mode.SLAM):
+                    self.print("Autonomous Commands: SLAM", LogType.WARN)
         elif msg.buttons[self.vpr_mode_ind] > 0:
             if not self.command_mode == Command_Mode.VPR:
-                self.command_mode = Command_Mode.VPR
-                self.print("Autonomous Commands: VPR", LogType.ERROR)
+                if self.set_command_mode(Command_Mode.VPR):
+                    self.print("Autonomous Commands: VPR", LogType.ERROR)
         elif msg.buttons[self.zone_mode_ind] > 0:
             if not self.command_mode == Command_Mode.ZONE_RETURN:
-                self.command_mode = Command_Mode.ZONE_RETURN
-                self.zone_index   = None
-                self.return_stage = Return_Stage.UNSET
-                self.print("Autonomous Commands: Zone Reset", LogType.WARN)
+                if self.set_command_mode(Command_Mode.ZONE_RETURN):
+                    self.zone_index   = None
+                    self.return_stage = Return_Stage.UNSET
+                    self.print("Autonomous Commands: Zone Reset", LogType.WARN)
         elif msg.buttons[self.stop_mode_ind] > 0:
             if not self.command_mode == Command_Mode.STOP:
-                self.command_mode = Command_Mode.STOP
-                self.print("Autonomous Commands: Disabled", LogType.INFO)
+                if self.set_command_mode(Command_Mode.STOP):
+                    self.print("Autonomous Commands: Disabled", LogType.INFO)
 
         # Toggle feature type:
         try:
@@ -221,16 +220,29 @@ class Main_ROS_Class(Base_ROS_Class):
         # Toggle speed safety mode:
         if msg.buttons[self.fast_mode_ind] > 0:
             if not self.safety_mode == Safety_Mode.FAST:
-                self.safety_mode = Safety_Mode.FAST
-                self.print('Fast mode enabled.', LogType.ERROR)
+                if self.set_safety_mode(Safety_Mode.FAST):
+                    self.print('Fast mode enabled.', LogType.ERROR)
         elif msg.buttons[self.slow_mode_ind] > 0:
             if not self.safety_mode == Safety_Mode.SLOW:
-                self.safety_mode = Safety_Mode.SLOW
-                self.print('Slow mode enabled.', LogType.WARN)
+                if self.set_safety_mode(Safety_Mode.SLOW):
+                    self.print('Slow mode enabled.', LogType.WARN)
         else:
             if not self.safety_mode == Safety_Mode.STOP:
-                self.safety_mode = Safety_Mode.STOP
-                self.print('Safety released.', LogType.INFO)
+                if self.set_safety_mode(Safety_Mode.STOP):
+                    self.print('Safety released.', LogType.INFO)
+
+    def set_safety_mode(self, mode: Safety_Mode, override=False):
+        if override or self.SAFETY_OVERRIDE.get() == Safety_Mode.UNSET:
+            self.safety_mode = mode
+            return True
+        return False
+
+
+    def set_command_mode(self, mode: Command_Mode, override=False):
+        self.command_mode = mode
+        if not override:
+            self.AUTONOMOUS_OVERRIDE.set(mode)
+        return True
 
     def path_peer_subscribe(self, topic_name: str):
         if not self.ready:
@@ -257,16 +269,14 @@ class Main_ROS_Class(Base_ROS_Class):
 
     def param_helper(self, msg: String):
         if msg.data == self.AUTONOMOUS_OVERRIDE.name:
-            if not self.AUTONOMOUS_OVERRIDE.get() == Command_Mode.UNSET:
-                self.command_mode = self.AUTONOMOUS_OVERRIDE.get()
+            if not self.command_mode == self.AUTONOMOUS_OVERRIDE.get():
+                self.set_command_mode(self.AUTONOMOUS_OVERRIDE.get(), True)
                 self.return_stage = Return_Stage.UNSET
-            else:
-                self.command_mode = Command_Mode.STOP
         elif msg.data == self.SAFETY_OVERRIDE.name:
             if not self.SAFETY_OVERRIDE.get() == Safety_Mode.UNSET:
-                self.safety_mode = self.SAFETY_OVERRIDE.get()
+                self.set_safety_mode(self.SAFETY_OVERRIDE.get(), True)
             else:
-                self.safety_mode = Safety_Mode.STOP
+                self.set_safety_mode(Safety_Mode.STOP)
 
     def load_dataset(self):
         # Process path data:

@@ -32,7 +32,6 @@ class Safety_Mode(Enum):
     FAST            = 2
 
 class Command_Mode(Enum):
-    UNSET           = -1
     STOP            = 0
     VPR             = 1
     SLAM            = 2
