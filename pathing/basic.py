@@ -6,7 +6,8 @@ from geometry_msgs.msg              import PoseStamped, Point, Vector3
 from visualization_msgs.msg         import MarkerArray, Marker
 
 from pyaarapsi.core.ros_tools       import q_from_yaw
-from pyaarapsi.core.helper_tools    import angle_wrap
+from pyaarapsi.core.helper_tools    import angle_wrap, normalize_angle, m2m_dist
+from .enums                         import Lookahead_Mode
 
 def make_speed_array(w_interp):
     # Generate speed profile based on curvature of track:
@@ -90,4 +91,47 @@ def calc_path_errors(ego, current_ind, path_xyws):
     lin_err = abs(_dr * np.sin(path_xyws[current_ind, 2] - _dw))
     ang_err = abs(angle_wrap(path_xyws[current_ind, 2] - ego[2], 'RAD'))
     return lin_err, ang_err
+
+def global2local(ego, x, y):
+
+    Tx  = x - ego[0]
+    Ty  = y - ego[1]
+    R   = np.sqrt(np.power(Tx, 2) + np.power(Ty, 2))
+    A   = np.arctan2(Ty, Tx) - ego[2]
+
+    return list(np.multiply(np.cos(A), R)), list(np.multiply(np.sin(A), R))
+
+def calc_yaw_error(ego, x, y, target_ind: int = None):
+    # Heading error (angular):
+    rel_x, rel_y    = global2local(ego, x, y) # Convert to local coordinates
+    error_yaw       = normalize_angle(np.arctan2(rel_y[target_ind], rel_x[target_ind]))
+    return error_yaw
+        
+def calc_current_zone(ind: int, num_zones: int, zone_indices: list):
+    # The closest zone boundary that is 'behind' the closest index (in the direction of the path):
+    zone        = np.max(np.arange(num_zones)[np.array(zone_indices[0:-1]) <= ind] + 1)
+    return zone
+    
+def calc_current_ind(ego, path_xyws):
+    # Closest index based on provided ego:
+    ind         = np.argmin(m2m_dist(path_xyws[:,0:2], ego[0:2], True), axis=0)
+    return ind
+    
+def calc_target(current_ind: int, lookahead: float, lookahead_mode: Lookahead_Mode, path_xyws: np.ndarray):
+    adj_lookahead = np.max([lookahead * (path_xyws[current_ind, 3]/np.max(path_xyws[:, 3].flatten())), 0.3])
+    if lookahead_mode == Lookahead_Mode.INDEX:
+        target_ind  = (current_ind + int(np.round(adj_lookahead))) % path_xyws.shape[0]
+    elif lookahead_mode == Lookahead_Mode.DISTANCE:
+        target_ind  = current_ind
+        # find first index at least lookahead-distance-away from current index:
+        dist        = np.sqrt(np.sum(np.square(path_xyws[target_ind, 0:2] - path_xyws[current_ind, 0:2])))
+        while dist < adj_lookahead:
+            target_ind  = (target_ind + 1) % path_xyws.shape[0] 
+            dist        = np.sqrt(np.sum(np.square(path_xyws[target_ind, 0:2] - path_xyws[current_ind, 0:2])))
+        adj_lookahead = dist
+    else:
+        raise Exception('Unknown lookahead_mode: %s' % str(lookahead_mode))
+    return target_ind, adj_lookahead
+
+
                 
