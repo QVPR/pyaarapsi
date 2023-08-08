@@ -15,7 +15,7 @@ from std_msgs.msg           import String
 from geometry_msgs.msg      import PoseStamped, Twist
 from visualization_msgs.msg import MarkerArray
 from sensor_msgs.msg        import Joy, CompressedImage
-from aarapsi_robot_pack.msg import ControllerStateInfo, MonitorDetails, RequestDataset, ResponseDataset, xyw
+from aarapsi_robot_pack.msg import ControllerStateInfo, Label, RequestDataset, ResponseDataset, xyw
 
 from pyaarapsi.core.ros_tools               import LogType, pose2xyw
 from pyaarapsi.core.helper_tools            import formatException
@@ -77,7 +77,7 @@ class Main_ROS_Class(Base_ROS_Class):
 
         self.plan_path          = Path()
         self.ref_path           = Path()
-        self.state_msg          = MonitorDetails()
+        self.label              = Label()
 
         self.ready              = False
         self.new_state_msg      = False
@@ -145,7 +145,7 @@ class Main_ROS_Class(Base_ROS_Class):
         self.rollmatch_pub      = self.add_pub(     self.nodespace + '/rollmatch/compressed',  CompressedImage,                 queue_size=1)
         self.ds_requ_pub        = self.add_pub(     ds_requ + "request",            RequestDataset,                             queue_size=1)
         self.ds_requ_sub        = rospy.Subscriber( ds_requ + "ready",              ResponseDataset,        self.ds_requ_cb,    queue_size=1)
-        self.state_sub          = rospy.Subscriber( self.namespace + '/state',      MonitorDetails,         self.state_cb,      queue_size=1)
+        self.state_sub          = rospy.Subscriber( self.namespace + '/state',      Label,                  self.state_cb,      queue_size=1)
         self.robot_odom_sub     = rospy.Subscriber( self.ROBOT_ODOM_TOPIC.get(),    Odometry,               self.robot_odom_cb, queue_size=1) # wheel encoders fused
         self.slam_odom_sub      = rospy.Subscriber( self.SLAM_ODOM_TOPIC.get(),     Odometry,               self.slam_odom_cb,  queue_size=1)
         self.joy_sub            = rospy.Subscriber( self.JOY_TOPIC.get(),           Joy,                    self.joy_cb,        queue_size=1)
@@ -155,17 +155,17 @@ class Main_ROS_Class(Base_ROS_Class):
         self.sublis.add_operation(self.namespace + '/zones',    method_sub=self.path_peer_subscribe)
         self.sublis.add_operation(self.namespace + '/speeds',   method_sub=self.path_peer_subscribe)
 
-    def state_cb(self, msg: MonitorDetails):
+    def state_cb(self, msg: Label):
         
-        self.vpr_ego                = [msg.data.vpr_ego.x, msg.data.vpr_ego.y, msg.data.vpr_ego.w]
-        self.new_vpr_ego            = True
+        self.vpr_ego            = [msg.vpr_ego.x, msg.vpr_ego.y, msg.vpr_ego.w]
+        self.new_vpr_ego        = True
 
         if not self.ready:
             return
 
         self.vpr_ego_hist.append(self.vpr_ego)
-        self.state_msg              = msg
-        self.new_state_msg          = True
+        self.label              = msg
+        self.new_state_msg      = True
     
     def robot_odom_cb(self, msg: Odometry):
         if not self.ready:
@@ -173,9 +173,9 @@ class Main_ROS_Class(Base_ROS_Class):
             self.new_robot_ego  = True
             return
 
-        self.old_robot_ego          = self.robot_ego
-        self.robot_ego              = pose2xyw(msg.pose.pose)
-        self.new_robot_ego          = True
+        self.old_robot_ego      = self.robot_ego
+        self.robot_ego          = pose2xyw(msg.pose.pose)
+        self.new_robot_ego      = True
 
     def slam_odom_cb(self, msg: Odometry):
         self.slam_ego               = pose2xyw(msg.pose.pose)
@@ -330,20 +330,20 @@ class Main_ROS_Class(Base_ROS_Class):
         msg                         = ControllerStateInfo()
         msg.header.stamp            = rospy.Time.now()
         msg.header.frame_id         = 'map'
-        msg.query_image             = self.state_msg.queryImage
+        msg.query_image             = self.label.query_image
         # Extract Label Details:
-        msg.dvc                     = self.state_msg.data.dvc
-        msg.group.gt_ego            = xyw(**{i: np.round(self.state_msg.data.gt_ego.__getattribute__(i),3) for i in ['x', 'y', 'w']})
-        msg.group.vpr_ego           = xyw(**{i: np.round(self.state_msg.data.vpr_ego.__getattribute__(i),3) for i in ['x', 'y', 'w']})
-        msg.group.matchId           = self.state_msg.data.matchId
-        msg.group.trueId            = self.state_msg.data.trueId
-        msg.group.gt_state          = self.state_msg.data.gt_state
-        msg.group.gt_error          = np.round(self.state_msg.data.gt_error, 3)
+        msg.dvc                     = self.label.distance_vector
+        msg.group.gt_ego            = self.label.gt_ego
+        msg.group.vpr_ego           = self.label.vpr_ego
+        msg.group.matchId           = self.label.match_index
+        msg.group.trueId            = self.label.truth_index
+        msg.group.gt_state          = self.label.gt_class
+        msg.group.gt_error          = np.round(self.label.gt_error, 3)
         # Extract (remaining) Monitor Details:
-        msg.group.mState            = np.round(self.state_msg.mState, 3)
-        msg.group.prob              = np.round(self.state_msg.prob, 3)
-        msg.group.mStateBin         = self.state_msg.mStateBin
-        msg.group.factors           = [np.round(i,3) for i in self.state_msg.factors]
+        msg.group.mState            = np.round(self.label.svm_z, 3)
+        msg.group.prob              = np.round(self.label.svm_prob, 3)
+        msg.group.mStateBin         = self.label.svm_class
+        msg.group.factors           = [np.round(i,3) for i in self.label.svm_factors]
 
         msg.group.safety_mode       = enum_name(self.safety_mode)
         msg.group.command_mode      = enum_name(self.command_mode)
@@ -416,7 +416,7 @@ class Main_ROS_Class(Base_ROS_Class):
         errors_string   = base_err_string % (speed, error_yaw)
         index_string    = base_ind_string % (current_ind)
         path_err_string = base_vel_string % (lin_path_err, ang_path_err)
-        svm_string      = base_svm_string % (enum_name(self.REJECT_MODE.get()), str(self.state_msg.mStateBin))
+        svm_string      = base_svm_string % (enum_name(self.REJECT_MODE.get()), str(self.label.svm_class))
         TAB = ' ' * 8
         lines = [
                  '',

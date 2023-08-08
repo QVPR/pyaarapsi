@@ -113,6 +113,7 @@ class Base_ROS_Class:
         self.SVM_DBP                = self.params.add(self.namespace + "/svm_dbp",                  None,       check_string,                                   force=False)
         self.IMG_TOPIC              = self.params.add(self.namespace + "/img_topic",                None,       check_string,                                   force=False)
         self.SLAM_ODOM_TOPIC        = self.params.add(self.namespace + "/slam_odom_topic",          None,       check_string,                                   force=False)
+        self.ROBOT_ODOM_TOPIC       = self.params.add(self.namespace + "/robot_odom_topic",         None,       check_string,                                   force=False)
         
         self.IMG_HFOV               = self.params.add(self.namespace + "/img_hfov",                 None,       check_positive_float,                           force=False)
         
