@@ -95,13 +95,13 @@ class Base_ROS_Class:
                         self.exit()
                     except:
                         sys.exit()
-                super(type(self), self).print('%s waiting in line, position %s.' % (str(self.node_name), str(order_id)), LogType.DEBUG, throttle=throttle, log_level=log_level)
+                self._print('%s waiting in line, position %s.' % (str(self.node_name), str(order_id)), LogType.DEBUG, throttle=throttle, log_level=log_level)
                 rospy.sleep(0.2)
                 launch_step = rospy.get_param(self.namespace + '/launch_step')
         if colour:
-            super(type(self), self).print('\033[96mStarting %s node.\033[0m' % (self.node_name), log_level=log_level)
+            self._print('\033[96mStarting %s node.\033[0m' % (self.node_name), log_level=log_level)
         else:
-            super(type(self), self).print('Starting %s node.' % (self.node_name), log_level=log_level)
+            self._print('Starting %s node.' % (self.node_name), log_level=log_level)
     
     def init_params(self, rate_num: float, log_level: float, reset: bool) -> None:
         self.SIMULATION             = self.params.add(self.namespace + "/simulation",               None,       check_bool,                                     force=False)
@@ -256,8 +256,8 @@ class Base_ROS_Class:
             del new_pose
 
         return new_path
-
-    def print(self, text: str, logtype: LogType = LogType.INFO, throttle: float = 0, 
+    
+    def _print(self, text: str, logtype: LogType = LogType.INFO, throttle: float = 0, 
               ros: bool = None, name: str = None, no_stamp: bool = None, log_level: LogType = None) -> bool:
         if ros is None:
             ros = True
@@ -268,6 +268,10 @@ class Base_ROS_Class:
         if log_level is None:
             no_stamp = self.LOG_LEVEL.get()
         return roslogger(text, logtype, throttle=throttle, ros=ros, name=name, no_stamp=no_stamp, log_level=log_level)
+
+    def print(self, text: str, logtype: LogType = LogType.INFO, throttle: float = 0, 
+              ros: bool = None, name: str = None, no_stamp: bool = None, log_level: LogType = None) -> bool:
+        self._print(text, logtype, throttle, ros, name, no_stamp, log_level)
 
     def exit(self) -> None:
         self.print("Quit received")
