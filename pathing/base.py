@@ -564,5 +564,5 @@ class Zone_Return_Class(Main_ROS_Class):
         else:
             raise Exception('Bad return stage [%s].' % str(self.return_stage))
 
-        new_msg     = self.make_new_command(error_v=lin_err, error_yaw=ang_err)
+        new_msg     = self.make_new_command(speed=lin_err, error_yaw=ang_err)
         self.cmd_pub.publish(new_msg)
