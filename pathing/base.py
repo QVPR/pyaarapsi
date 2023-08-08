@@ -1,11 +1,6 @@
 import rospy
-import rospkg
-import argparse as ap
 import numpy as np
 import sys
-import os
-import csv
-import copy
 import pydbus
 
 from rospy_message_converter import message_converter
@@ -15,20 +10,20 @@ from std_msgs.msg           import String
 from geometry_msgs.msg      import PoseStamped, Twist
 from visualization_msgs.msg import MarkerArray
 from sensor_msgs.msg        import Joy, CompressedImage
-from aarapsi_robot_pack.msg import ControllerStateInfo, Label, RequestDataset, ResponseDataset, xyw
+from aarapsi_robot_pack.msg import ControllerStateInfo, Label, RequestDataset, ResponseDataset
 
-from pyaarapsi.core.ros_tools               import LogType, pose2xyw
+from pyaarapsi.core.ros_tools               import LogType, pose2xyw, q_from_rpy
 from pyaarapsi.core.helper_tools            import formatException
 from pyaarapsi.core.enum_tools              import enum_name, enum_value
-from pyaarapsi.core.vars                    import C_I_RED, C_I_GREEN, C_I_YELLOW, C_I_BLUE, C_I_WHITE, C_RESET, C_CLEAR, C_UP_N, C_DOWN_N
+from pyaarapsi.core.vars                    import C_I_RED, C_I_GREEN, C_I_YELLOW, C_I_BLUE, C_I_WHITE, C_RESET, C_CLEAR, C_UP_N
 
 from pyaarapsi.vpr_simple.vpr_dataset_tool  import VPRDatasetProcessor
 from pyaarapsi.vpr_simple.vpr_helpers       import FeatureType
 
 from pyaarapsi.vpr_classes.base             import Base_ROS_Class
-from pyaarapsi.core.argparse_tools          import check_positive_float, check_bool, check_string, check_float_list, check_enum, check_positive_int, check_float
+from pyaarapsi.core.argparse_tools          import check_positive_float, check_bool, check_string, check_enum, check_positive_int, check_float
 from pyaarapsi.pathing.enums                import *
-from pyaarapsi.pathing.make_paths           import *
+from pyaarapsi.pathing.basic                import *
 
 class Main_ROS_Class(Base_ROS_Class):
     def init_params(self, rate_num: float, log_level: float, reset):
@@ -243,12 +238,18 @@ class Main_ROS_Class(Base_ROS_Class):
             return True
         return False
 
-
     def set_command_mode(self, mode: Command_Mode, override=False):
         self.command_mode = mode
         if not override:
             self.AUTONOMOUS_OVERRIDE.set(mode)
         return True
+
+    def check_for_safety_stop(self, lin_err, ang_err):
+        if self.command_mode in [Command_Mode.VPR, Command_Mode.SLAM]:
+            if lin_err > self.LINSTOP_OVERRIDE.get() and self.LINSTOP_OVERRIDE.get() > 0:
+                self.set_command_mode(Command_Mode.STOP)
+            elif ang_err > self.ANGSTOP_OVERRIDE.get() and self.ANGSTOP_OVERRIDE.get() > 0:
+                self.set_command_mode(Command_Mode.STOP)
 
     def path_peer_subscribe(self, topic_name: str):
         if not self.ready:
@@ -261,6 +262,24 @@ class Main_ROS_Class(Base_ROS_Class):
             self.speed_pub.publish(self.viz_speeds)
         else:
             raise Exception('Unknown path_peer_subscribe topic: %s' % str(topic_name))
+    
+    def make_path(self):
+        # generate an n row, 4 column array (x, y, yaw, speed) corresponding to each reference image (same index)
+        self.path_xyws  = np.transpose(np.stack([self.ip.dataset['dataset']['px'].flatten(), 
+                                                 self.ip.dataset['dataset']['py'].flatten(),
+                                                 self.ip.dataset['dataset']['pw'].flatten(),
+                                                 make_speed_array(self.ip.dataset['dataset']['pw'].flatten())]))
+        
+        # determine zone number, length, indices:
+        path_sum, path_len               = calc_path_stats(self.path_xyws)
+        self.zone_length, self.num_zones = calc_zone_stats(path_len, self.ZONE_LENGTH.get(), self.ZONE_NUMBER.get(), )
+        _end                             = [self.path_xyws.shape[0] + (int(not self.LOOP_PATH.get()) - 1)]
+        self.zone_indices                = [np.argmin(np.abs(path_sum-(self.zone_length*i))) for i in np.arange(self.num_zones)] + _end
+        
+        # generate stuff for visualisation:
+        self.path_indices                = [np.argmin(np.abs(path_sum-(0.2*i))) for i in np.arange(int(5 * path_len))]
+        self.viz_path, self.viz_speeds   = make_path_speeds(self.path_xyws, self.path_indices)
+        self.viz_zones                   = make_zones(self.path_xyws, self.zone_indices)
         
     def ds_requ_cb(self, msg: ResponseDataset):
         if msg.success == False:
@@ -433,3 +452,117 @@ class Main_ROS_Class(Base_ROS_Class):
                  TAB + '     SVM Status: %s' % svm_string
                 ]
         print(''.join([C_CLEAR + line + '\n' for line in lines]) + (C_UP_N%1)*(len(lines)), end='')
+
+    def print(self, *args, **kwargs):
+        arg_list = list(args) + [kwargs[k] for k in kwargs]
+        log_level = enum_value(LogType.INFO)
+        for i in arg_list:
+            if isinstance(i, LogType):
+                log_level = enum_value(i)
+                break
+        if (enum_value(self.LOG_LEVEL.get()) <= log_level) and super().print(*args, **kwargs):
+            self.print_lines += 1
+
+    def publish_pose(self, goal_ind: int, pub: rospy.Publisher) -> None:
+        # Update visualisation of current goal/target pose
+        goal                    = PoseStamped(header=Header(stamp=rospy.Time.now(), frame_id='map'))
+        goal.pose.position      = Point(x=self.path_xyws[goal_ind,0], y=self.path_xyws[goal_ind,1], z=0.0)
+        goal.pose.orientation   = q_from_yaw(self.path_xyws[goal_ind,2])
+        pub.publish(goal)
+
+    def make_new_command(self, speed: float, error_yaw: float) -> Twist:
+        # If we're not estimating where we are, we're ignoring the SVM, or we have a good point:
+        if not (self.command_mode == Command_Mode.VPR) or self.REJECT_MODE.get() == Reject_Mode.NONE or self.label.svm_class:
+            # ... then calculate based on the controller errors:
+            new_lin             = np.sign(speed)     * np.min([abs(speed),     self.lin_lim.get(self.safety_mode, 0)])
+            new_ang             = np.sign(error_yaw) * np.min([abs(error_yaw), self.ang_lim.get(self.safety_mode, 0)])
+        
+        # otherwise, if we want to reject the point we received:
+        else:
+            # ... then we must decide on what new command we should send:
+            try:
+                new_lin         = self.reject_lambda[self.REJECT_MODE.get()](self.old_lin)
+                new_ang         = self.reject_lambda[self.REJECT_MODE.get()](self.old_ang)
+            except KeyError:
+                raise Exception('Unknown rejection mode %s' % str(self.REJECT_MODE.get()))
+
+        # Update the last-sent-command to be the one we just made:
+        self.old_lin            = new_lin
+        self.old_ang            = new_ang
+
+        # Generate the actual ROS command:
+        new_msg                 = Twist()
+        new_msg.linear.x        = new_lin
+        new_msg.angular.z       = new_ang
+        return new_msg
+
+class Zone_Return_Class(Main_ROS_Class):
+    def update_COR(self, ego):
+        # Update centre-of-rotation for visualisation and precise alignment:
+        COR_x                   = ego[0] + self.COR_OFFSET.get() * np.cos(ego[2])
+        COR_y                   = ego[1] + self.COR_OFFSET.get() * np.sin(ego[2])
+        pose                    = PoseStamped(header=Header(stamp=rospy.Time.now(), frame_id='map'))
+        pose.pose.position      = Point(x=COR_x, y=COR_y)
+        pose.pose.orientation   = q_from_rpy(0, -np.pi/2, 0)
+        self.COR_pub.publish(pose)
+        return [COR_x, COR_y]
+    
+    def zone_return(self, ego, current_ind):
+        '''
+        Handle an autonomous return-to-zone:
+        - Picks nearest target
+        - Drives to target
+        - Turns on-spot to face correctly
+
+        Stages:
+        Return_STAGE.UNSET: Stage 0 - New request: identify zone target.
+        Return_STAGE.DIST:  Stage 1 - Distance from target exceeds 5cm: head towards target.
+        Return_STAGE.TURN:  Stage 2 - Heading error exceeds 1 degree: turn on-the-spot towards target heading.
+        Return_STAGE.DONE:  Stage 3 - FINISHED.
+
+        '''
+
+        if self.return_stage == Return_Stage.DONE:
+            return
+        
+        # If stage 0: determine target and move to stage 1
+        if self.return_stage == Return_Stage.UNSET:
+            self.zone_index  = self.zone_indices[np.argmin(m2m_dist(current_ind, np.transpose(np.matrix(self.zone_indices))))] % self.path_xyws.shape[0]
+            self.return_stage = Return_Stage.DIST
+
+        self.publish_pose(self.zone_index, self.goal_pub)
+
+        yaw_err     = calc_yaw_error(ego, self.path_xyws[:,0], self.path_xyws[:,1], target_ind=self.zone_index)
+        ego_cor     = self.update_COR(ego) # must improve accuracy of centre-of-rotation as we do on-the-spot turns
+        dist        = np.sqrt(np.square(ego_cor[0]-self.path_xyws[self.zone_index, 0]) + np.square(ego_cor[1]-self.path_xyws[self.zone_index, 1]))
+        head_err    = self.path_xyws[self.zone_index, 2] - ego[2]
+
+        # If stage 1: calculate distance to target (lin_err) and heading error (ang_err)
+        if self.return_stage == Return_Stage.DIST:
+            if abs(yaw_err) < np.pi/6:
+                ang_err = np.sign(yaw_err) * np.max([0.1, -0.19*abs(yaw_err)**2 + 0.4*abs(yaw_err) - 0.007])
+                lin_err = np.max([0.1, -(1/3)*dist**2 + (19/30)*dist - 0.06])
+            else:
+                lin_err = 0
+                ang_err = np.sign(yaw_err) * 0.2
+
+            # If we're within 5 cm of the target, stop and move to stage 2
+            if dist < 0.05:
+                self.return_stage = Return_Stage.TURN
+
+        # If stage 2: calculate heading error and turn on-the-spot
+        elif self.return_stage == Return_Stage.TURN:
+            lin_err = 0
+            # If heading error is less than 1 degree, stop and move to stage 3
+            if abs(head_err) < np.pi/180:
+                self.set_command_mode(Command_Mode.STOP)
+                self.return_stage = Return_Stage.DONE
+                ang_err = 0
+                return # DONE! :)
+            else:
+                ang_err = np.sign(head_err) * np.max([0.1, abs(head_err)])
+        else:
+            raise Exception('Bad return stage [%s].' % str(self.return_stage))
+
+        new_msg     = self.make_new_command(error_v=lin_err, error_yaw=ang_err)
+        self.cmd_pub.publish(new_msg)
