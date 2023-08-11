@@ -8,7 +8,7 @@ from enum import Enum
 from tqdm.auto import tqdm
 
 from std_msgs.msg               import String
-from geometry_msgs.msg          import Quaternion, Pose, PoseWithCovariance, PoseStamped
+from geometry_msgs.msg          import Quaternion, Pose, PoseWithCovariance, PoseStamped, Twist
 from sensor_msgs.msg            import Image, CompressedImage
 
 from tf.transformations         import quaternion_from_euler, euler_from_quaternion
@@ -45,6 +45,20 @@ def pose2xyw(pose: Pose, stamped=False):
     if stamped:
         pose = pose.pose
     return [pose.position.x, pose.position.y, yaw_from_q(pose.orientation)]
+
+def twist2xyw(twist: Twist, stamped=False):
+    '''
+    Extract dx, dy, and dyaw from a geometry_msgs/Twist object
+
+    Inputs:
+    - twist:    geometry_msgs/Twist[Stamped] ROS message object
+    - stamped:  bool type {default: False}; if true, extracts Twist from TwistStamped
+    Returns:
+    type list; [dx, dy, dyaw]
+    '''
+    if stamped:
+        twist = twist.twist
+    return [twist.linear.x, twist.linear.y, twist.angular.z]
 
 def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, use_tqdm=True):
     '''
