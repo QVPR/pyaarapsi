@@ -184,15 +184,15 @@ class Base_ROS_Class:
     def make_dataset_dict(self) -> dict:
         return dict(bag_name=self.REF_BAG_NAME.get(), npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), \
                     odom_topic=self.SLAM_ODOM_TOPIC.get(), img_topics=[self.IMG_TOPIC.get()], sample_rate=self.REF_SAMPLE_RATE.get(), \
-                    ft_types=enum_name(self.FEAT_TYPE.get(),wrap=True), img_dims=self.IMG_DIMS.get(), filters='{}')
+                    ft_types=enum_name(self.FEAT_TYPE.get(),wrap=True), img_dims=self.IMG_DIMS.get(), filters=self.REF_FILTERS.get())
     
     def make_svm_model_params(self) -> dict:
         qry_dict = dict(bag_name=self.SVM_QRY_BAG_NAME.get(), npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), \
-                        odom_topic=self.SLAM_ODOM_TOPIC.get(), img_topics=[self.IMG_TOPIC.get()], sample_rate=self.SVM_REF_SAMPLE_RATE.get(), \
-                        ft_types=enum_name(self.FEAT_TYPE.get(),wrap=True), img_dims=self.IMG_DIMS.get(), filters='{}')
+                        odom_topic=self.SLAM_ODOM_TOPIC.get(), img_topics=[self.IMG_TOPIC.get()], sample_rate=self.SVM_QRY_SAMPLE_RATE.get(), \
+                        ft_types=enum_name(self.FEAT_TYPE.get(),wrap=True), img_dims=self.IMG_DIMS.get(), filters=self.SVM_QRY_FILTERS.get())
         ref_dict = dict(bag_name=self.SVM_REF_BAG_NAME.get(), npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), \
                         odom_topic=self.SLAM_ODOM_TOPIC.get(), img_topics=[self.IMG_TOPIC.get()], sample_rate=self.SVM_REF_SAMPLE_RATE.get(), \
-                        ft_types=enum_name(self.FEAT_TYPE.get(),wrap=True), img_dims=self.IMG_DIMS.get(), filters='{}')
+                        ft_types=enum_name(self.FEAT_TYPE.get(),wrap=True), img_dims=self.IMG_DIMS.get(), filters=self.SVM_REF_FILTERS.get())
         svm_dict = dict(factors=self.SVM_FACTORS.get(), tol_thres=self.SVM_TOL_THRES.get(), tol_mode=enum_name(self.SVM_TOL_MODE.get()))
         return dict(ref=ref_dict, qry=qry_dict, svm=svm_dict, npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), svm_dbp=self.SVM_DBP.get())
     
