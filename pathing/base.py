@@ -439,7 +439,7 @@ class Main_ROS_Class(Base_ROS_Class):
         TAB = ' ' * 8
         lines = [
                  '',
-                 TAB + '-'*20 + C_I_BLUE + ' STATUS INFO ' + C_RESET + '-'*20,
+                 TAB + '-'*15 + C_I_BLUE + ' STATUS INFO ' + C_RESET + '-'*15,
                  TAB + 'Autonomous Mode: %s' % command_mode_string,
                  TAB + '    Safety Mode: %s' % safety_mode_string,
                  TAB + '   VPR Position: %s' % vpr_pos_string,
