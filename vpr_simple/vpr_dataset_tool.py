@@ -147,7 +147,7 @@ class VPRDatasetProcessor: # main ROS class
             self.hybridnet = processor.hybridnet
             self.init_hybridnet = True
 
-    def generate_dataset(self, npz_dbp, bag_dbp, bag_name, sample_rate, odom_topic, img_topics, img_dims, ft_types, filters={}, store=True):
+    def generate_dataset(self, npz_dbp, bag_dbp, bag_name, sample_rate, odom_topic, img_topics, img_dims, ft_types, filters='{}', store=True):
         '''
         Generate new datasets from parameters
         Inputs are specified such that, other than store, a correct dataset parameters dictionary can be dereferenced to autofill inputs
@@ -186,7 +186,8 @@ class VPRDatasetProcessor: # main ROS class
                                     px=rosbag_dict['px'], py=rosbag_dict['py'], pw=rosbag_dict['pw'], \
                                     vx=rosbag_dict['vx'], vy=rosbag_dict['vy'], vw=rosbag_dict['vw'] )
         dataset_dict.update(feature_vector_dict)
-        dataset             = dict(params=params_dict, dataset=dataset_dict)
+        dataset_raw         = dict(params=params_dict, dataset=dataset_dict)
+        dataset             = filter_dataset(dataset_raw)
 
         if store:
             if hasattr(self, 'dataset'):

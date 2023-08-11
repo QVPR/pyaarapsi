@@ -3,6 +3,8 @@ import numpy as np
 import cv2
 from enum import Enum
 from tqdm.auto import tqdm
+import json
+from ..pathing.basic import calc_path_stats
 
 # For image processing type
 class FeatureType(Enum):
@@ -33,6 +35,19 @@ class VPR_Tolerance_Mode(Enum):
 class SVM_Tolerance_Mode(Enum):
     DISTANCE            = 0
     FRAME               = 1
+
+def filter_dataset(dataset_in):
+    filters = json.loads(str(dataset_in['params']['filters']).replace('\'', '"'))
+    if 'distance' in filters.keys():
+        distance_threshold      = filters['distance']
+        xy                      = np.transpose(np.stack([dataset_in['dataset']['px'].flatten(), dataset_in['dataset']['py'].flatten()]))
+        xy_sum, xy_len          = calc_path_stats(xy)
+        filt_indices            = [np.argmin(np.abs(xy_sum-(distance_threshold*i))) for i in np.arange(int((1/distance_threshold) * xy_len))]
+        dataset_out             = {'params': dataset_in['params']}
+        dataset_out['dataset']  = {key: dataset_in['dataset'][key][filt_indices] for key in dataset_in['dataset'].keys()}
+        return dataset_out
+    else:
+        return dataset_in
 
 def discretise(dict_in, metrics=None, mode=None, keep='first'):
     if not len(dict_in):
