@@ -82,7 +82,7 @@ def rotation_matrix_3d(r: float, p: float, y: float, order='rpy', radians=True):
     Rs_ = { 'r': rotation_matrix_yz(r, radians=radians), 
             'p': rotation_matrix_xz(p, radians=radians), 
             'y': rotation_matrix_xy(y, radians=radians) }
-    R = Rs_[order[2]] * Rs_[order[1]] * Rs_[order[0]]
+    R = np.matmul(Rs_[order[2]], np.matmul(Rs_[order[1]], Rs_[order[0]]))
     return R
 
 def homogeneous_transform(r: float, p: float, y: float, X: float, Y: float, Z: float, order='rpy', radians=True):
