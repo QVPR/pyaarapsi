@@ -37,16 +37,19 @@ class SVM_Tolerance_Mode(Enum):
     FRAME               = 1
 
 def filter_dataset(dataset_in):
-    filters = json.loads(str(dataset_in['params']['filters']).replace('\'', '"'))
-    if 'distance' in filters.keys():
-        distance_threshold      = filters['distance']
-        xy                      = np.transpose(np.stack([dataset_in['dataset']['px'].flatten(), dataset_in['dataset']['py'].flatten()]))
-        xy_sum, xy_len          = calc_path_stats(xy)
-        filt_indices            = [np.argmin(np.abs(xy_sum-(distance_threshold*i))) for i in np.arange(int((1/distance_threshold) * xy_len))]
-        dataset_out             = {'params': dataset_in['params']}
-        dataset_out['dataset']  = {key: dataset_in['dataset'][key][filt_indices] for key in dataset_in['dataset'].keys()}
-        return dataset_out
-    else:
+    try:
+        filters = json.loads(str(dataset_in['params']['filters']).replace('\'', '"'))
+        if 'distance' in filters.keys():
+            distance_threshold      = filters['distance']
+            xy                      = np.transpose(np.stack([dataset_in['dataset']['px'].flatten(), dataset_in['dataset']['py'].flatten()]))
+            xy_sum, xy_len          = calc_path_stats(xy)
+            filt_indices            = [np.argmin(np.abs(xy_sum-(distance_threshold*i))) for i in np.arange(int((1/distance_threshold) * xy_len))]
+            dataset_out             = {'params': dataset_in['params']}
+            dataset_out['dataset']  = {key: dataset_in['dataset'][key][filt_indices] for key in dataset_in['dataset'].keys()}
+            return dataset_out
+        else:
+            return dataset_in
+    except:
         return dataset_in
 
 def discretise(dict_in, metrics=None, mode=None, keep='first'):
