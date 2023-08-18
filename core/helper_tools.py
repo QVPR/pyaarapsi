@@ -6,11 +6,20 @@ import numpy as np
 import pickle
 from fastdist import fastdist
 from enum import Enum
+import matplotlib
 
 class Bool(Enum):
     UNSET = -1
     FALSE = 0
     TRUE  = 1
+
+def plt_pause(interval, fig):
+    backend = matplotlib.pyplot.rcParams['backend']
+    if backend in matplotlib.rcsetup.interactive_bk:
+        if fig.canvas.figure.stale:
+            fig.canvas.draw()
+        fig.canvas.start_event_loop(interval)
+        return
 
 def roll(img: np.ndarray, i: int, fill=0) -> np.ndarray:
     if abs(i) > img.shape[1]:
