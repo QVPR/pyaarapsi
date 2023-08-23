@@ -46,10 +46,14 @@ class SVMModelProcessor:
 
         self.print("[SVMModelProcessor] Processor Ready.")
 
+    def pass_nns(self, processor, netvlad=True, hybridnet=True):
+        self.cal_qry_ip.pass_nns(processor, netvlad, hybridnet)
+        self.cal_ref_ip.pass_nns(processor, netvlad, hybridnet)
+
     def print(self, text, logtype=LogType.INFO, throttle=0):
         roslogger(text, logtype, throttle=throttle, ros=self.ros)
             
-    def generate_model(self, ref, qry, svm, bag_dbp, npz_dbp, svm_dbp, save=True, try_gen=False):
+    def generate_model(self, ref, qry, svm, bag_dbp, npz_dbp, svm_dbp, save=True, try_gen=False, save_datasets=False):
         assert ref['img_dims'] == qry['img_dims'], "Reference and query metadata must be the same."
         assert ref['ft_types'] == qry['ft_types'], "Reference and query metadata must be the same."
         # store for access in saving operation:
@@ -64,7 +68,7 @@ class SVMModelProcessor:
         self.model_ready        = False
 
         # generate:
-        load_statuses = self._load_training_data(try_gen=try_gen) # [qry, ref]
+        load_statuses = self._load_training_data(try_gen=try_gen, save_datasets=save_datasets) # [qry, ref]
         if all(load_statuses):
             self._train()
             self._make()
@@ -114,7 +118,7 @@ class SVMModelProcessor:
         self.print("[save_model] Parameters: \n%s" % str(self.model['params']), LogType.DEBUG)
         return self
 
-    def load_model(self, model_params, try_gen=False, gen_datasets=False):
+    def load_model(self, model_params, try_gen=False, gen_datasets=False, save_datasets=False):
     # load via search for param match
         self.svm_dbp = model_params['svm_dbp']
         self.print("[load_model] Loading model.")
@@ -131,7 +135,7 @@ class SVMModelProcessor:
                     self.print("Load failed, performing cleanup. Code: \n%s" % formatException())
                     self._fix(name)
         if try_gen:
-            self.generate_model(**model_params, try_gen=gen_datasets)
+            self.generate_model(**model_params, try_gen=gen_datasets, save_datasets=save_datasets)
             return True
         return False
     
@@ -208,8 +212,10 @@ class SVMModelProcessor:
                 return name
         return ""
 
-    def _load_training_data(self, try_gen=False):
+    def _load_training_data(self, try_gen=False, save_datasets=False):
         # Process calibration data (only needs to be done once)
+        self.cal_qry_ip.autosave = save_datasets
+        self.cal_ref_ip.autosave = save_datasets
         self.print("Loading calibration query dataset...", LogType.DEBUG)
         load_qry = self.cal_qry_ip.load_dataset(self.qry_params, try_gen=try_gen)
         self.print("Loading calibration reference dataset...", LogType.DEBUG)
