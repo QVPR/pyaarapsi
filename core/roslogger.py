@@ -179,23 +179,26 @@ def roslogger(text, logtype: LogType = LogType.INFO, throttle: float = None, ros
     if isinstance(name, str):
         text = '[' + name + '] ' + text
 
-    rospy_logger = logging.getLogger('rosout')
-    if log_level is None:
-        log_level = log_level_to_type(rospy_logger.level)
-
     if not ROSPY_ACCESSIBLE:
         ros = False
 
     if ros:
+        rospy_logger = logging.getLogger('rosout')
+        if log_level is None:
+            try:
+                log_level = log_level_to_type(rospy_logger.level)
+            except:
+                log_level = LogType.INFO
         if enum_value(logtype) in roslog_rospy_types.keys():
             logfunc = getattr(rospy_logger, roslog_rospy_types[enum_value(logtype)])
         else:
             ros     = False
             logfunc = print
-    else:
-        logfunc     = print
     
     if not ros:
+        logfunc = print
+        if log_level is None:
+            log_level = LogType.INFO
         # if the requested log level is below the print threshold (i.e. it shouldn't be displayed):
         if enum_value(logtype) < enum_value(log_level):
             return False
