@@ -69,11 +69,8 @@ class VPRDatasetProcessor: # main ROS class
         self.netvlad        = None
         self.hybridnet      = None
 
-        if self.init_netvlad: # If needed, initialise NetVLAD
-            self.netvlad    = NetVLAD_Container(cuda=self.cuda, ngpus=int(self.cuda), logger=self.print)
-
-        if self.init_hybridnet: # If needed, initialise HybridNet
-            self.hybridnet  = HybridNet_Container(cuda=self.cuda, logger=self.print)
+        self.netvlad_rdy    = False
+        self.hybridnet_rdy  = False
 
         if not (dataset_params is None): # If parameters have been provided:
             self.print("Loading model from parameters...")
@@ -147,6 +144,16 @@ class VPRDatasetProcessor: # main ROS class
             self.hybridnet = processor.hybridnet
             self.init_hybridnet = True
 
+    def check_netvlad(self, ft_types: list):
+        if (FeatureType.NETVLAD in ft_types) and (self.netvlad_rdy == False) and self.init_netvlad: # If needed, initialise NetVLAD
+            self.netvlad        = NetVLAD_Container(cuda=self.cuda, ngpus=int(self.cuda), logger=self.print)
+            self.netvlad_rdy    = True
+
+    def check_hybridnet(self, ft_types: list):
+        if (FeatureType.HYBRIDNET in ft_types) and (self.hybridnet_rdy == False) and self.init_hybridnet: # If needed, initialise HybridNet
+            self.hybridnet      = HybridNet_Container(cuda=self.cuda, logger=self.print)
+            self.hybridnet_rdy  = True
+
     def generate_dataset(self, npz_dbp, bag_dbp, bag_name, sample_rate, odom_topic, img_topics, img_dims, ft_types, filters='{}', store=True):
         '''
         Generate new datasets from parameters
@@ -166,6 +173,9 @@ class VPRDatasetProcessor: # main ROS class
         Returns:
             Generated dataset dictionary
         '''
+
+        self.check_netvlad(ft_types)
+        self.check_hybridnet(ft_types)
 
         # store for access in saving operation:
         if store:
@@ -357,10 +367,18 @@ class VPRDatasetProcessor: # main ROS class
             fttypes = fttype_in
         if not all([isinstance(fttype, FeatureType) for fttype in fttypes]):
             raise Exception("[getFeat] fttype_in provided contains elements that are not of type FeatureType")
-        if any([fttype == FeatureType.HYBRIDNET for fttype in fttypes]) and not self.init_hybridnet:
-            raise Exception("[getFeat] FeatureType.HYBRIDNET provided but VPRImageProcessor not initialised with init_hybridnet=True")
-        if any([fttype == FeatureType.NETVLAD for fttype in fttypes]) and not self.init_netvlad:
-            raise Exception("[getFeat] FeatureType.NETVLAD provided but VPRImageProcessor not initialised with init_netvlad=True")
+        if any([fttype == FeatureType.HYBRIDNET for fttype in fttypes]):
+            if self.init_hybridnet:
+                if not self.hybridnet_rdy:
+                    self.check_hybridnet(fttypes)
+            else:
+                raise Exception("[getFeat] FeatureType.HYBRIDNET provided but VPRImageProcessor not initialised with init_hybridnet=True")
+        if any([fttype == FeatureType.NETVLAD for fttype in fttypes]):
+            if self.init_netvlad:
+                if not self.netvlad_rdy:
+                    self.check_netvlad(fttypes)
+            else:
+                raise Exception("[getFeat] FeatureType.NETVLAD provided but VPRImageProcessor not initialised with init_netvlad=True")
         try:
             feats = getFeat(imgs, fttypes, dims, use_tqdm=use_tqdm, nn_hybrid=self.hybridnet, nn_netvlad=self.netvlad)
             if isinstance(feats, list):
