@@ -29,11 +29,12 @@ from .vpr_helpers               import SVM_Tolerance_Mode
 from ..vpred                    import find_factors, find_prediction_performance_metrics
 
 class SVMModelProcessor:
-    def __init__(self, ros=False, root=None, load_field=False):
+    def __init__(self, ros=False, root=None, load_field=False, printer=None):
 
         self.model_ready    = False
         self.load_field     = load_field
         self.ros            = ros
+        self.printer        = printer
 
         if root is None:
             self.root       = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__)))
@@ -41,8 +42,8 @@ class SVMModelProcessor:
             self.root       = root
 
         # for making new models (prep but don't load anything yet)
-        self.cal_qry_ip     = VPRDatasetProcessor(None, ros=self.ros, root=root)
-        self.cal_ref_ip     = VPRDatasetProcessor(None, ros=self.ros, root=root)
+        self.cal_qry_ip     = VPRDatasetProcessor(None, ros=self.ros, root=root, printer=self.printer)
+        self.cal_ref_ip     = VPRDatasetProcessor(None, ros=self.ros, root=root, printer=self.printer)
 
         self.print("[SVMModelProcessor] Processor Ready.")
 
@@ -50,9 +51,13 @@ class SVMModelProcessor:
         self.cal_qry_ip.pass_nns(processor, netvlad, hybridnet)
         self.cal_ref_ip.pass_nns(processor, netvlad, hybridnet)
 
-    def print(self, text, logtype=LogType.INFO, throttle=0):
-        roslogger(text, logtype, throttle=throttle, ros=self.ros)
-            
+    def print(self, text: str, logtype: LogType = LogType.INFO, throttle: float = 0) -> None:
+        text = '[VPRDatasetProcessor] ' + text
+        if self.printer is None:
+            roslogger(text, logtype, throttle=throttle, ros=self.ros)
+        else:
+            self.printer(text, logtype, throttle=throttle, ros=self.ros)
+
     def generate_model(self, ref, qry, svm, bag_dbp, npz_dbp, svm_dbp, save=True, try_gen=False, save_datasets=False):
         assert ref['img_dims'] == qry['img_dims'], "Reference and query metadata must be the same."
         assert ref['ft_types'] == qry['ft_types'], "Reference and query metadata must be the same."
@@ -285,6 +290,8 @@ class SVMModelProcessor:
             find_prediction_performance_metrics(self.pred_train, self.y_train, verbose=False)
         self.print('Performance of prediction on calibration set:\nTP={0}, TN={1}, FP={2}, FN={3}\nprecision={4:3.1f}% recall={5:3.1f}%\n' \
                    .format(num_tp,num_tn,num_fp,num_fn,precision*100,recall*100))
+        
+        self.performance_metrics = {'precision': precision, 'recall': recall, 'num_tp': num_tp, 'num_fp': num_fp, 'num_tn': num_tn, 'num_fn': num_fn}
 
     def _get_models(self):
         models      = {}
@@ -305,7 +312,7 @@ class SVMModelProcessor:
             del self.field
         except:
             pass
-        self.model          = dict(params=params_dict, model=model_dict)
+        self.model          = dict(params=params_dict, model=model_dict, perf=self.performance_metrics)
         self.field          = self.generate_svm_mat()
         self.model_ready    = True
     
@@ -346,7 +353,7 @@ class SVMModelProcessor:
         raw_model = np.load(self.root + '/' + self.svm_dbp + '/' + model_name, allow_pickle=True)
         self.model_ready = False
         del self.model
-        self.model       = dict(model=raw_model['model'].item(), params=raw_model['params'].item())
+        self.model       = dict(model=raw_model['model'].item(), params=raw_model['params'].item(), perf=raw_model['perf'].item())
         if self.load_field:
             self._load_field(model_name)
         self.model_ready = True
