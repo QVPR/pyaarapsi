@@ -98,7 +98,7 @@ def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, us
         if None in row:
             none_rows = none_rows + 1
             continue
-        new_dict['t'].append(row[1].header.stamp.to_sec())
+        new_dict['t'].append(row[-1].header.stamp.to_sec())
         new_dict['px'].append(row[1].pose.pose.position.x)
         new_dict['py'].append(row[1].pose.pose.position.y)
         new_dict['pw'].append(yaw_from_q(row[1].pose.pose.orientation))
@@ -115,7 +115,7 @@ def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, us
     printer("%0.2f%% of %d rows contained NoneType; these were ignored." % (100 * none_rows / len(data), len(data)))
     return {key: np.array(new_dict[key]) for key in new_dict}
 
-def rip_bag(bag_path, sample_rate, topics_in, printer=print, use_tqdm=True):
+def rip_bag(bag_path, sample_rate, topics_in, timing=-1, printer=print, use_tqdm=True):
     '''
     Open a ROS bag and store messages from particular topics, sampling at a specified rate.
     If no messages are received, list is populated with NoneType (empties are also NoneType)
@@ -127,6 +127,7 @@ def rip_bag(bag_path, sample_rate, topics_in, printer=print, use_tqdm=True):
     - bag_path:     String for full file path for bag, i.e. /home/user/bag_file.bag
     - sample_rate:  Float for rate at which rosbag should be sampled
     - topics_in:    List of strings for topics to extract, order specifies order in returned data (time column added to the front)
+    - timing:       int type; index of topics_in for topic to use as timekeeper
     - printer:      Method wrapper for printing (default: print)
     - use_tqdm:     Bool to enable/disable use of tqdm (default: True)
     Returns:
@@ -137,6 +138,7 @@ def rip_bag(bag_path, sample_rate, topics_in, printer=print, use_tqdm=True):
     logged_t       = -1
     num_topics     = len(topics)
     num_rows       = 0
+    dt             = 1/sample_rate
 
     # Read rosbag
     printer("Ripping through rosbag, processing topics: %s" % str(topics[1:]))
@@ -149,14 +151,14 @@ def rip_bag(bag_path, sample_rate, topics_in, printer=print, use_tqdm=True):
             iter_obj = ros_bag.read_messages(topics=topics)
         for topic, msg, timestamp in iter_obj:
             row[topics.index(topic)] = msg
-            if logged_t == -1:
-                logged_t    = timestamp.to_sec()
-            elif timestamp.to_sec() - logged_t > 1/sample_rate:
-                row[0]      = sample_rate * num_rows
+            if row[timing] == None:
+                pass
+            elif row[timing].header.stamp.to_sec() - logged_t > dt:
+                logged_t    = row[timing].header.stamp.to_sec()
+                row[0]      = (logged_t + dt/2) - ((logged_t + dt/2) % dt)
                 data.append(row)
                 row         = [None] * num_topics
                 num_rows    = num_rows + 1
-                logged_t    = timestamp.to_sec()
                 
     return data
 
