@@ -13,6 +13,7 @@ class FeatureType(Enum):
     NETVLAD             = 3
     HYBRIDNET           = 4
     ROLLNORM            = 5
+    NORM                = 6
 
 class ViewMode(Enum):
     FORWARD  	        = 0
@@ -146,7 +147,7 @@ def getFeat(im, fttypes, dims, use_tqdm=False, nn_hybrid=None, nn_netvlad=None):
     req_mode    = isinstance(im, list)
 
     for fttype in fttypes:
-        if fttype in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.ROLLNORM]:
+        if fttype in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.ROLLNORM, FeatureType.NORM]:
             if not req_mode:
                 im = [im]
             ft_ready_list = []
@@ -158,7 +159,9 @@ def getFeat(im, fttypes, dims, use_tqdm=False, nn_hybrid=None, nn_netvlad=None):
                 if fttype == FeatureType.PATCHNORM:
                     ft = patchNormaliseImage(ft, 8)
                 elif fttype == FeatureType.ROLLNORM:
-                    ft = rollNormaliseImage(ft, 8)
+                    ft = rollNormaliseImage(ft, 2)
+                elif fttype == FeatureType.NORM:
+                    ft = normaliseImage(ft)
                 ft_ready_list.append(ft.flatten())
             if len(ft_ready_list) == 1:
                 ft_ready = ft_ready_list[0]
@@ -203,6 +206,17 @@ def patchNormaliseImage(img, patchLength):
 
     return img2   
 
+def normaliseImage(img):
+    img1 = img.astype(float)
+    img2 = img1.copy()
+
+    _mean = np.mean(img2.flatten())
+    _std  = np.std(img2.flatten())
+    if _std == 0:
+        _std = 0.1
+        
+    return (img - _mean) / _std
+
 def rollNormaliseImage(img, kernel_size):
 # take input image and use a rolling kernel to noramlise
 # returns: rolling-kernel-normalised image
@@ -217,6 +231,7 @@ def rollNormaliseImage(img, kernel_size):
     
     k_options       = list(range(-kernel_size,kernel_size+1,1))
     rolled_stack    = np.dstack([np.roll(np.roll(img2,i,0),j,1) for j in k_options for i in k_options])
-    rollnormed      = 255 - (np.mean(rolled_stack, 2) / np.std(rolled_stack, 2))
+    #rollnormed      = 255 - (np.mean(rolled_stack, 2) / np.std(rolled_stack, 2))
+    rollnormed      = np.mean(rolled_stack, 2)
 
     return rollnormed  
