@@ -56,14 +56,10 @@ class Main_ROS_Class(Base_ROS_Class):
         super().init_vars()
 
         self.vpr_ego            = []
-        self.vpr_ego_hist       = []
         self.slam_ego           = []
         self.robot_ego          = []
-        self.old_robot_ego      = []
         self.lookahead          = 1.0
         self.lookahead_mode     = Lookahead_Mode.DISTANCE
-        self.dt                 = 1/self.RATE_NUM.get()
-        self.print_lines        = 0
 
         self.old_lin            = 0.0
         self.old_ang            = 0.0
@@ -127,7 +123,6 @@ class Main_ROS_Class(Base_ROS_Class):
     def init_rospy(self):
         super().init_rospy()
 
-        self.time               = rospy.Time.now().to_sec()
         ds_requ                 = self.namespace + "/requests/dataset/"
         self.path_pub           = self.add_pub(     self.namespace + '/path',       Path,                                       queue_size=1, latch=True, subscriber_listener=self.sublis)
         self.COR_pub            = self.add_pub(     self.namespace + '/cor',        PoseStamped,                                queue_size=1)
@@ -151,28 +146,24 @@ class Main_ROS_Class(Base_ROS_Class):
         self.sublis.add_operation(self.namespace + '/speeds',   method_sub=self.path_peer_subscribe)
 
     def state_cb(self, msg: Label):
-        
-        self.vpr_ego            = [msg.vpr_ego.x, msg.vpr_ego.y, msg.vpr_ego.w]
-        self.new_vpr_ego        = True
-
         if not self.ready:
             return
-
-        self.vpr_ego_hist.append(self.vpr_ego)
+        
+        self.vpr_ego            = [msg.vpr_ego.x, msg.vpr_ego.y, msg.vpr_ego.w]
         self.label              = msg
-        self.new_state_msg      = True
+        self.new_vpr_ego        = True
     
     def robot_odom_cb(self, msg: Odometry):
         if not self.ready:
-            self.old_robot_ego  = pose2xyw(msg.pose.pose)
-            self.new_robot_ego  = True
             return
 
-        self.old_robot_ego      = self.robot_ego
         self.robot_ego          = pose2xyw(msg.pose.pose)
         self.new_robot_ego      = True
 
     def slam_odom_cb(self, msg: Odometry):
+        if not self.ready:
+            return
+        
         self.slam_ego               = pose2xyw(msg.pose.pose)
         self.new_slam_ego           = True
 
@@ -452,16 +443,6 @@ class Main_ROS_Class(Base_ROS_Class):
                  TAB + '     SVM Status: %s' % svm_string
                 ]
         print(''.join([C_CLEAR + line + '\n' for line in lines]) + (C_UP_N%1)*(len(lines)), end='')
-
-    def print(self, *args, **kwargs):
-        arg_list = list(args) + [kwargs[k] for k in kwargs]
-        log_level = enum_value(LogType.INFO)
-        for i in arg_list:
-            if isinstance(i, LogType):
-                log_level = enum_value(i)
-                break
-        if (enum_value(self.LOG_LEVEL.get()) <= log_level) and super().print(*args, **kwargs):
-            self.print_lines += 1
 
     def publish_pose(self, goal_ind: int, pub: rospy.Publisher) -> None:
         # Update visualisation of current goal/target pose
