@@ -71,7 +71,6 @@ class Main_ROS_Class(Base_ROS_Class):
         self.label              = Label()
 
         self.ready              = False
-        self.new_state_msg      = False
         self.new_robot_ego      = False
         self.new_slam_ego       = False
         self.new_vpr_ego        = False
@@ -365,12 +364,8 @@ class Main_ROS_Class(Base_ROS_Class):
         msg.group.target_ind        = target_ind
         msg.group.reject_mode       = enum_name(self.REJECT_MODE.get())
 
-        try:
-            msg.group.true_yaw      = np.round(self.slam_ego[2], 3)
-            msg.group.delta_yaw     = np.round(self.slam_ego[2] - self.vpr_ego[2], 3)
-        except:
-            pass
-        self.new_slam_ego = False
+        msg.group.true_yaw          = np.round(self.slam_ego[2], 3)
+        msg.group.delta_yaw         = np.round(self.slam_ego[2] - self.vpr_ego[2], 3)
 
         msg.group.lookahead         = adj_lookahead
         msg.group.lookahead_mode    = enum_name(self.lookahead_mode)
@@ -415,32 +410,30 @@ class Main_ROS_Class(Base_ROS_Class):
         else:
             raise Exception('Bad safety mode state, %s' % str(self.safety_mode))
 
-        base_pos_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '% 5.2f ' for i in 'xyw']) + C_RESET
-        base_vel_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '% 5.2f ' for i in ['LIN','ANG']]) + C_RESET
-        base_err_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '% 5.2f ' for i in ['VEL', 'eYAW']]) + C_RESET
-        base_ind_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '%4d ' for i in ['CUR']]) + C_RESET
-        base_svm_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '%s ' for i in ['OVERRIDE','SVM']]) + C_RESET
+        base_pos_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '% 4.1f ' for i in 'xyw']) + C_RESET
+        base_vel_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '% 4.1f ' for i in ['LIN','ANG']]) + C_RESET
+        base_err_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '% 4.1f ' for i in ['VEL', 'YAW']]) + C_RESET
+        base_svm_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '%s ' for i in ['REJ','ON']]) + C_RESET
         vpr_pos_string  = base_pos_string % tuple(self.vpr_ego)
         slam_pos_string = base_pos_string % tuple(self.slam_ego)
         speed_string    = base_vel_string % (new_linear, new_angular)
         errors_string   = base_err_string % (speed, error_yaw)
-        index_string    = base_ind_string % (current_ind)
         path_err_string = base_vel_string % (lin_path_err, ang_path_err)
         svm_string      = base_svm_string % (enum_name(self.REJECT_MODE.get()), str(self.label.svm_class))
-        TAB = ' ' * 8
+        TAB = ' ' #* 8
         lines = [
                  '',
-                 TAB + '-'*15 + C_I_BLUE + ' STATUS INFO ' + C_RESET + '-'*15,
-                 TAB + 'Autonomous Mode: %s' % command_mode_string,
-                 TAB + '    Safety Mode: %s' % safety_mode_string,
-                 TAB + '   VPR Position: %s' % vpr_pos_string,
-                 TAB + '  SLAM Position: %s' % slam_pos_string,
-                 TAB + '   Measurements: %s' % errors_string,
-                 TAB + ' Speed Commands: %s' % speed_string,
-                 TAB + '     Index Info: %s' % index_string,
-                 TAB + '    Zone Number: %d' % zone,
-                 TAB + '     Path Error: %s' % path_err_string,
-                 TAB + '     SVM Status: %s' % svm_string
+                 TAB + '-'*13 + C_I_BLUE + ' STATUS INFO ' + C_RESET + '-'*13,
+                 TAB + ' Command Mode: %s' % command_mode_string,
+                 TAB + '  Safety Mode: %s' % safety_mode_string,
+                 TAB + ' VPR Position: %s' % vpr_pos_string,
+                 TAB + 'SLAM Position: %s' % slam_pos_string,
+                 TAB + '       Errors: %s' % errors_string,
+                 TAB + '     Commands: %s' % speed_string,
+                 TAB + '    VPR Index: %d' % current_ind,
+                 TAB + '  Zone Number: %d' % zone,
+                 TAB + '   Path Error: %s' % path_err_string,
+                 TAB + '   SVM Status: %s' % svm_string
                 ]
         print(''.join([C_CLEAR + line + '\n' for line in lines]) + (C_UP_N%1)*(len(lines)), end='')
 
