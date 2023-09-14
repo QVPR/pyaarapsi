@@ -69,7 +69,7 @@ def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, us
     Inputs:
     - bag_path:     String for full file path for bag, i.e. /home/user/bag_file.bag
     - sample_rate:  Float for rate at which rosbag should be sampled
-    - odom_topic:   string for odom topic to extract
+    - odom_topic:   string or list of strings for odom topic/s to extract, if list then the order specifies order in returned data
     - img_topics:   List of strings for image topics to extract, order specifies order in returned data
     - printer:      Method wrapper for printing (default: print)
     - use_tqdm:     Bool to enable/disable use of tqdm (default: True)
@@ -80,7 +80,12 @@ def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, us
     if not bag_path.endswith('.bag'):
         bag_path += '.bag'
 
-    topic_list = [odom_topic] + img_topics
+    if not isinstance(odom_topic, list):
+        _odom_topics = [odom_topic]
+    else:
+        _odom_topics = odom_topic
+
+    topic_list = _odom_topics + img_topics
     # Read rosbag
     data = rip_bag(bag_path, sample_rate, topic_list, printer=printer, use_tqdm=use_tqdm)
 
@@ -98,15 +103,29 @@ def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, us
         if None in row:
             none_rows = none_rows + 1
             continue
-        new_dict['t'].append(row[-1].header.stamp.to_sec())
-        new_dict['px'].append(row[1].pose.pose.position.x)
-        new_dict['py'].append(row[1].pose.pose.position.y)
-        new_dict['pw'].append(yaw_from_q(row[1].pose.pose.orientation))
 
-        new_dict['vx'].append(row[1].twist.twist.linear.x)
-        new_dict['vy'].append(row[1].twist.twist.linear.y)
-        new_dict['vw'].append(row[1].twist.twist.angular.z)
+        new_dict['t'].append(row[-1].header.stamp.to_sec()) # get time stamp
 
+        if len(_odom_topics) == 1:
+            new_dict['px'].append(row[1].pose.pose.position.x)
+            new_dict['py'].append(row[1].pose.pose.position.y)
+            new_dict['pw'].append(yaw_from_q(row[1].pose.pose.orientation))
+
+            new_dict['vx'].append(row[1].twist.twist.linear.x)
+            new_dict['vy'].append(row[1].twist.twist.linear.y)
+            new_dict['vw'].append(row[1].twist.twist.angular.z)
+        else:
+            new_odoms = []
+            for topic in _odom_topics:
+                new_odoms.append(np.array(pose2xyw(row[1 + topic_list.index(topic)].pose.pose) + twist2xyw(row[1 + topic_list.index(topic)].twist.twist)))
+            new_odoms = np.array(new_odoms)
+            new_dict['px'].append(new_odoms[:,0])
+            new_dict['py'].append(new_odoms[:,1])
+            new_dict['pw'].append(new_odoms[:,2])
+            new_dict['vx'].append(new_odoms[:,3])
+            new_dict['vy'].append(new_odoms[:,4])
+            new_dict['vw'].append(new_odoms[:,5])
+            
         for topic in img_topics:
             if "/compressed" in topic:
                 new_dict[topic].append(compressed2np(row[1 + topic_list.index(topic)]))
