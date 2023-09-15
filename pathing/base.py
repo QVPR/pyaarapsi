@@ -13,7 +13,7 @@ from sensor_msgs.msg        import Joy, CompressedImage
 from aarapsi_robot_pack.msg import ControllerStateInfo, Label, RequestDataset, ResponseDataset
 
 from pyaarapsi.core.ros_tools               import LogType, pose2xyw, q_from_rpy
-from pyaarapsi.core.helper_tools            import formatException
+from pyaarapsi.core.helper_tools            import formatException, p2p_dist_2d
 from pyaarapsi.core.enum_tools              import enum_name, enum_value
 from pyaarapsi.core.vars                    import C_I_RED, C_I_GREEN, C_I_YELLOW, C_I_BLUE, C_I_WHITE, C_RESET, C_CLEAR, C_UP_N
 
@@ -53,35 +53,48 @@ class Main_ROS_Class(Base_ROS_Class):
         self.AUTONOMOUS_OVERRIDE    = self.params.add(self.nodespace + "/override/autonomous",      Command_Mode.STOP,  lambda x: check_enum(x, Command_Mode),  force=reset)
 
         self.SLICE_LENGTH           = self.params.add(self.nodespace + "/exp/slice_length",         1.5,                check_positive_float,                   force=reset)
+        self.APPEND_DIST            = self.params.add(self.nodespace + "/exp/append_dist",          0.05,               check_positive_float,                   force=reset)
+        self.APPEND_MAX             = self.params.add(self.nodespace + "/exp/append_max",           50,                 check_positive_int,                     force=reset)
 
     def init_vars(self):
-        super().init_vars()
+        super().init_vars() # Call base class method
 
+        # Vehicle state information:
         self.vpr_ego            = []
         self.slam_ego           = []
         self.robot_ego          = []
-        self.match_hist         = []
         self.lookahead          = 1.0
         self.lookahead_mode     = Lookahead_Mode.DISTANCE
 
+        # Inter-loop variables for velocity control:
         self.old_lin            = 0.0
         self.old_ang            = 0.0
+
+        # Inter-loop variables for Zone-Return Features:
         self.zone_index         = None
         self.return_stage       = Return_Stage.UNSET
 
+        # Inter-loop variables for historical data management:
+        self.match_hist         = []
+
+        # Inter-loop variables for dataset loading control:
+        self.dataset_queue      = []
+        self.dataset_loaded     = False
+
+        # Empty classes to initialise memory requirements:
         self.plan_path          = Path()
         self.ref_path           = Path()
         self.label              = Label()
 
+        # Flags for loop progression control:
         self.ready              = False
         self.new_label          = False
 
-        self.dataset_queue      = []
-        self.dataset_loaded     = False
-
+        # Set initial mode states:
         self.set_command_mode(Command_Mode.STOP)
         self.set_safety_mode(Safety_Mode.STOP)
 
+        # Controller bind information:
         self.vpr_mode_ind       = enum_value(PS4_Buttons.Square)
         self.stop_mode_ind      = enum_value(PS4_Buttons.X)
         self.slam_mode_ind      = enum_value(PS4_Buttons.O)
@@ -98,6 +111,7 @@ class Main_ROS_Class(Base_ROS_Class):
         self.lin_cmd_ind        = enum_value(PS4_Triggers.LeftStickYAxis)
         self.ang_cmd_ind        = enum_value(PS4_Triggers.RightStickXAxis)
 
+        # Hashed entries for fast access:
         self.feat_arr           = { self.raw_ind: FeatureType.RAW,           self.patchnorm_ind: FeatureType.PATCHNORM, 
                                     self.netvlad_ind: FeatureType.NETVLAD,   self.hybridnet_ind: FeatureType.HYBRIDNET }
         
@@ -106,8 +120,6 @@ class Main_ROS_Class(Base_ROS_Class):
 
         self.reject_lambda      = { Reject_Mode.STOP: lambda x: 0.0,        Reject_Mode.OLD: lambda x: x * 1,
                                     Reject_Mode.OLD_50: lambda x: x * 0.5,  Reject_Mode.OLD_90: lambda x: x * 0.9 }
-
-        self.twist_msg          = Twist()
 
         # Set up bluetooth connection check variables:
         try:
@@ -152,10 +164,19 @@ class Main_ROS_Class(Base_ROS_Class):
         self.vpr_ego            = [msg.vpr_ego.x, msg.vpr_ego.y, msg.vpr_ego.w]
         self.robot_ego          = [msg.robot_ego.x, msg.robot_ego.y, msg.robot_ego.w]
         self.slam_ego           = [msg.gt_ego.x, msg.gt_ego.y, msg.gt_ego.w]
-        
-        self.match_hist.append([msg.match_index, msg.truth_index, msg.gt_class, msg.svm_class, msg.robot_ego, msg.vpr_ego])
-        
         self.new_label          = True
+        
+        _append = [msg.match_index, msg.truth_index, msg.distance_vector[msg.match_index], msg.gt_class, msg.svm_class, *self.slam_ego, *self.robot_ego, *self.vpr_ego]
+        if not len(self.match_hist):
+            self.match_hist.append(_append + [0])
+            return
+        
+        _dist = p2p_dist_2d(self.match_hist[-1][7:9], self.robot_ego[0:3])
+        if _dist > self.APPEND_DIST.get():
+            self.match_hist.append(_append + [_dist])
+
+        while len(self.match_hist) > self.APPEND_MAX.get():
+            self.match_hist.pop(0)
 
     def joy_cb(self, msg: Joy):
         if not self.ready:
@@ -252,13 +273,13 @@ class Main_ROS_Class(Base_ROS_Class):
                                                  make_speed_array(self.ip.dataset['dataset']['pw'].flatten())]))
         
         # determine zone number, length, indices:
-        path_sum, path_len               = calc_path_stats(self.path_xyws)
-        self.zone_length, self.num_zones = calc_zone_stats(path_len, self.ZONE_LENGTH.get(), self.ZONE_NUMBER.get(), )
+        self.path_sum, self.path_len     = calc_path_stats(self.path_xyws)
+        self.zone_length, self.num_zones = calc_zone_stats(self.path_len, self.ZONE_LENGTH.get(), self.ZONE_NUMBER.get(), )
         _end                             = [self.path_xyws.shape[0] + (int(not self.LOOP_PATH.get()) - 1)]
-        self.zone_indices                = [np.argmin(np.abs(path_sum-(self.zone_length*i))) for i in np.arange(self.num_zones)] + _end
+        self.zone_indices                = [np.argmin(np.abs(self.path_sum-(self.zone_length*i))) for i in np.arange(self.num_zones)] + _end
         
         # generate stuff for visualisation:
-        self.path_indices                = [np.argmin(np.abs(path_sum-(0.2*i))) for i in np.arange(int(5 * path_len))]
+        self.path_indices                = [np.argmin(np.abs(self.path_sum-(0.2*i))) for i in np.arange(int(5 * self.path_len))]
         self.viz_path, self.viz_speeds   = make_path_speeds(self.path_xyws, self.path_indices)
         self.viz_zones                   = make_zones(self.path_xyws, self.zone_indices)
         
