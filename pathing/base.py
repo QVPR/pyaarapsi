@@ -173,7 +173,7 @@ class Main_ROS_Class(Base_ROS_Class):
             self.new_history = True
             return
         
-        _dist = p2p_dist_2d(self.match_hist[-1][7:9], self.robot_ego[0:3])
+        _dist = p2p_dist_2d(self.match_hist[-1][8:10], self.robot_ego[0:2])
         if _dist > self.APPEND_DIST.get():
             self.match_hist.append(_append + [_dist])
             self.new_history = True
