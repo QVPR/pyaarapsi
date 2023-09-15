@@ -76,6 +76,7 @@ class Main_ROS_Class(Base_ROS_Class):
 
         # Inter-loop variables for historical data management:
         self.match_hist         = []
+        self.new_history        = False
 
         # Inter-loop variables for dataset loading control:
         self.dataset_queue      = []
@@ -169,11 +170,13 @@ class Main_ROS_Class(Base_ROS_Class):
         _append = [msg.match_index, msg.truth_index, msg.distance_vector[msg.match_index], msg.gt_class, msg.svm_class, *self.slam_ego, *self.robot_ego, *self.vpr_ego]
         if not len(self.match_hist):
             self.match_hist.append(_append + [0])
+            self.new_history = True
             return
         
         _dist = p2p_dist_2d(self.match_hist[-1][7:9], self.robot_ego[0:3])
         if _dist > self.APPEND_DIST.get():
             self.match_hist.append(_append + [_dist])
+            self.new_history = True
 
         while len(self.match_hist) > self.APPEND_MAX.get():
             self.match_hist.pop(0)
