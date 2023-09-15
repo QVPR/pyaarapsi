@@ -39,6 +39,12 @@ def m2m_dist(arr_1, arr_2, flatten=False):
         out = out.flatten()
     return out
 
+def p2p_dist_2d(xy1, xy2, _sqrt=True):
+    _d = np.square(xy1[0]-xy2[0]) + np.square(xy1[1]-xy2[1])
+    if _sqrt:
+        return np.sqrt(_d)
+    return _d
+
 def try_load_var(path: str, var_name: str) -> object:
     try:
         return np.load(path+"/"+var_name+".npz", allow_pickle=True)[var_name]
