@@ -29,7 +29,7 @@ class Main_ROS_Class(Base_ROS_Class):
     def init_params(self, rate_num: float, log_level: float, reset):
         super().init_params(rate_num, log_level, reset)
 
-        self.ZONE_LENGTH            = self.params.add(self.namespace + "/path/zones/length",        None,               check_positive_int,                     force=False)
+        self.ZONE_LENGTH            = self.params.add(self.namespace + "/path/zones/length",        None,               check_positive_float,                   force=False)
         self.ZONE_NUMBER            = self.params.add(self.namespace + "/path/zones/number",        None,               check_positive_int,                     force=False)
         self.SLOW_LIN_VEL_MAX       = self.params.add(self.namespace + "/limits/slow/linear",       None,               check_positive_float,                   force=False)
         self.SLOW_ANG_VEL_MAX       = self.params.add(self.namespace + "/limits/slow/angular",      None,               check_positive_float,                   force=False)
@@ -52,12 +52,15 @@ class Main_ROS_Class(Base_ROS_Class):
         self.SAFETY_OVERRIDE        = self.params.add(self.nodespace + "/override/safety",          Safety_Mode.UNSET,  lambda x: check_enum(x, Safety_Mode),   force=reset)
         self.AUTONOMOUS_OVERRIDE    = self.params.add(self.nodespace + "/override/autonomous",      Command_Mode.STOP,  lambda x: check_enum(x, Command_Mode),  force=reset)
 
+        self.SLICE_LENGTH           = self.params.add(self.nodespace + "/exp/slice_length",         1.5,                check_positive_float,                   force=reset)
+
     def init_vars(self):
         super().init_vars()
 
         self.vpr_ego            = []
         self.slam_ego           = []
         self.robot_ego          = []
+        self.match_hist         = []
         self.lookahead          = 1.0
         self.lookahead_mode     = Lookahead_Mode.DISTANCE
 
@@ -71,9 +74,7 @@ class Main_ROS_Class(Base_ROS_Class):
         self.label              = Label()
 
         self.ready              = False
-        self.new_robot_ego      = False
-        self.new_slam_ego       = False
-        self.new_vpr_ego        = False
+        self.new_label          = False
 
         self.dataset_queue      = []
         self.dataset_loaded     = False
@@ -135,8 +136,6 @@ class Main_ROS_Class(Base_ROS_Class):
         self.ds_requ_pub        = self.add_pub(     ds_requ + "request",            RequestDataset,                             queue_size=1)
         self.ds_requ_sub        = rospy.Subscriber( ds_requ + "ready",              ResponseDataset,        self.ds_requ_cb,    queue_size=1)
         self.state_sub          = rospy.Subscriber( self.namespace + '/state',      Label,                  self.state_cb,      queue_size=1)
-        self.robot_odom_sub     = rospy.Subscriber( self.ROBOT_ODOM_TOPIC.get(),    Odometry,               self.robot_odom_cb, queue_size=1) # wheel encoders fused
-        self.slam_odom_sub      = rospy.Subscriber( self.SLAM_ODOM_TOPIC.get(),     Odometry,               self.slam_odom_cb,  queue_size=1)
         self.joy_sub            = rospy.Subscriber( self.JOY_TOPIC.get(),           Joy,                    self.joy_cb,        queue_size=1)
         self.timer_chk          = rospy.Timer(rospy.Duration(2), self.check_controller)
 
@@ -148,23 +147,15 @@ class Main_ROS_Class(Base_ROS_Class):
         if not self.ready:
             return
         
-        self.vpr_ego            = [msg.vpr_ego.x, msg.vpr_ego.y, msg.vpr_ego.w]
         self.label              = msg
-        self.new_vpr_ego        = True
-    
-    def robot_odom_cb(self, msg: Odometry):
-        if not self.ready:
-            return
-
-        self.robot_ego          = pose2xyw(msg.pose.pose)
-        self.new_robot_ego      = True
-
-    def slam_odom_cb(self, msg: Odometry):
-        if not self.ready:
-            return
         
-        self.slam_ego               = pose2xyw(msg.pose.pose)
-        self.new_slam_ego           = True
+        self.vpr_ego            = [msg.vpr_ego.x, msg.vpr_ego.y, msg.vpr_ego.w]
+        self.robot_ego          = [msg.robot_ego.x, msg.robot_ego.y, msg.robot_ego.w]
+        self.slam_ego           = [msg.gt_ego.x, msg.gt_ego.y, msg.gt_ego.w]
+        
+        self.match_hist.append([msg.match_index, msg.truth_index, msg.gt_class, msg.svm_class, msg.robot_ego, msg.vpr_ego])
+        
+        self.new_label          = True
 
     def joy_cb(self, msg: Joy):
         if not self.ready:
