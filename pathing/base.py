@@ -10,7 +10,7 @@ from std_msgs.msg           import String
 from geometry_msgs.msg      import PoseStamped, Twist
 from visualization_msgs.msg import MarkerArray
 from sensor_msgs.msg        import Joy, CompressedImage
-from aarapsi_robot_pack.msg import ControllerStateInfo, Label, RequestDataset, ResponseDataset
+from aarapsi_robot_pack.msg import ControllerStateInfo, Label, RequestDataset, ResponseDataset, ExpResults
 
 from pyaarapsi.core.ros_tools               import LogType, pose2xyw, q_from_rpy
 from pyaarapsi.core.helper_tools            import formatException, p2p_dist_2d
@@ -52,7 +52,7 @@ class Main_ROS_Class(Base_ROS_Class):
         self.SAFETY_OVERRIDE        = self.params.add(self.nodespace + "/override/safety",          Safety_Mode.UNSET,  lambda x: check_enum(x, Safety_Mode),   force=reset)
         self.AUTONOMOUS_OVERRIDE    = self.params.add(self.nodespace + "/override/autonomous",      Command_Mode.STOP,  lambda x: check_enum(x, Command_Mode),  force=reset)
 
-        self.SLICE_LENGTH           = self.params.add(self.nodespace + "/exp/slice_length",         1.5,                check_positive_float,                   force=reset)
+        self.SLICE_LENGTH           = self.params.add(self.nodespace + "/exp/slice_length",         1.0,                check_positive_float,                   force=reset)
         self.APPEND_DIST            = self.params.add(self.nodespace + "/exp/append_dist",          0.05,               check_positive_float,                   force=reset)
         self.APPEND_MAX             = self.params.add(self.nodespace + "/exp/append_max",           50,                 check_positive_int,                     force=reset)
 
@@ -146,6 +146,7 @@ class Main_ROS_Class(Base_ROS_Class):
         self.cmd_pub            = self.add_pub(     self.CMD_TOPIC.get(),           Twist,                                      queue_size=1)
         self.info_pub           = self.add_pub(     self.nodespace + '/info',       ControllerStateInfo,                        queue_size=1)
         self.rollmatch_pub      = self.add_pub(     self.nodespace + '/rollmatch/compressed',  CompressedImage,                 queue_size=1)
+        self.exp_pub            = self.add_pub(     self.nodespace + '/exp/result', ExpResults,                                 queue_size=1)
         self.ds_requ_pub        = self.add_pub(     ds_requ + "request",            RequestDataset,                             queue_size=1)
         self.ds_requ_sub        = rospy.Subscriber( ds_requ + "ready",              ResponseDataset,        self.ds_requ_cb,    queue_size=1)
         self.state_sub          = rospy.Subscriber( self.namespace + '/state',      Label,                  self.state_cb,      queue_size=1)
