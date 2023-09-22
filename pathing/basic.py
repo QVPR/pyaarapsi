@@ -5,7 +5,7 @@ from std_msgs.msg                   import Header, ColorRGBA
 from geometry_msgs.msg              import PoseStamped, Point, Vector3
 from visualization_msgs.msg         import MarkerArray, Marker
 
-from pyaarapsi.core.ros_tools       import q_from_yaw
+from pyaarapsi.core.ros_tools       import q_from_yaw, q_from_rpy
 from pyaarapsi.core.helper_tools    import angle_wrap, normalize_angle, m2m_dist
 from .enums                         import Lookahead_Mode
 
@@ -101,11 +101,14 @@ def global2local(ego, x, y):
 
     return list(np.multiply(np.cos(A), R)), list(np.multiply(np.sin(A), R))
 
-def calc_yaw_error(ego, x, y, target_ind: int = None):
+def calc_yaw_error(ego, goal):
     # Heading error (angular):
-    rel_x, rel_y    = global2local(ego, x, y) # Convert to local coordinates
-    error_yaw       = normalize_angle(np.arctan2(rel_y[target_ind], rel_x[target_ind]))
+    rel_x, rel_y    = global2local(ego, np.array([goal[0]]), np.array([goal[1]])) # Convert to local coordinates
+    error_yaw       = normalize_angle(np.arctan2(rel_y[0], rel_x[0]))
     return error_yaw
+
+def calc_nearest_zone(zone_indices, current_ind, _len):
+    return zone_indices[np.argmin(m2m_dist(current_ind, np.transpose(np.matrix(zone_indices))))] % _len
         
 def calc_current_zone(ind: int, num_zones: int, zone_indices: list):
     # The closest zone boundary that is 'behind' the closest index (in the direction of the path):
@@ -132,6 +135,20 @@ def calc_target(current_ind: int, lookahead: float, lookahead_mode: Lookahead_Mo
     else:
         raise Exception('Unknown lookahead_mode: %s' % str(lookahead_mode))
     return target_ind, adj_lookahead
+
+def publish_xyw_pose(pose_xyw: list, pub: rospy.Publisher, frame_id='map') -> None:
+    # Update visualisation of current goal/target pose
+    goal                    = PoseStamped(header=Header(stamp=rospy.Time.now(), frame_id=frame_id))
+    goal.pose.position      = Point(x=pose_xyw[0], y=pose_xyw[1], z=0.0)
+    goal.pose.orientation   = q_from_yaw(pose_xyw[2])
+    pub.publish(goal)
+
+def publish_xyzrpy_pose(xyzrpy: list, pub: rospy.Publisher, frame_id='map') -> None:
+    # Update visualisation of current goal/target pose
+    goal                    = PoseStamped(header=Header(stamp=rospy.Time.now(), frame_id=frame_id))
+    goal.pose.position      = Point(x=xyzrpy[0], y=xyzrpy[1], z=xyzrpy[2])
+    goal.pose.orientation   = q_from_rpy(r=xyzrpy[3],p=xyzrpy[4],y=xyzrpy[5])
+    pub.publish(goal)
 
 
                 
