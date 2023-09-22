@@ -159,6 +159,12 @@ class Main_ROS_Class(Base_ROS_Class):
                                     Command_Mode.VPR: C_I_RED + 'VPR mode',         Command_Mode.ZONE_RETURN: C_I_YELLOW + 'Returning to Zone', 
                                     Command_Mode.SPECIAL: C_I_BLUE + 'Special mode'}
 
+        self.experi_str_hash    = { Experiment_Mode.UNSET: C_I_GREEN + 'STOPPED',           Experiment_Mode.DRIVE_PATH: C_I_YELLOW + 'Path Following', 
+                                    Experiment_Mode.INIT:  C_I_YELLOW + 'Initialising',     Experiment_Mode.HALT1:      C_I_YELLOW + 'Halting', 
+                                    Experiment_Mode.ALIGN: C_I_YELLOW + 'Align to Start',   Experiment_Mode.DRIVE_GOAL: C_I_RED + 'Heading to Goal', 
+                                    Experiment_Mode.HALT2: C_I_YELLOW + 'Halting',          Experiment_Mode.DANGER:     C_I_RED + 'Halting',
+                                    Experiment_Mode.DONE:  C_I_GREEN + 'Complete' }
+
         self.safety_str_hash    = { Safety_Mode.STOP: C_I_GREEN + 'STOPPED', Safety_Mode.SLOW: C_I_YELLOW + 'SLOW mode', 
                                     Safety_Mode.FAST: C_I_RED + 'FAST mode', }
         
@@ -472,7 +478,10 @@ class Main_ROS_Class(Base_ROS_Class):
         Manage changes to command mdoe and sync with ROS parameter server
         '''
         if mode == Command_Mode.STOP:
-            self.EXPERIMENT_MODE.set(Experiment_Mode.UNSET)
+            if self.EXPERIMENT_MODE.get() == Experiment_Mode.DRIVE_GOAL:
+                self.EXPERIMENT_MODE.set(Experiment_Mode.DANGER)
+            else:
+                self.EXPERIMENT_MODE.set(Experiment_Mode.UNSET)
         self.command_mode = mode
         if not override:
             self.AUTONOMOUS_OVERRIDE.set(mode)
@@ -641,7 +650,10 @@ class Main_ROS_Class(Base_ROS_Class):
         '''
         Construct and print a Human-Machine Interface
         '''
-        command_mode_string = self.command_str_hash[self.command_mode] + C_RESET
+        if self.EXPERIMENT_MODE.get() == Experiment_Mode.UNSET:
+            automation_mode_string = '  Command Mode: ' + self.command_str_hash[self.command_mode] + C_RESET
+        else:
+            automation_mode_string = '  [' + C_I_BLUE + 'Experiment' + C_RESET + ']: ' + self.experi_str_hash[self.EXPERIMENT_MODE.get()] + C_RESET
         safety_mode_string  = self.safety_str_hash[self.safety_mode] + C_RESET
 
         base_pos_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '% 4.1f ' for i in 'xyw']) + C_RESET
@@ -654,7 +666,7 @@ class Main_ROS_Class(Base_ROS_Class):
         svm_string      = base_svm_string % (enum_name(self.REJECT_MODE.get()), str(self.label.svm_class))
         lines = ['',
                  ' ' + '-'*13 + C_I_BLUE + ' STATUS INFO ' + C_RESET + '-'*13,
-                 ' ' + '  Command Mode: %s' % command_mode_string,
+                 ' ' + automation_mode_string,
                  ' ' + '   Safety Mode: %s' % safety_mode_string,
                  ' ' + '  VPR Position: %s' % vpr_pos_string,
                  ' ' + ' SLAM Position: %s' % slam_pos_string,

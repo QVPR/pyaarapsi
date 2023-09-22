@@ -66,6 +66,7 @@ class Experiment_Mode(Enum):
     DRIVE_GOAL      = 5
     HALT2           = 6
     DONE            = 7
+    DANGER          = 8
 
 class Lookahead_Mode(Enum):
     INDEX           = 0
