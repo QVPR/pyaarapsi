@@ -85,6 +85,18 @@ def angle_wrap(angle_in: float, mode: str = 'DEG') -> float:
         return ((angle_in + np.pi) % (np.pi * 2)) - np.pi
     else:
         raise Exception('Mode must be either DEG or RAD.')
+    
+def r2d(angle_in: float) -> float:
+    '''
+    Convert radians to degrees
+    '''
+    return angle_in * 180 / np.pi
+    
+def d2r(angle_in: float) -> float:
+    '''
+    Convert degrees to radians
+    '''
+    return angle_in * np.pi / 180
 
 def np_ndarray_to_uint8_list(ndarray: np.ndarray) -> list:
     '''
