@@ -129,3 +129,27 @@ def apply_homogeneous_transform(H: np.ndarray, X: list, Y: list, Z: list = None,
     if cast_to_list:
         return list(XYZ_[0,:]), list(XYZ_[1,:]), list(XYZ_[2,:])
     return XYZ_[0,:], XYZ_[1,:], XYZ_[2,:]
+
+class Transform_Builder(object):
+    def __init__(self):
+        self._transform  = np.eye(4)
+        self._components = []
+
+    def translate(self, x: float = 0, y: float = 0, z: float = 0):
+        new_transform = homogeneous_transform(0,0,0,x,y,z)
+        self._components.append(new_transform)
+        self._transform = np.matmul(new_transform, self._transform)
+        return self
+
+    def rotate(self, r: float = 0, p: float = 0, y: float = 0, order: str = 'rpy', radians=True):
+        new_transform   = homogeneous_transform(r,p,y,0,0,0,order=order,radians=radians)
+        self._transform = np.matmul(new_transform, self._transform)
+        self._components.append(new_transform)
+        return self
+    
+    def get(self):
+        return self._transform
+        
+    def get_components(self):
+        return self._components
+        
