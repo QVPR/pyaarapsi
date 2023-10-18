@@ -58,6 +58,23 @@ class SVMModelProcessor:
         else:
             self.printer(text, logtype, throttle=throttle, ros=self.ros)
 
+    def load_training_data(self, ref, qry, svm, bag_dbp, npz_dbp, svm_dbp, try_gen=False, save_datasets=False):
+        assert ref['img_dims'] == qry['img_dims'], "Reference and query metadata must be the same."
+        assert ref['ft_types'] == qry['ft_types'], "Reference and query metadata must be the same."
+
+        # store for access in saving operation:
+        self.bag_dbp            = bag_dbp
+        self.npz_dbp            = npz_dbp
+        self.svm_dbp            = svm_dbp
+        self.qry_params         = qry
+        self.ref_params         = ref 
+        self.svm_params         = svm
+        self.img_dims           = ref['img_dims']
+        self.feat_type          = ref['ft_types'][0]
+
+        # load:
+        return self._load_training_data(try_gen=try_gen, save_datasets=save_datasets) # [qry, ref]
+
     def generate_model(self, ref, qry, svm, bag_dbp, npz_dbp, svm_dbp, save=True, try_gen=False, save_datasets=False):
         assert ref['img_dims'] == qry['img_dims'], "Reference and query metadata must be the same."
         assert ref['ft_types'] == qry['ft_types'], "Reference and query metadata must be the same."
