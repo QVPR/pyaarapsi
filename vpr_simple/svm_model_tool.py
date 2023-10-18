@@ -243,55 +243,63 @@ class SVMModelProcessor:
         self.print("Loading calibration reference dataset...", LogType.DEBUG)
         load_ref = self.cal_ref_ip.load_dataset(self.ref_params, try_gen=try_gen)
         return (load_qry, load_ref)
+    
+    def _classify(self, ref_xy, qry_xy, S_train):
+        # Use ground truth to label classes of SVM training data
 
-    def _train(self):
-        self.print("Performing training...")
-
-        # Define SVM:
-        self.svm_model      = svm.SVC(kernel='rbf', C=1, gamma='scale', class_weight='balanced', probability=True)
-        self.scaler         = StandardScaler()
-
-        # Generate details:
-        self.S_train = fastdist.matrix_to_matrix_distance(  
-            self.cal_ref_ip.dataset['dataset'][self.feat_type], \
-            self.cal_qry_ip.dataset['dataset'][self.feat_type], \
-            fastdist.euclidean, "euclidean")
-        
-        ref_odom       = np.stack([self.cal_ref_ip.dataset['dataset']['px'], self.cal_ref_ip.dataset['dataset']['py']], 1)
-        qry_odom       = np.stack([self.cal_qry_ip.dataset['dataset']['px'], self.cal_qry_ip.dataset['dataset']['py']], 1)
-
+        # Generate similarity matrix for reference to query **Positions**:
         euc_dists_train = fastdist.matrix_to_matrix_distance(
-            ref_odom[:, 0:2],
-            qry_odom[:, 0:2],
+            ref_xy,
+            qry_xy,
             fastdist.euclidean, "euclidean")
         
-        true_inds_train     = np.argmin(euc_dists_train, axis=0)
-        match_inds_train    = np.argmin(self.S_train, axis=0)
+        true_inds_train     = np.argmin(euc_dists_train, axis=0) # From position we find true matches
+        match_inds_train    = np.argmin(S_train,    axis=0)      # From features we find VPR matches
         
         tol_mode = enum_get(self.svm_params['tol_mode'], SVM_Tolerance_Mode)
         if tol_mode == SVM_Tolerance_Mode.DISTANCE:
             error_dist_train    = np.sqrt( \
-                                        np.square(ref_odom[match_inds_train,0] - ref_odom[true_inds_train,0]) + \
-                                        np.square(ref_odom[match_inds_train,1] - ref_odom[true_inds_train,1]) \
+                                        np.square(ref_xy[match_inds_train,0] - ref_xy[true_inds_train,0]) + \
+                                        np.square(ref_xy[match_inds_train,1] - ref_xy[true_inds_train,1]) \
                                         )
-            self.y_train        = error_dist_train <= self.svm_params['tol_thres']
+            y_train             = error_dist_train <= self.svm_params['tol_thres']
 
         elif tol_mode == SVM_Tolerance_Mode.FRAME:
             error_inds_train    = np.min(np.array([-1 * abs(match_inds_train - true_inds_train) + len(match_inds_train), 
                                                 abs(match_inds_train - true_inds_train)]), axis=0)
         
-            self.y_train        = error_inds_train <= self.svm_params['tol_thres']
+            y_train             = error_inds_train <= self.svm_params['tol_thres']
         else:
             raise Exception("Unknown tolerance mode (%s, %s)" % (str(tol_mode), str(self.svm_params['tol_mode'])))
 
+        return y_train
+
+    def _train(self):
+        self.print("Performing training...")
+
+        # Generate similarity matrix for reference to query **Features**::
+        self.S_train = fastdist.matrix_to_matrix_distance(  
+            self.cal_ref_ip.dataset['dataset'][self.feat_type], \
+            self.cal_qry_ip.dataset['dataset'][self.feat_type], \
+            fastdist.euclidean, "euclidean")
+        
+        # Generate reference and query numpy array; columns are x,y
+        ref_xy       = np.stack([self.cal_ref_ip.dataset['dataset']['px'], self.cal_ref_ip.dataset['dataset']['py']], 1)
+        qry_xy       = np.stack([self.cal_qry_ip.dataset['dataset']['px'], self.cal_qry_ip.dataset['dataset']['py']], 1)
+
         # Extract factors:
-        self.factor1_train, self.factor2_train = find_factors(self.svm_params['factors'], self.S_train, ref_odom[:, 0:2], np.argmin(self.S_train, axis=0))
+        self.factor1_train, self.factor2_train = find_factors(self.svm_params['factors'], self.S_train, ref_xy, np.argmin(self.S_train, axis=0))
 
         # Form input vector
         self.X_train        = np.c_[self.factor1_train, self.factor2_train]
+        self.scaler         = StandardScaler()
         self.X_train_scaled = self.scaler.fit_transform(self.X_train)
 
+        # Create class labels for training data:
+        self.y_train        = self._classify(ref_xy, qry_xy, self.S_train)
+
         # Define and train the Support Vector Machine
+        self.svm_model      = svm.SVC(kernel='rbf', C=1, gamma='scale', class_weight='balanced', probability=True)
         classes = {unique: count for unique, count in np.unique(self.y_train, return_counts=True)}
         if len(classes.keys()) < 2:
             self.print('Bad class state! Could not define two classes based on parameters provided. Classes: %s' % str(classes), LogType.ERROR)
