@@ -254,7 +254,7 @@ class VPRDatasetProcessor: # main ROS class
             
             np.savez(full_file_path, **sub_dataset)
             np.savez(full_param_path, params=sub_dataset['params']) # save whole dictionary to preserve key object types
-            self.print("[save_dataset] Save complete.\n\tfile: %s\n\tparams:%s." % (full_file_path, full_param_path))
+            self.print("[save_dataset] Save complete.\n\t  file: %s\n\tparams: %s." % (full_file_path, full_param_path))
             del sub_dataset
         return self
 
