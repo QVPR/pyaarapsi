@@ -3,20 +3,18 @@
 import numpy as np
 import os
 from pathlib import Path
+from PIL import Image
+import piexif
+import json
 import datetime
-
 import cv2
-
 import rospkg
-
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
 from fastdist import fastdist
 #from sklearnex import patch_sklearn # Package for speeding up sklearn (must be run on GPU; TODO)
 #patch_sklearn()
-
 from sklearn import svm
 from sklearn.preprocessing import StandardScaler
 
@@ -32,7 +30,7 @@ class SVMModelProcessor:
     def __init__(self, ros=False, root=None, load_field=False, printer=None):
 
         self.model_ready    = False
-        self.load_field     = load_field
+        self.do_field       = load_field
         self.ros            = ros
         self.printer        = printer
 
@@ -133,12 +131,42 @@ class SVMModelProcessor:
         full_field_path = dir + "/fields/" + file_name
         np.savez(full_file_path, **self.model)
         np.savez(full_param_path, params=self.model['params']) # save whole dictionary to preserve key object types
-        np.savez(full_field_path, field=self.field) # save whole dictionary to preserve key object types
+        self._save_field(full_field_path)
 
         self.print("[save_model] Model %s saved." % file_name)
         self.print("[save_model] Saved model, params, field to %s, %s, %s" % (full_file_path, full_param_path, full_field_path), LogType.DEBUG)
         self.print("[save_model] Parameters: \n%s" % str(self.model['params']), LogType.DEBUG)
         return self
+    
+    def _save_field(self, path: str):
+        if path.endswith('.npz'):
+            field_name = path[0:-3] + 'png'
+        elif not path.endswith('.png'):
+            field_name = path + '.png'
+
+        # Generate exif metadata:
+        exif_ifd = {piexif.ExifIFD.UserComment: json.dumps({'x_lim': self.field['x_lim'], 'y_lim': self.field['y_lim']}).encode()}
+        exif_dat = piexif.dump({"Exif": exif_ifd})
+
+        # Save image:
+        im = Image.fromarray(self.field['image']) 
+        im.save(field_name, exif=exif_dat)
+
+    def _load_field(self, path: str):
+        del self.field
+        self.field_ready = False
+        if path.endswith('.npz'):
+            field_name = path[0:-3] + 'png'
+        elif not path.endswith('.png'):
+            field_name = path + '.png'
+
+        image = Image.open(field_name)
+        _field = {'image': np.array(image)}
+        _field.update(json.loads(image._getexif()[37510].decode()))
+        self.field = _field
+        self.field_ready = True
+
+        return True
 
     def load_model(self, model_params, try_gen=False, gen_datasets=False, save_datasets=False):
     # load via search for param match
@@ -147,7 +175,7 @@ class SVMModelProcessor:
         self.model_ready = False
         models = self._get_models()
         self.model = {}
-        self.field = {}
+        self.field = None
         for name in models:
             if models[name]['params'] == model_params:
                 try:
@@ -344,6 +372,7 @@ class SVMModelProcessor:
     def _fix(self, model_name):
         if not model_name.endswith('.npz'):
             model_name = model_name + '.npz'
+        field_name = model_name[:-3] + 'png'
         self.print("Bad dataset state detected, performing cleanup...", LogType.DEBUG)
         try:
             os.remove(self.root + '/' + self.svm_dbp + '/' + model_name)
@@ -356,20 +385,10 @@ class SVMModelProcessor:
         except:
             pass
         try:
-            os.remove(self.root +  '/' + self.svm_dbp + '/fields/' + model_name)
-            self.print("Purged: %s" % (self.svm_dbp + '/fields/' + model_name), LogType.DEBUG)
+            os.remove(self.root +  '/' + self.svm_dbp + '/fields/' + field_name)
+            self.print("Purged: %s" % (self.svm_dbp + '/fields/' + field_name), LogType.DEBUG)
         except:
             pass
-
-    def _load_field(self, field_name):
-    # when loading objects inside dicts from .npz files, must extract with .item() each object
-        if not field_name.endswith('.npz'):
-            field_name = field_name + '.npz'
-        raw_field = np.load(self.root + '/' + self.svm_dbp + '/fields/' + field_name, allow_pickle=True)
-        self.field_ready = False
-        del self.field
-        self.field       = raw_field['field'].item()
-        self.field_ready = True
 
     def _load(self, model_name):
     # when loading objects inside dicts from .npz files, must extract with .item() each object
@@ -379,26 +398,26 @@ class SVMModelProcessor:
         self.model_ready = False
         del self.model
         self.model       = dict(model=raw_model['model'].item(), params=raw_model['params'].item(), perf=raw_model['perf'].item())
-        if self.load_field:
-            self._load_field(model_name)
+        if self.do_field:
+            self._load_field(self.root +  '/' + self.svm_dbp + '/fields/' + model_name)
         self.model_ready = True
 
 class SVMFieldLoader(SVMModelProcessor):
-    def __init__(self, field_params, ros=False):
+    def __init__(self, model_params, ros=False):
         self.field          = None
         self.field_ready    = False
         self.ros            = ros
-        self.load_field(field_params)
+        self.load_field(model_params)
 
-    def load_field(self, field_params):
+    def load_field(self, model_params):
     # load via search for param match
-        self.svm_dbp = field_params['svm_dbp']
+        self.svm_dbp = model_params['svm_dbp']
         self.print("[load_field] Loading model.")
         self.field_ready    = False
         models              = self._get_models() # because we're looking at the model params
-        self.field          = {}
+        self.field          = None
         for name in models:
-            if models[name]['params'] == field_params:
+            if models[name]['params'] == model_params:
                 try:
                     self._load_field(name)
                     return True
