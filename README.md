@@ -1,6 +1,8 @@
 # pyaarapsi
 Multi-purpose python package, for a variety of needs across the AARAPSI Project
 
+Sister ROS Package: https://github.com/QVPR/aarapsi_robot_pack
+
 We've got:
 ## core
 - ajax_tools.py: Create and manage AJAX servers, requests for use with python ```Bokeh``` or inter-node data sharing.
