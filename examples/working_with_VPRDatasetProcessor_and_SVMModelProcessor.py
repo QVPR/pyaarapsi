@@ -23,7 +23,7 @@ from pyaarapsi.core.enum_tools              import enum_name
 from pyaarapsi.core.transforms              import apply_homogeneous_transform, homogeneous_transform
 from pyaarapsi.pathing.basic                import calc_path_stats
 from pyaarapsi.vpred.vpred_tools            import find_vpr_performance_metrics
-from pyaarapsi.core.vars                    import C_CLEAR, C_I_BLUE
+from pyaarapsi.core.vars                    import C_RESET, C_I_BLUE
 
 import matplotlib
 matplotlib.use('TkAgg')
@@ -91,7 +91,7 @@ def make_video(_video_path: str, _ip_dict: dict, nnip=None, netvlad=False, hybri
     vid_writer.release()
 
 for bag_name in ['sim_cw_3', 'sim_cw_5', 's5_ccw_1', 's6_ccw_1', 's4_cw_1', 'lab_adv_2', 'll_cw_1', 'll_cw_3', 'run3_fix', 'run4_fix', 'run1_fix', 'run5_ccw']:
-    print(C_I_BLUE + 'Generating video for ' + bag_name + "..." + C_CLEAR)
+    print(C_I_BLUE + 'Generating video for ' + bag_name + "..." + C_RESET)
     ip_dict = dict( bag_name=bag_name, npz_dbp=npz_dbp, bag_dbp=bag_dbp, \
                     odom_topic=[odom_topic, enc_topic], img_topics=img_topics, sample_rate=sample_rate, \
                     ft_types=[enum_name(ft_type)], img_dims=img_dims, filters=filters)
