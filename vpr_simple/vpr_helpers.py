@@ -5,6 +5,8 @@ from enum import Enum
 from tqdm.auto import tqdm
 import json
 from ..pathing.basic import calc_path_stats
+from ..vpr_classes.netvlad import NetVLAD_Container
+from ..vpr_classes.hybridnet import HybridNet_Container
 
 # For image processing type
 class FeatureType(Enum):
@@ -142,17 +144,17 @@ def keep_operation(d_in, groupings, mode='first'):
                         d_in[bigkey][midkey][i[2]] = np.stack(cropped_reorder[:,c],axis=0)
     return d_in
 
-def getFeat(im, fttypes, dims, use_tqdm=False, nn_hybrid=None, nn_netvlad=None):
+def getFeat(im: np.ndarray, fttypes: FeatureType, dims: list, use_tqdm: bool = False, nn_hybrid: HybridNet_Container = None, nn_netvlad: NetVLAD_Container = None) -> np.ndarray:
     ft_list     = []
-    req_mode    = isinstance(im, list)
-
     for fttype in fttypes:
         if fttype in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.ROLLNORM, FeatureType.NORM]:
-            if not req_mode:
+            if not isinstance(im, list):
                 im = [im]
             ft_ready_list = []
-            if use_tqdm: iter_obj = tqdm(im)
-            else: iter_obj = im
+            if use_tqdm: 
+                iter_obj = tqdm(im)
+            else: 
+                iter_obj = im
             for i in iter_obj:
                 imr = cv2.resize(i, dims)
                 ft  = cv2.cvtColor(imr, cv2.COLOR_RGB2GRAY)

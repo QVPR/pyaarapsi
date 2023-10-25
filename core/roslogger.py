@@ -162,12 +162,12 @@ def roslogger(text, logtype: LogType = LogType.INFO, throttle: float = None, ros
     Inputs:
     - text:                 text string to be printed, must be pre-formatted (can't be done inside roslogger)
     - logtype:              LogType enum type {default: LogType.INFO}; Define which print type (debug, info, etc...) is requested
-    - throttle:             float type {default: None}; Number of seconds of pause between each message (rospy logging only)
+    - throttle:             float type (default: 0); rate to limit publishing contents at if repeatedly executed
     - ros:                  bool type {default: True}; Whether to use rospy logging or default to print
     - name:                 str type {default: None}; If provided as str, prepends a label in the format [name] to the text message (will appear after log level tags)
     - no_stamp:             bool type {default: True}; Whether to remove generic rospy timestamp
-    - once:                 bool type {defualt: False}; Whether to only send once (rospy logging only)
-    - throttle_identical:   bool type {default: False}; Whether to only throttle if message is identical (rospy logging only)
+    - once:                 bool type {defualt: False}; Whether to only send once
+    - throttle_identical:   bool type {default: False}; Whether to only throttle if message is identical
     - log_level:            LogType enumtype {default: None}; Can be passed to override global logging level
 
     Returns:
