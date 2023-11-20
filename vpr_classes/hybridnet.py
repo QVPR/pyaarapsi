@@ -2,7 +2,7 @@
 
 import os
 import numpy as np
-import torch
+from torch.utils.data import Dataset
 from tqdm.auto import tqdm
 import cv2
 from PIL import Image
@@ -14,7 +14,7 @@ try:
 except:
     CAFFE_OK = False
 
-class PlaceDataset(torch.utils.data.Dataset):
+class PlaceDataset(Dataset):
     def __init__(self, image_data, dims=None):
         super().__init__()
     
@@ -159,8 +159,9 @@ class HybridNet_Container:
         dataset_clean = self.clean_data_input(dataset_input, dims)
 
         feats = []
-        if use_tqdm: iteration_obj = tqdm(dataset_clean)
-        else: iteration_obj = dataset_clean
+        iteration_obj = dataset_clean
+        if use_tqdm: 
+            iteration_obj = tqdm(dataset_clean)
         
         for (input_data, _) in iteration_obj:
             self.net.blobs['data'].data[...] = self.transformer.preprocess('data', input_data)

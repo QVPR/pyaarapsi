@@ -6,13 +6,14 @@ import math
 import random 
 import numpy as np
 import torch
+from torch.backends import cudnn
 
 if torch.cuda.is_available():
     device = torch.device("cuda")
 else:
     device = torch.device("cpu")
 
-torch.backends.cudnn.benchmark = True
+cudnn.benchmark = True
 
 # input: img (np array)
 # output: arr (np array with swath filled by random RGB)

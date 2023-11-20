@@ -3,6 +3,7 @@ import numpy as np
 import sys
 import pydbus
 import cv2
+import matplotlib
 import matplotlib.pyplot as plt
 
 from rospy_message_converter import message_converter
@@ -19,7 +20,6 @@ from gazebo_msgs.srv        import SetModelState, SetModelStateRequest
 
 from pyaarapsi.core.ros_tools               import LogType, pose2xyw, q_from_rpy, twist2xyw, np2compressed, compressed2np
 from pyaarapsi.core.helper_tools            import formatException, p2p_dist_2d, roll
-from pyaarapsi.core.enum_tools              import enum_name, enum_value
 from pyaarapsi.core.vars                    import C_I_RED, C_I_GREEN, C_I_YELLOW, C_I_BLUE, C_I_WHITE, C_RESET, C_CLEAR, C_UP_N
 
 from pyaarapsi.vpr_simple.vpr_dataset_tool  import VPRDatasetProcessor
@@ -35,20 +35,20 @@ class Main_ROS_Class(Base_ROS_Class):
         super().init_params(rate_num, log_level, reset)
 
         # Zone set-up:
-        self.ZONE_LENGTH            = self.params.add(self.namespace + "/path/zones/length",        None,                   check_positive_float,                       force=False)
-        self.ZONE_NUMBER            = self.params.add(self.namespace + "/path/zones/number",        None,                   check_positive_int,                         force=False)
+        self.ZONE_LENGTH            = self.params.add(self.namespace + "/path/zones/length",        0,                      check_positive_float,                       force=False)
+        self.ZONE_NUMBER            = self.params.add(self.namespace + "/path/zones/number",        0,                      check_positive_int,                         force=False)
         
         # Vehicle speed limits:
-        self.SLOW_LIN_VEL_MAX       = self.params.add(self.namespace + "/limits/slow/linear",       None,                   check_positive_float,                       force=False)
-        self.SLOW_ANG_VEL_MAX       = self.params.add(self.namespace + "/limits/slow/angular",      None,                   check_positive_float,                       force=False)
-        self.FAST_LIN_VEL_MAX       = self.params.add(self.namespace + "/limits/fast/linear",       None,                   check_positive_float,                       force=False)
-        self.FAST_ANG_VEL_MAX       = self.params.add(self.namespace + "/limits/fast/angular",      None,                   check_positive_float,                       force=False)
+        self.SLOW_LIN_VEL_MAX       = self.params.add(self.namespace + "/limits/slow/linear",       0,                      check_positive_float,                       force=False)
+        self.SLOW_ANG_VEL_MAX       = self.params.add(self.namespace + "/limits/slow/angular",      0,                      check_positive_float,                       force=False)
+        self.FAST_LIN_VEL_MAX       = self.params.add(self.namespace + "/limits/fast/linear",       0,                      check_positive_float,                       force=False)
+        self.FAST_ANG_VEL_MAX       = self.params.add(self.namespace + "/limits/fast/angular",      0,                      check_positive_float,                       force=False)
         
         # Vehicle Config and Communication:
         self.COR_OFFSET             = self.params.add(self.namespace + "/cor_offset",               0.045,                  check_float,                                force=False)
-        self.CONTROLLER_MAC         = self.params.add(self.namespace + "/controller_mac",           None,                   check_string,                               force=False)
-        self.JOY_TOPIC              = self.params.add(self.namespace + "/joy_topic",                None,                   check_string,                               force=False)
-        self.CMD_TOPIC              = self.params.add(self.namespace + "/cmd_topic",                None,                   check_string,                               force=False)
+        self.CONTROLLER_MAC         = self.params.add(self.namespace + "/controller_mac",           "",                     check_string,                               force=False)
+        self.JOY_TOPIC              = self.params.add(self.namespace + "/joy_topic",                "",                     check_string,                               force=False)
+        self.CMD_TOPIC              = self.params.add(self.namespace + "/cmd_topic",                "",                     check_string,                               force=False)
 
         self.PUBLISH_ROLLMATCH      = self.params.add(self.nodespace + "/publish_rollmatch",        True,                   check_bool,                                 force=reset)
         self.REJECT_MODE            = self.params.add(self.nodespace + "/reject_mode",              Reject_Mode.OLD,        lambda x: check_enum(x, Reject_Mode),       force=reset)
@@ -115,7 +115,7 @@ class Main_ROS_Class(Base_ROS_Class):
         # Initialise dataset processor:
         self.ip                 = VPRDatasetProcessor(None, try_gen=False, ros=True, printer=self.print) 
         self.dsinfo             = self.make_dataset_dict() # Get VPR pipeline's dataset dictionary
-        self.dsinfo['ft_types'] = enum_name(FeatureType.RAW, wrap=True) # Ensure feature is raw because we do roll-matching
+        self.dsinfo['ft_types'] = [FeatureType.RAW.name] # Ensure feature is raw because we do roll-matching
 
         # Set initial mode states:
         self.set_command_mode(Command_Mode.STOP)
@@ -169,10 +169,10 @@ class Main_ROS_Class(Base_ROS_Class):
                                     Safety_Mode.FAST: C_I_RED + 'FAST mode', }
         
         # Path variables:
-        self.path_xyws          = None      # Large numpy array of n rows by four columns (x, y, yaw, speed)
-        self.path_len           = None      # Circumferential Path length
-        self.path_sum           = []        # List of n elements with running sum of distance since first path position (zero to self.path_len)
-        self.path_indices       = []        # Downsampled selection of self.path_xyws for visualisation
+        self.path_xyws          = np.array(None)    # Large numpy array of n rows by four columns (x, y, yaw, speed)
+        self.path_len           = -1                # Circumferential Path length
+        self.path_sum           = []                # List of n elements with running sum of distance since first path position (zero to self.path_len)
+        self.path_indices       = []                # Downsampled selection of self.path_xyws for visualisation
 
         # Zone variables:
         self.zone_length        = -1        # In metres, length of a zone after adjustment
@@ -335,7 +335,7 @@ class Main_ROS_Class(Base_ROS_Class):
             self.new_history = True
             return
         
-        _dist = p2p_dist_2d(self.match_hist[-1][enum_value(HDi.robot_x):enum_value(HDi.robot_y)+1], self.robot_ego[0:2])
+        _dist = p2p_dist_2d(self.match_hist[-1][HDi.robot_x.value:HDi.robot_y.value+1], self.robot_ego[0:2])
         if _dist > self.APPEND_DIST.get():
             self.match_hist.append(_append + [_dist])
             self.new_history = True
@@ -400,8 +400,8 @@ class Main_ROS_Class(Base_ROS_Class):
         try:
             for i in self.feature_hash.keys():
                 if i(msg) and (not self.FEAT_TYPE.get() == self.feature_hash[i]):
-                    rospy.set_param(self.namespace + '/feature_type', enum_name(FeatureType.RAW))
-                    self.print("Switched to %s." % enum_name(self.FEAT_TYPE.get()), LogType.INFO)
+                    rospy.set_param(self.namespace + '/feature_type', FeatureType.RAW.name)
+                    self.print("Switched to %s." % self.FEAT_TYPE.get().name, LogType.INFO)
                     break
         except IndexError:
             pass
@@ -507,6 +507,7 @@ class Main_ROS_Class(Base_ROS_Class):
         - Downsampled list of path points
         - ROS structures for visualising path, speed along path, and zone boundaries
         '''
+        assert not self.ip.dataset is None
         # generate an n-row, 4 column array (x, y, yaw, speed) corresponding to each reference image (same index)
         self.path_xyws  = np.transpose(np.stack([self.ip.dataset['dataset']['px'].flatten(), 
                                                  self.ip.dataset['dataset']['py'].flatten(),
@@ -609,21 +610,21 @@ class Main_ROS_Class(Base_ROS_Class):
         msg.group.mStateBin         = self.label.svm_class
         msg.group.factors           = [np.round(i,3) for i in self.label.svm_factors]
 
-        msg.group.safety_mode       = enum_name(self.safety_mode)
-        msg.group.command_mode      = enum_name(self.command_mode)
+        msg.group.safety_mode       = self.safety_mode.name
+        msg.group.command_mode      = self.command_mode.name
 
         msg.group.current_yaw       = np.round(self.ego[2], 3)
         msg.group.target_yaw        = np.round(self.path_xyws[self.target_ind,2], 3)
 
         msg.group.current_ind       = self.est_current_ind
         msg.group.target_ind        = self.target_ind
-        msg.group.reject_mode       = enum_name(self.REJECT_MODE.get())
+        msg.group.reject_mode       = self.REJECT_MODE.get().name
 
         msg.group.true_yaw          = np.round(self.slam_ego[2], 3)
         msg.group.delta_yaw         = np.round(self.slam_ego[2] - self.vpr_ego[2], 3)
 
         msg.group.lookahead         = self.adjusted_lookahead
-        msg.group.lookahead_mode    = enum_name(self.lookahead_mode)
+        msg.group.lookahead_mode    = self.lookahead_mode.name
 
         msg.group.zone_indices      = self.zone_indices
         msg.group.zone_length       = self.zone_length
@@ -663,7 +664,7 @@ class Main_ROS_Class(Base_ROS_Class):
         slam_pos_string = base_pos_string % tuple(self.slam_ego)
         speed_string    = base_vel_string % (self.last_command.linear.x, self.last_command.angular.z)
         path_err_string = base_vel_string % (self.path_lin_err, self.path_ang_err)
-        svm_string      = base_svm_string % (enum_name(self.REJECT_MODE.get()), str(self.label.svm_class))
+        svm_string      = base_svm_string % (self.REJECT_MODE.get().name, str(self.label.svm_class))
         lines = ['',
                  ' ' + '-'*13 + C_I_BLUE + ' STATUS INFO ' + C_RESET + '-'*13,
                  ' ' + automation_mode_string,
@@ -677,7 +678,7 @@ class Main_ROS_Class(Base_ROS_Class):
                  ' ' + '    SVM Status: %s' % svm_string]
         print(''.join([C_CLEAR + line + '\n' for line in lines]) + (C_UP_N%1)*(len(lines)), end='')
 
-    def try_send_command(self, error_lin: float, error_ang: float) -> Twist:
+    def try_send_command(self, error_lin: float, error_ang: float) -> bool:
         '''
         Generate linear and angular commands; send to ROS if a safety is enabled. 
         '''
@@ -715,6 +716,7 @@ class Main_ROS_Class(Base_ROS_Class):
         '''
         Sliding match of a downsampled image to generate a yaw correction estimate
         '''
+        assert not self.ip.dataset is None
         resize          = [int(self.IMG_HFOV.get()), 8]
         img_dims        = self.IMG_DIMS.get()
         query_raw       = cv2.cvtColor(compressed2np(self.label.query_image), cv2.COLOR_BGR2GRAY)
@@ -737,11 +739,10 @@ class Main_ROS_Class(Base_ROS_Class):
             ax.plot(sliding_options[np.argmin(matches)], matches[np.argmin(matches)])
             ax.set_title('%s' % str([sliding_options[np.argmin(matches)], matches[np.argmin(matches)]]))
             fig.canvas.draw()
-            img_np_raw_flat = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+            img_np_raw_flat = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8) #type: ignore
             img_np_raw      = img_np_raw_flat.reshape(fig.canvas.get_width_height()[::-1] + (3,))
             img_np          = np.flip(img_np_raw, axis=2) # to bgr format, for ROS
-            plt.close('all') # close matplotlib
-            plt.show()
+            plt.close('all') # close fig
             img_msg = np2compressed(img_np)
             img_msg.header.stamp = rospy.Time.now()
             img_msg.header.frame_id = 'map'
@@ -762,35 +763,35 @@ class Main_ROS_Class(Base_ROS_Class):
         # Find index that is slice_length distance away from most recent position
         _ind            = -1
         for i in range(-2, -_match_arr.shape[0] - 1, -1):
-            if np.sum(_match_arr[i:,enum_value(HDi.dist)]) > self.SLICE_LENGTH.get():
+            if np.sum(_match_arr[i:,HDi.dist.value]) > self.SLICE_LENGTH.get():
                 _ind    = i
                 break
         if _ind         == -1:
             return
         
-        _distances      = np.array([np.sum(_match_arr[_ind+i+1:,enum_value(HDi.dist)]) for i in range(abs(_ind)-1)] + [0])
+        _distances      = np.array([np.sum(_match_arr[_ind+i+1:,HDi.dist.value]) for i in range(abs(_ind)-1)] + [0])
         
         _results        = ExpResults()
-        _results.gt_pos = xyw(*self.match_hist[-1][enum_value(HDi.slam_x):enum_value(HDi.slam_w)+1])
+        _results.gt_pos = xyw(*self.match_hist[-1][HDi.slam_x.value:HDi.slam_w.value+1])
 
         # Calculate VPR-only position estimate:
         _vpr_matches        = _match_arr[_ind:,:]
-        _best_vpr           = np.argmin(_vpr_matches[:,enum_value(HDi.mDist)])
-        _vpr_ind            = int(_vpr_matches[_best_vpr, enum_value(HDi.mInd)])
+        _best_vpr           = np.argmin(_vpr_matches[:,HDi.mDist.value])
+        _vpr_ind            = int(_vpr_matches[_best_vpr, HDi.mInd.value])
         _vpr_sum_so_far     = _distances[_best_vpr]
         _vpr_now_ind        = np.argmin(abs(np.array(self.path_sum) - (self.path_sum[_vpr_ind] + _vpr_sum_so_far)))
         _vpr_pos_now        = self.path_xyws[_vpr_now_ind, 0:3]
         _results.vpr_pos    = xyw(*_vpr_pos_now)
 
         # Calculate SVM position estimate:
-        _svm_matches        = _vpr_matches[np.asarray(_vpr_matches[:,enum_value(HDi.svm_class)],dtype=bool),:]
+        _svm_matches        = _vpr_matches[np.asarray(_vpr_matches[:,HDi.svm_class.value],dtype=bool),:]
         if not _svm_matches.shape[0]:
-            _svm_pos_now        = np.nan
+            _svm_pos_now        = [np.nan, np.nan, np.nan]
             _svm_ind            = np.nan
             _results.svm_state  = _results.FAIL
         else:
-            _best_svm           = np.argmin(_svm_matches[:,enum_value(HDi.mDist)])
-            _svm_ind            = int(_svm_matches[_best_svm, enum_value(HDi.mInd)])
+            _best_svm           = np.argmin(_svm_matches[:,HDi.mDist.value])
+            _svm_ind            = int(_svm_matches[_best_svm, HDi.mInd.value])
             _svm_sum_so_far     = _distances[_best_svm]
             _svm_now_ind        = np.argmin(abs(np.array(self.path_sum) - (self.path_sum[_svm_ind] + _svm_sum_so_far))) # This will fail if a path is a loop
             _svm_pos_now        = self.path_xyws[_svm_now_ind, 0:3]
@@ -803,7 +804,7 @@ class Main_ROS_Class(Base_ROS_Class):
         elif self.TECHNIQUE.get() == Technique.SVM:
             self.current_hist_pos = list(_svm_pos_now)
         else:
-            raise Exception('Bad technique: %s' % enum_name(self.TECHNIQUE.get()))
+            raise Exception('Bad technique: %s' % self.TECHNIQUE.get().name)
         
         self.current_results = _results
 

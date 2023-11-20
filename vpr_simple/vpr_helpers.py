@@ -7,6 +7,7 @@ import json
 from ..pathing.basic import calc_path_stats
 from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
+from typing import Union, List, Optional
 
 # For image processing type
 class FeatureType(Enum):
@@ -74,6 +75,9 @@ def discretise(dict_in, metrics=None, mode=None, keep='first'):
         (filtered['odom'][mode], groupings) = roundSpatial(filtered['odom'][mode], metrics)
     #elif mode in []: #TODO
     #    pass
+    else:
+        return None
+    
     filtered = keep_operation(filtered, groupings, keep) # remove duplications
     return filtered
 
@@ -118,6 +122,8 @@ def keep_operation(d_in, groupings, mode='first'):
             index = 0
         elif mode=='random': 
             index = int(np.random.rand() * (len(group) - 1))
+        else:
+            continue
         # for first and random modes:
         index_to_keep = group[index] + 1 # +1 accounts for label
         groups_store.append(np_dict_to_list[index_to_keep, :])
@@ -132,7 +138,7 @@ def keep_operation(d_in, groupings, mode='first'):
     if ind == -1: raise Exception("Fatal")
     cropped_reorder = cropped_store[cropped_store[:,-1].argsort()]
     d_in.pop('times')
-    d_in['times'] = cropped_reorder[:,c]
+    d_in['times'] = cropped_reorder[:,ind]
 
     # convert back to dictionary and update old dictionary entries
     for bigkey in ['odom', 'img_feats']:
@@ -144,17 +150,25 @@ def keep_operation(d_in, groupings, mode='first'):
                         d_in[bigkey][midkey][i[2]] = np.stack(cropped_reorder[:,c],axis=0)
     return d_in
 
-def getFeat(im: np.ndarray, fttypes: FeatureType, dims: list, use_tqdm: bool = False, nn_hybrid: HybridNet_Container = None, nn_netvlad: NetVLAD_Container = None) -> np.ndarray:
+def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType, List[FeatureType]], dims: list, 
+            use_tqdm: bool = False, nn_hybrid: Optional[HybridNet_Container] = None, 
+            nn_netvlad: Optional[NetVLAD_Container] = None) -> Union[np.ndarray, List[np.ndarray]]:
     ft_list     = []
-    for fttype in fttypes:
+    if not isinstance(im, list):
+        _im = [im]
+    else:
+        _im = im
+    if not isinstance(fttypes, list):
+        _fttypes = [fttypes]
+    else:
+        _fttypes = fttypes
+    for fttype in _fttypes:
         if fttype in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.ROLLNORM, FeatureType.NORM]:
-            if not isinstance(im, list):
-                im = [im]
             ft_ready_list = []
             if use_tqdm: 
-                iter_obj = tqdm(im)
+                iter_obj = tqdm(_im)
             else: 
-                iter_obj = im
+                iter_obj = _im
             for i in iter_obj:
                 imr = cv2.resize(i, dims)
                 ft  = cv2.cvtColor(imr, cv2.COLOR_RGB2GRAY)
@@ -169,12 +183,12 @@ def getFeat(im: np.ndarray, fttypes: FeatureType, dims: list, use_tqdm: bool = F
                 ft_ready = ft_ready_list[0]
             else:
                 ft_ready = np.stack(ft_ready_list)
-        elif fttype == FeatureType.HYBRIDNET:
-            ft_ready = nn_hybrid.getFeat(im, use_tqdm=use_tqdm)
-        elif fttype == FeatureType.NETVLAD:
-            ft_ready = nn_netvlad.getFeat(im, use_tqdm=use_tqdm)
+        elif fttype == FeatureType.HYBRIDNET and not nn_hybrid is None:
+            ft_ready = nn_hybrid.getFeat(_im, use_tqdm=use_tqdm)
+        elif fttype == FeatureType.NETVLAD and not nn_netvlad is None:
+            ft_ready = nn_netvlad.getFeat(_im, use_tqdm=use_tqdm)
         else:
-            raise Exception("[getFeat] fttype not recognised.")
+            raise Exception("[getFeat] fttype could not be handled.")
         ft_list.append(ft_ready)
     if len(ft_list) == 1: 
         return ft_list[0]

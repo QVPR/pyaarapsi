@@ -2,15 +2,31 @@ import argparse as ap
 import string
 from enum import Enum
 from .enum_tools import enum_value_options
-from typing import List, Tuple
+from typing import List, Tuple, Any, Optional, Type, Union
 
 '''
 This file provides a collections of functions to parse (or raise an exception whilst trying to parse) an input.
 Functions are named check_<desired output type>
 '''
 
+def check_int(value: Any) -> int:
+    '''
+    Parse an input value as an int.
+
+    Inputs:
+    - any
+    Returns:
+    - int
+    '''
+    error_text = "%s is an invalid integer value." % (str(value))
+    try:
+        ivalue = int(value)
+    except:
+        raise ap.ArgumentTypeError(error_text)
+    return ivalue
+
 # https://stackoverflow.com/questions/14117415/in-python-using-argparse-allow-only-positive-integers
-def check_positive_int(value: any) -> int:
+def check_positive_int(value: Any) -> int:
     '''
     Parse an input value as a positive (>= 0) int.
 
@@ -29,7 +45,7 @@ def check_positive_int(value: any) -> int:
         raise ap.ArgumentTypeError(error_text)
     return ivalue
 
-def check_float(value: any) -> float:
+def check_float(value: Any) -> float:
     '''
     Parse an input as a float.
 
@@ -45,7 +61,7 @@ def check_float(value: any) -> float:
         raise ap.ArgumentTypeError(error_text)
     return ivalue
 
-def check_positive_float(value: any) -> float:
+def check_positive_float(value: Any) -> float:
     '''
     Parse an input as a positive (>= 0) float.
 
@@ -64,7 +80,7 @@ def check_positive_float(value: any) -> float:
         raise ap.ArgumentTypeError(error_text)
     return ivalue
 
-def check_bounded_float(value: any, _min: float, _max: float, equality: str) -> float:
+def check_bounded_float(value: Any, _min: float, _max: float, equality: str) -> float:
     '''
     Parse an input as a float bounded between two numbers
     Choose the bounding function from either:
@@ -110,7 +126,7 @@ def check_bounded_float(value: any, _min: float, _max: float, equality: str) -> 
     except:
         raise ap.ArgumentTypeError(error_text)
 
-def check_bool(value: any) -> bool:
+def check_bool(value: Any) -> bool:
     '''
     Parse an input as a boolean
 
@@ -125,7 +141,7 @@ def check_bool(value: any) -> bool:
     if isinstance(value, str): return value.lower() == "true"
     raise Exception(error_text)
 
-def check_positive_two_int_tuple(value: any) -> Tuple[int]:
+def check_positive_two_int_tuple(value: Any) -> Tuple[int, int]:
     '''
     Parse an input as a two-element positive-integer tuple
 
@@ -149,7 +165,7 @@ def check_positive_two_int_tuple(value: any) -> Tuple[int]:
         raise ap.ArgumentTypeError(error_text)
     return ivalue
 
-def check_positive_two_int_list(value: any) -> List[int]:
+def check_positive_two_int_list(value: Any) -> List[int]:
     '''
     Parse an input as a two-element positive-integer list
 
@@ -173,7 +189,7 @@ def check_positive_two_int_list(value: any) -> List[int]:
         raise ap.ArgumentTypeError(error_text)
     return ivalue
 
-def check_float_list(value: any, _num: int = None) -> List[float]:
+def check_float_list(value: Any, _num: Optional[int] = None) -> List[float]:
     '''
     Parse an input as a list of floats
 
@@ -193,7 +209,7 @@ def check_float_list(value: any, _num: int = None) -> List[float]:
         raise ap.ArgumentTypeError("%s is an invalid list of floats: could not parse elements to float." % (str(value)))
     return ivalue
     
-def check_valid_ip(value: any) -> str:
+def check_valid_ip(value: Any) -> str:
     '''
     Parse an input as an IPv4 address.
     Note; this function does not check against all possible options. It checks:
@@ -219,7 +235,7 @@ def check_valid_ip(value: any) -> str:
             raise ap.ArgumentTypeError(error_text)
     return ip_raw
 
-def check_string(value: any) -> str:
+def check_string(value: Any) -> Union[str, None]:
     '''
     Parse an input as a string (str)
 
@@ -233,7 +249,7 @@ def check_string(value: any) -> str:
         return None
     return str_value
 
-def check_string_list(value: any) -> List[str]:
+def check_string_list(value: Any) -> List[str]:
     '''
     Parse an input as a string (str) list
 
@@ -250,7 +266,7 @@ def check_string_list(value: any) -> List[str]:
     except:
         raise ap.ArgumentTypeError(error_text)
 
-def check_enum_list(value: any, enum: Enum, skip: List[Enum]=[None]) -> List[Enum]:
+def check_enum_list(value: Any, enum: Type[Enum], skip: List[Enum]=[]) -> List[Enum]:
     '''
     Parse an input as a list of Enums
 
@@ -292,7 +308,7 @@ def check_enum_list(value: any, enum: Enum, skip: List[Enum]=[None]) -> List[Enu
         pass
     raise ap.ArgumentTypeError(error_text)
         
-def check_enum(value: any, enum: Enum, skip: List[Enum]=[None]) -> Enum:
+def check_enum(value: Any, enum: Type[Enum], skip: List[Enum]=[]) -> Enum:
     '''
     Parse an input an Enum
 

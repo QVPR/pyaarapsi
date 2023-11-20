@@ -7,18 +7,28 @@ import pickle
 from fastdist import fastdist
 from enum import Enum
 import matplotlib
+from matplotlib.backend_bases import FigureCanvasBase
+import matplotlib.pyplot as plt
+from typing import Optional, Callable, TypeVar, Protocol
 
 class Bool(Enum):
     UNSET = -1
     FALSE = 0
     TRUE  = 1
 
-def plt_pause(interval, fig):
-    backend = matplotlib.pyplot.rcParams['backend']
+class SupportsCanvas(Protocol):
+    canvas: FigureCanvasBase
+
+def plt_pause(interval: float, fig: SupportsCanvas):
+    '''
+    Matplotlib Helper Function to handle drawing events
+    Awesome for animating plots because it doesn't let matplotlib steal focus! :D
+    '''
+    backend = plt.rcParams['backend']
     if backend in matplotlib.rcsetup.interactive_bk:
-        if fig.canvas.figure.stale:
+        if fig.canvas.figure.stale: #type: ignore
             fig.canvas.draw()
-        fig.canvas.start_event_loop(interval)
+        fig.canvas.start_event_loop(interval) #type: ignore
         return
 
 def roll(img: np.ndarray, i: int, fill=0) -> np.ndarray:
@@ -55,9 +65,11 @@ def try_load_var(path: str, var_name: str) -> object:
 def save_var(path: str, var: object, var_name: str) -> None:
     np.savez(path+"/"+var_name, **{var_name: var})
 
-def normalize_angle(angle: float, iter=False) -> float:
+floatOrArrayOfFloats = TypeVar("floatOrArrayOfFloats", float, np.ndarray)
+
+def normalize_angle(angle: floatOrArrayOfFloats) -> floatOrArrayOfFloats:
     # Normalize angle [-pi, +pi]
-    if iter:
+    if isinstance(angle, np.ndarray):
         angle[angle>np.pi] = angle[angle>np.pi] - 2*np.pi
         angle[angle<-np.pi] = angle[angle<-np.pi] + 2*np.pi
         return angle
@@ -139,7 +151,7 @@ class Timer:
             times.append(abs(self.points[-1] - self.points[0]))
         return times
 
-    def show(self, name: str = None, thresh: float = 0.001) -> None:
+    def show(self, name: Optional[str] = None, thresh: float = 0.001) -> None:
         times = self.calc(thresh)
         string = str(["%8.4f" % i for i in times]).replace(' ','')
         if not (name is None):
@@ -163,8 +175,12 @@ class Timer:
 def formatException(dump: bool = False) -> str:
     # https://www.adamsmith.haus/python/answers/how-to-retrieve-the-file,-line-number,-and-type-of-an-exception-in-python
     exception_type, e, exception_traceback = sys.exc_info()
-    filename = exception_traceback.tb_frame.f_code.co_filename
-    line_number = exception_traceback.tb_lineno
+    if not exception_traceback is None:
+        filename = exception_traceback.tb_frame.f_code.co_filename
+        line_number = exception_traceback.tb_lineno
+    else:
+        filename = '<unknown>'
+        line_number = '<unknown>'
     traceback_list = traceback.extract_tb(exception_traceback)
     if dump:
         traceback_string = str(traceback.format_exc())
@@ -187,7 +203,7 @@ def getArrayDetails(arr: np.ndarray) -> str:
     string_to_ret = "%s%s %s<%s<%s [%s]" % (_shape, _type, _min, _mean, _max, _range)
     return string_to_ret
 
-def combine_dicts(dicts: list, cast: object = list) -> dict:
+def combine_dictionaries(dicts: list, cast: Callable = list) -> dict:
     keys = []
     for d in dicts:
         keys.extend(list(d.keys()))

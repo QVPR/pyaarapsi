@@ -1,5 +1,31 @@
 #!/usr/bin/env python3
 import numpy as np
+from typing import Optional
+
+def rotationMatrixToEulerAngles(R: np.ndarray) -> np.ndarray:
+    '''
+    Convert a 3x3 Rotation Matrix to roll, pitch, yaw Euler angles
+    https://learnopencv.com/rotation-matrix-to-euler-angles/
+    
+    Inputs:
+    - R: np.ndarray type; 3x3 Rotation Matrix
+    Returns:
+    np.ndarray type; [roll, pitch, yaw]
+    '''
+    sy = np.sqrt(R[0,0] * R[0,0] +  R[1,0] * R[1,0])
+ 
+    singular = sy < 1e-6
+ 
+    if not singular :
+        x = np.arctan2(R[2,1] , R[2,2])
+        y = np.arctan2(-R[2,0], sy)
+        z = np.arctan2(R[1,0], R[0,0])
+    else :
+        x = np.arctan2(-R[1,2], R[1,1])
+        y = np.arctan2(-R[2,0], sy)
+        z = 0
+ 
+    return np.array([x, y, z])
 
 def rotation_matrix_2d(y: float, radians=True):
     '''
@@ -107,7 +133,7 @@ def homogeneous_transform(r: float, p: float, y: float, X: float, Y: float, Z: f
     H[0:3,3] = np.array([X,Y,Z])
     return H
 
-def apply_homogeneous_transform(H: np.ndarray, X: list, Y: list, Z: list = None, cast_to_list = True):
+def apply_homogeneous_transform(H: np.ndarray, X: list, Y: list, Z: Optional[list] = None, cast_to_list = True):
     '''
     Input a homogeneous transform and lists of X, Y, Z values for points to transform
 

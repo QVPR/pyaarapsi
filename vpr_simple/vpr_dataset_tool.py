@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 import numpy as np
 import copy
 import logging
@@ -23,10 +25,16 @@ from .vpr_helpers import *
 from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
 
+from typing import Optional, Union, Protocol, overload
+
+class SupportsNetVLADHybridNet(Protocol):
+    netvlad: NetVLAD_Container
+    hybridnet: HybridNet_Container
+
 class VPRDatasetProcessor:
-    def __init__(self, dataset_params: dict, try_gen: bool = True, init_netvlad: bool = False, 
+    def __init__(self, dataset_params: Optional[dict] = None, try_gen: bool = True, init_netvlad: bool = False, 
                  init_hybridnet: bool = False, cuda: bool = False, use_tqdm: bool = False, 
-                 autosave: bool = False, ros: bool = True, root: str = None, printer=None):
+                 autosave: bool = False, ros: bool = True, root: Optional[str] = None, printer=None):
         '''
         Initialisation
 
@@ -53,32 +61,33 @@ class VPRDatasetProcessor:
         Returns:
             self
         '''
-        self.dataset_ready  = False
         self.cuda           = cuda
+        self.ros            = ros
         self.use_tqdm       = use_tqdm
         self.autosave       = autosave
         self.init_netvlad   = init_netvlad
         self.init_hybridnet = init_hybridnet
         self.printer        = printer
-        self.borrowed_nns   = [False, False]
-
         if root is None:
             self.root       = ROSPKG_ROOT
         else:
             self.root       = root
+        self.borrowed_nns   = [False, False]
 
-        self.ros            = ros
-        self.netvlad        = None
-        self.hybridnet      = None
-
-        self.netvlad_rdy    = False
-        self.hybridnet_rdy  = False
+        # Declare attributes:
+        self.dataset: dict                              = {}
+        self.netvlad: Optional[NetVLAD_Container]       = None
+        self.hybridnet: Optional[HybridNet_Container]   = None
+        self.netvlad_rdy                                = False
+        self.hybridnet_rdy                              = False
+        self.npz_dbp: str                               = ''
+        self.bag_dbp: str                               = ''
 
         if not (dataset_params is None): # If parameters have been provided:
             self.print("Loading model from parameters...")
             name = self.load_dataset(dataset_params, try_gen=try_gen)
 
-            if not self.dataset_ready:
+            if not self.dataset:
                 raise Exception("Dataset load failed.")
             self.print("Dataset Ready (loaded: %s)." % str(name))
 
@@ -105,6 +114,8 @@ class VPRDatasetProcessor:
         Returns:
             dict type; dataset data dictionary
         '''
+        if not self.dataset:
+            return {}
         return self.dataset['dataset']
 
     def get_params(self) -> dict:
@@ -116,9 +127,11 @@ class VPRDatasetProcessor:
         Returns:
             dict type; dataset parameter dictionary
         '''
+        if not self.dataset:
+            return {}
         return self.dataset['params']
     
-    def show(self, printer = print) -> dict:
+    def show(self, printer = print) -> str:
         '''
         Print dataset contents
 
@@ -146,7 +159,7 @@ class VPRDatasetProcessor:
         else:
             self.printer(text, logtype, throttle=throttle, ros=self.ros)
 
-    def prep_netvlad(self, cuda: bool = None, load: bool = True, prep: bool = True) -> bool:
+    def prep_netvlad(self, cuda: Optional[bool] = None, load: bool = True, prep: bool = True) -> bool:
         '''
         Prepare netvlad for use
 
@@ -157,13 +170,13 @@ class VPRDatasetProcessor:
         Returns:
             bool type; True (on success, else Exception)
         '''
-        if not (cuda is None):
+        if cuda is None:
             cuda = self.cuda
         self.netvlad        = NetVLAD_Container(cuda=cuda, ngpus=int(self.cuda), logger=self.print, load=load, prep=prep)
         self.init_netvlad   = True
         return True
 
-    def prep_hybridnet(self, cuda: bool = None, load: bool = True) -> bool:
+    def prep_hybridnet(self, cuda: Optional[bool] = None, load: bool = True) -> bool:
         '''
         Prepare hybridnet for use
 
@@ -173,19 +186,19 @@ class VPRDatasetProcessor:
         Returns:
             bool type; True (on success, else Exception)
         '''
-        if not (cuda is None):
+        if cuda is None:
             cuda = self.cuda
-        self.hybridnet  = HybridNet_Container(cuda=cuda, logger=self.print, load=load)
-        self.init_hybridnet   = True
+        self.hybridnet      = HybridNet_Container(cuda=cuda, logger=self.print, load=load)
+        self.init_hybridnet = True
         return True
 
-    def pass_nns(self, processor: object, netvlad: bool = True, hybridnet: bool = True) -> bool:
+    def pass_nns(self, processor: SupportsNetVLADHybridNet, netvlad: bool = True, hybridnet: bool = True) -> bool:
         '''
         Overwrite this VPRDatasetProcessor's instances of netvlad and hybridnet with another's instantiations
         Will check and, if initialised, destroy existing netvlad/hybridnet
 
         Inputs:
-            processor:  VPRDatasetProcessor type
+            processor:  object with .netvlad (type: NetVLAD_Container) and .hybridnet (type: HybridNet_Container) attributes
             netvlad:    bool type {default: True}; whether or not to overwrite netvlad instance
             hybridnet:  bool type {default: True}; whether or not to overwrite hybridnet instance
         Returns:
@@ -264,7 +277,6 @@ class VPRDatasetProcessor:
 
         # store for access in saving operation:
         if store:
-            self.dataset_ready  = False
             self.npz_dbp        = npz_dbp
             self.bag_dbp        = bag_dbp
 
@@ -288,14 +300,13 @@ class VPRDatasetProcessor:
             if hasattr(self, 'dataset'):
                 del self.dataset
             self.dataset        = copy.deepcopy(dataset)
-            self.dataset_ready  = True
 
             if self.autosave:
                 self.save_dataset()
 
         return dataset
 
-    def save_dataset(self, name: str = None) -> object:
+    def save_dataset(self, name: Optional[str] = None) -> VPRDatasetProcessor:
         '''
         Save loaded dataset to file system
 
@@ -304,7 +315,8 @@ class VPRDatasetProcessor:
         Returns:
             self
         '''
-        if not self.dataset_ready:
+        
+        if not self.dataset:
             raise Exception("Dataset not loaded in system. Either call 'generate_dataset' or 'load_dataset' before using this method.")
         dir = self.root + '/' + self.npz_dbp
         Path(dir).mkdir(parents=False, exist_ok=True)
@@ -359,23 +371,28 @@ class VPRDatasetProcessor:
         Returns:
             bool type; True if successful extension.
         '''
+        if not self.dataset:
+            self.print("[extend_dataset] Load failed; no dataset loaded to extend.", LogType.DEBUG)
+            return False
         if isinstance(new_ft_type, FeatureType):
-            new_ft_type = enum_name(new_ft_type)
+            str_ft_type = new_ft_type.name
+        else:
+            str_ft_type = new_ft_type
         new_params = copy.deepcopy(self.dataset['params'])
-        new_params['ft_types'] = [new_ft_type]
+        new_params['ft_types'] = [str_ft_type]
         self.print("[extend_dataset] Loading dataset to extend existing...", LogType.DEBUG)
         new_dataset = self.open_dataset(new_params, try_gen=try_gen)
         if new_dataset is None:
             self.print("[extend_dataset] Load failed.", LogType.DEBUG)
             return False
         self.print("[extend_dataset] Load success. Extending.", LogType.DEBUG)
-        self.dataset['dataset'][new_ft_type] = copy.deepcopy(new_dataset['dataset'][new_ft_type])
-        self.dataset['params']['ft_types'].append(new_ft_type)
+        self.dataset['dataset'][str_ft_type] = copy.deepcopy(new_dataset['dataset'][str_ft_type])
+        self.dataset['params']['ft_types'].append(str_ft_type)
         if save:
             self.save_dataset()
         return True
 
-    def open_dataset(self, dataset_params: dict, try_gen: bool = False) -> dict:
+    def open_dataset(self, dataset_params: dict, try_gen: bool = False) -> Union[dict, None]:
         '''
         Open a dataset by searching for a param dictionary match (return as a variable, do not store in VPRDatasetProcessor)
 
@@ -394,10 +411,17 @@ class VPRDatasetProcessor:
         Returns:
             dict type; opened dataset dictionary if successful, else None.
         '''
+
         # load via search for param match but don't load into the processor's self.dataset
+        if not self.npz_dbp:
+            self.npz_dbp = dataset_params['npz_dbp']
+        else:
+            assert self.npz_dbp == dataset_params['npz_dbp'], 'Must preserve npz_dbp'
+        if not self.bag_dbp:
+            self.bag_dbp = dataset_params['bag_dbp']
+        else:
+            assert self.bag_dbp == dataset_params['bag_dbp'], 'Must preserve bag_dbp'
         assert len(dataset_params['ft_types']) == 1, 'Can only open one dataset'
-        assert self.npz_dbp == dataset_params['npz_dbp'], 'Must preserve npz_dbp'
-        assert self.bag_dbp == dataset_params['bag_dbp'], 'Must preserve bag_dbp'
 
         self.print("[open_dataset] Loading dataset.", LogType.DEBUG)
         datasets = self._get_datasets()
@@ -439,27 +463,29 @@ class VPRDatasetProcessor:
         '''
         self.npz_dbp = dataset_params['npz_dbp']
         self.bag_dbp = dataset_params['bag_dbp']
-        self.dataset_ready = False
+
         self.print("[load_dataset] Loading dataset.")
         datasets = self._get_datasets()
         sub_params = copy.deepcopy(dataset_params)
         sub_params['ft_types'] = [dataset_params['ft_types'][0]]
+        _name = ''
         for name in datasets:
             if datasets[name]['params'] == sub_params:
                 try:
                     self._load(name)
+                    _name = name
                     break
                 except:
                     self._fix(name)
-        if self.dataset_ready:
+        if not _name == '':
             if len(dataset_params['ft_types']) > 1:
                 for ft_type in dataset_params['ft_types'][1:]:
                     if not self.extend_dataset(ft_type, try_gen=try_gen, save=try_gen):
                         return ''
-            return name
+            return _name
         else: 
             if try_gen:
-                self.print('Generating dataset with params: %s' % (str(dataset_params)), LogType.DEBUG)
+                self.print('[load_dataset] Generating dataset with params: %s' % (str(dataset_params)), LogType.DEBUG)
                 self.generate_dataset(**dataset_params)
                 return 'NEW GENERATION'
             return ''
@@ -487,6 +513,8 @@ class VPRDatasetProcessor:
         '''
         # Check if we can just extend the current dataset:
         try:
+            if not self.dataset:
+                raise Exception('No dataset presently loaded.')
             self.print('[swap] Attempting to extend dataset...')
             dataset_params_test = copy.deepcopy(dataset_params)
             dataset_params_test['ft_types'] = copy.copy(self.dataset['params']['ft_types'])
@@ -504,8 +532,14 @@ class VPRDatasetProcessor:
         if not allow_false:
             raise Exception('Dataset failed to load.')
         return False
+    
+    @overload
+    def getFeat(self, img: np.ndarray, fttype_in: FeatureType, dims: list, use_tqdm: bool = False) -> np.ndarray: ...
+    
+    @overload
+    def getFeat(self, img: List[np.ndarray], fttype_in: FeatureType, dims: list, use_tqdm: bool = False) -> List[np.ndarray]: ...
         
-    def getFeat(self, img, fttype_in: FeatureType, dims: list, use_tqdm: bool = False) -> np.ndarray:
+    def getFeat(self, img: Union[np.ndarray, List[np.ndarray]], fttype_in: FeatureType, dims: list, use_tqdm: bool = False) -> Union[np.ndarray, List[np.ndarray]]:
         '''
         Feature Extraction Helper
 
@@ -518,10 +552,10 @@ class VPRDatasetProcessor:
             np.ndarray type (or list of np.ndarray); flattened features from image
 
         '''
-    # Get features from img, using VPRImageProcessor's set image dimensions.
-    # Specify type via fttype_in= (from FeatureType enum; list of FeatureType elements is also handled)
-    # Specify dimensions with dims= (two-element positive integer tuple)
-    # Returns feature array, as a flattened array
+        # Get features from img, using VPRDatasetProcessor's set image dimensions.
+        # Specify type via fttype_in= (from FeatureType enum; list of FeatureType elements is also handled)
+        # Specify dimensions with dims= (two-element positive integer tuple)
+        # Returns feature array, as a flattened array
 
         if not (dims[0] > 0 and dims[1] > 0):
             raise Exception("[getFeat] image dimensions are invalid")
@@ -536,13 +570,13 @@ class VPRDatasetProcessor:
                 if not self.hybridnet_rdy:
                     self.check_hybridnet(fttypes)
             else:
-                raise Exception("[getFeat] FeatureType.HYBRIDNET provided but VPRImageProcessor not initialised with init_hybridnet=True")
+                raise Exception("[getFeat] FeatureType.HYBRIDNET provided but VPRDatasetProcessor not initialised with init_hybridnet=True")
         if any([fttype == FeatureType.NETVLAD for fttype in fttypes]):
             if self.init_netvlad:
                 if not self.netvlad_rdy:
                     self.check_netvlad(fttypes)
             else:
-                raise Exception("[getFeat] FeatureType.NETVLAD provided but VPRImageProcessor not initialised with init_netvlad=True")
+                raise Exception("[getFeat] FeatureType.NETVLAD provided but VPRDatasetProcessor not initialised with init_netvlad=True")
         try:
             feats = getFeat(img, fttypes, dims, use_tqdm=use_tqdm, nn_hybrid=self.hybridnet, nn_netvlad=self.netvlad)
             if isinstance(feats, list):
@@ -562,33 +596,44 @@ class VPRDatasetProcessor:
         '''
         if self.init_hybridnet and (not self.borrowed_nns[1]):
             try:
-                self.hybridnet.destroy()
+                if not self.hybridnet is None:
+                    self.hybridnet.destroy()
                 del self.hybridnet
             except:
                 pass
         if self.init_netvlad and (not self.borrowed_nns[0]):
             try:
-                self.netvlad.destroy()
+                if not self.netvlad is None:
+                    self.netvlad.destroy()
                 del self.netvlad
             except:
                 pass
-        del self.dataset_ready
-        del self.cuda
-        del self.use_tqdm
-        del self.autosave
-        del self.init_netvlad
-        del self.init_hybridnet
         try:
             del self.dataset
         except:
             pass
+
+        del self.netvlad_rdy
+        del self.hybridnet_rdy
+        del self.init_netvlad
+        del self.init_hybridnet
+        del self.npz_dbp
+        del self.bag_dbp
+        del self.root
+        del self.borrowed_nns
+        del self.cuda
+        del self.ros
+        del self.use_tqdm
+        del self.autosave
+        del self.printer
+        
         try:
             del self
         except:
             pass
 
     #### Private methods:
-    def _check(self, params: dict = None) -> str:
+    def _check(self, params: Optional[dict] = None) -> str:
         '''
         Helper function to check if params already exist in saved npz_dbp library
 
@@ -599,6 +644,8 @@ class VPRDatasetProcessor:
         '''
         datasets = self._get_datasets()
         if params is None:
+            if not self.dataset:
+                return ""
             params = self.dataset['params']
         for name in datasets:
             if datasets[name]['params'] == params:
@@ -674,5 +721,4 @@ class VPRDatasetProcessor:
             if hasattr(self, 'dataset'):
                 del self.dataset
             self.dataset = copy.deepcopy(dataset)
-            self.dataset_ready = True
         return dataset

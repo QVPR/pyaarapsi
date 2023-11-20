@@ -50,7 +50,7 @@ class SVMModelProcessor:
         self.cal_ref_ip.pass_nns(processor, netvlad, hybridnet)
 
     def print(self, text: str, logtype: LogType = LogType.INFO, throttle: float = 0) -> None:
-        text = '[VPRDatasetProcessor] ' + text
+        text = '[SVMModelProcessor] ' + text
         if self.printer is None:
             roslogger(text, logtype, throttle=throttle, ros=self.ros)
         else:
@@ -143,6 +143,9 @@ class SVMModelProcessor:
             field_name = path[0:-3] + 'png'
         elif not path.endswith('.png'):
             field_name = path + '.png'
+        else:
+            field_name = path
+        assert not self.field is None
 
         # Generate exif metadata:
         exif_ifd = {piexif.ExifIFD.UserComment: json.dumps({'x_lim': self.field['x_lim'], 'y_lim': self.field['y_lim']}).encode()}
@@ -159,16 +162,18 @@ class SVMModelProcessor:
             field_name = path[0:-3] + 'png'
         elif not path.endswith('.png'):
             field_name = path + '.png'
+        else:
+            field_name = path
 
         image = Image.open(field_name)
         _field = {'image': np.array(image)}
-        _field.update(json.loads(image._getexif()[37510].decode()))
+        _field.update(json.loads(image.getexif()[37510].decode())) # may need to be _getexif
         self.field = _field
         self.field_ready = True
 
         return True
 
-    def load_model(self, model_params, try_gen=False, gen_datasets=False, save_datasets=False):
+    def load_model(self, model_params: dict, try_gen: bool = False, gen_datasets: bool = False, save_datasets: bool = False) -> str:
     # load via search for param match
         self.svm_dbp = model_params['svm_dbp']
         self.print("[load_model] Loading model.")
@@ -180,14 +185,15 @@ class SVMModelProcessor:
             if models[name]['params'] == model_params:
                 try:
                     self._load(name)
-                    return True
+                    return name
                 except:
                     self.print("Load failed, performing cleanup. Code: \n%s" % formatException())
                     self._fix(name)
         if try_gen:
+            self.print('[load_model] Generating model with params: %s' % (str(model_params)), LogType.DEBUG)
             self.generate_model(**model_params, try_gen=gen_datasets, save_datasets=save_datasets)
-            return True
-        return False
+            return 'NEW GENERATION'
+        return ''
     
     def swap(self, model_params, generate=False, allow_false=True):
         models = self._get_models()
@@ -234,14 +240,14 @@ class SVMModelProcessor:
         ax.imshow(zvalues_t, origin='lower',extent=[0, f1[-1], 0, f2[-1]], aspect='auto')
         contour_levels = ax.contour(F1, F2, zvalues_t, levels=[0, 0.75], colors=['red','blue','green'])
         ax.clabel(contour_levels, inline=True, fontsize=8)
-        ax.set_xlim(x_lim)
-        ax.set_ylim(y_lim)
+        ax.set_xlim(*x_lim)
+        ax.set_ylim(*y_lim)
         ax.set_box_aspect(1)
         ax.axis('off')
         fig.canvas.draw()
 
         # extract matplotlib canvas as an rgb image:
-        img_np_raw_flat = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        img_np_raw_flat = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8) #type: ignore
         img_np_raw = img_np_raw_flat.reshape(fig.canvas.get_width_height()[::-1] + (3,))
         plt.close('all') # close matplotlib
 
@@ -304,6 +310,7 @@ class SVMModelProcessor:
 
     def _train(self):
         self.print("Performing training...")
+        assert (not self.cal_ref_ip.dataset is None) and (not self.cal_qry_ip.dataset is None)
 
         # Generate similarity matrix for reference to query **Features**::
         self.S_train = fastdist.matrix_to_matrix_distance(  

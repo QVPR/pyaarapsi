@@ -5,9 +5,10 @@ from std_msgs.msg                   import Header, ColorRGBA
 from geometry_msgs.msg              import PoseStamped, Point, Vector3
 from visualization_msgs.msg         import MarkerArray, Marker
 
-from pyaarapsi.core.ros_tools       import q_from_yaw, q_from_rpy
+from pyaarapsi.core.ros_tools       import q_from_yaw, q_from_rpy, ROS_Publisher
 from pyaarapsi.core.helper_tools    import angle_wrap, normalize_angle, m2m_dist
 from .enums                         import Lookahead_Mode
+from typing import Union
 
 def make_speed_array(w_interp):
     # Generate speed profile based on curvature of track:
@@ -46,9 +47,11 @@ def calc_zone_stats(path_len, len_guess, num_guess):
     return len_true, num_true
 
 def make_path_speeds(path_xyws, path_indices):
-    path       = Path(header=Header(stamp=rospy.Time.now(), frame_id="map"))
-    speeds     = MarkerArray()
-    direction  = np.sign(np.sum(path_xyws[:,2]))
+    path            = Path(header=Header(stamp=rospy.Time.now(), frame_id="map"))
+    path.poses      = []
+    speeds          = MarkerArray()
+    speeds.markers  = []
+    direction       = np.sign(np.sum(path_xyws[:,2]))
     for i in path_indices:
         new_pose                        = PoseStamped(header=Header(stamp=rospy.Time.now(), frame_id="map"))
         new_pose.pose.position          = Point(x=path_xyws[i,0], y=path_xyws[i,1], z=0.0)
@@ -68,7 +71,8 @@ def make_path_speeds(path_xyws, path_indices):
     return path, speeds
 
 def make_zones(path_xyws, zone_indices):
-    zones = MarkerArray()
+    zones           = MarkerArray()
+    zones.markers   = []
     for c, i in enumerate(zone_indices):
         k                           = i % path_xyws.shape[0]
         new_zone                    = Marker(header=Header(stamp=rospy.Time.now(), frame_id='map'))
@@ -101,7 +105,7 @@ def global2local(ego, x, y):
 
     return list(np.multiply(np.cos(A), R)), list(np.multiply(np.sin(A), R))
 
-def calc_yaw_error(ego, goal):
+def calc_yaw_error(ego, goal) -> float:
     # Heading error (angular):
     rel_x, rel_y    = global2local(ego, np.array([goal[0]]), np.array([goal[1]])) # Convert to local coordinates
     error_yaw       = normalize_angle(np.arctan2(rel_y[0], rel_x[0]))
@@ -136,14 +140,14 @@ def calc_target(current_ind: int, lookahead: float, lookahead_mode: Lookahead_Mo
         raise Exception('Unknown lookahead_mode: %s' % str(lookahead_mode))
     return target_ind, adj_lookahead
 
-def publish_xyw_pose(pose_xyw: list, pub: rospy.Publisher, frame_id='map') -> None:
+def publish_xyw_pose(pose_xyw: list, pub: Union[rospy.Publisher, ROS_Publisher], frame_id='map') -> None:
     # Update visualisation of current goal/target pose
     goal                    = PoseStamped(header=Header(stamp=rospy.Time.now(), frame_id=frame_id))
     goal.pose.position      = Point(x=pose_xyw[0], y=pose_xyw[1], z=0.0)
     goal.pose.orientation   = q_from_yaw(pose_xyw[2])
     pub.publish(goal)
 
-def publish_xyzrpy_pose(xyzrpy: list, pub: rospy.Publisher, frame_id='map') -> None:
+def publish_xyzrpy_pose(xyzrpy: list, pub: Union[rospy.Publisher, ROS_Publisher], frame_id='map') -> None:
     # Update visualisation of current goal/target pose
     goal                    = PoseStamped(header=Header(stamp=rospy.Time.now(), frame_id=frame_id))
     goal.pose.position      = Point(x=xyzrpy[0], y=xyzrpy[1], z=xyzrpy[2])

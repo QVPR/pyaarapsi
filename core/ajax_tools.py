@@ -11,6 +11,7 @@ import time
 
 from .enum_tools import enum_name, enum_get
 from .helper_tools import vis_dict
+from typing import Union, Type, Tuple
 
 class GET_Method_Types(Enum):
     GET     = 0
@@ -49,7 +50,7 @@ class AJAX_Connection:
         except:
             return False
 
-    def post(self, key: str, data: dict, method_type: POST_Method_Types, log: bool=False):
+    def post(self, key: str, data: dict, method_type: POST_Method_Types, log: bool=False) -> Union[Tuple[dict, requests.Response], Tuple[None, requests.Response]]:
         '''
         Send a POST method AJAX request to the server
 
@@ -71,14 +72,16 @@ class AJAX_Connection:
             for i in response.__dict__.keys():
                 try:
                     print(i + ': ' + str(response.__getattribute__(i)))
-                except AttributeError:
-                    print(i + ': ' + str(response.__getattr__(i)))
+                #except AttributeError:
+                #    print(i + ': ' + str(response.__getattr__(i)))
                 except:
                     print("Couldn't access %s." % i)
 
+        if response._content is None:
+            return None, response
         return json.loads(response._content), response
 
-    def get(self, key: str, method_type: GET_Method_Types, log: bool=False):
+    def get(self, key: Union[str, None], method_type: GET_Method_Types, log: bool=False) -> Union[Tuple[dict, requests.Response], Tuple[None, requests.Response]]:
         '''
         Send a GET method AJAX request to the server
 
@@ -99,11 +102,13 @@ class AJAX_Connection:
             for i in response.__dict__.keys():
                 try:
                     print(i + ': ' + str(response.__getattribute__(i)))
-                except AttributeError:
-                    print(i + ': ' + str(response.__getattr__(i)))
+                # except AttributeError:
+                #     print(i + ': ' + str(response.__getattr__(i)))
                 except:
                     print("Couldn't access %s." % i)
 
+        if response._content is None:
+            return None, response
         return json.loads(response._content), response
 
 # log = logging.getLogger('werkzeug')
@@ -116,7 +121,7 @@ class Flask_AJAX_Server:
         self.port   = port
         self.main()
 
-    def print(text):
+    def print(self, text):
         print(text)
 
     def get(self, req_type, req_datakey):

@@ -5,7 +5,7 @@ import os
 
 from tqdm.auto import tqdm
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 import torchvision.transforms as transforms
 import numpy as np
 from PIL import Image
@@ -13,7 +13,7 @@ from PIL import Image
 from .netvlad_lib     import get_backend, get_model, get_pca_encoding
 from .download_models import download_netvlad_models, MODELS_DIR
 
-class PlaceDataset(torch.utils.data.Dataset):
+class PlaceDataset(Dataset):
     def __init__(self, image_data, transform, dims=None):
         super().__init__()
 

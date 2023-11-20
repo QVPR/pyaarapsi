@@ -1,6 +1,7 @@
 from enum import Enum
+from typing import Type, List, Any, Union, Tuple, TypeVar, overload
 
-def enum_contains(value: any, enumtype: Enum, wrap: bool=False) -> bool:
+def enum_contains(value: Any, enumtype: Type[Enum], wrap: bool = False) -> Union[bool,List[bool]]:
 # Return true/false if the value exists within enum
     if not isinstance(value, list):
         for i in enumtype:
@@ -18,7 +19,15 @@ def enum_contains(value: any, enumtype: Enum, wrap: bool=False) -> bool:
         return newvalues
     return False
 
-def enum_get(value: any, enumtype: Enum, wrap: bool=False) -> Enum:
+enumBaseType = TypeVar("enumBaseType", bound=Enum)
+
+@overload
+def enum_get(value: Any, enumtype: Type[enumBaseType], wrap: bool = False) -> Union[enumBaseType,None]: ...
+
+@overload
+def enum_get(value: List[Any], enumtype: Type[enumBaseType], wrap: bool = False) -> Union[List[enumBaseType],None]: ...
+
+def enum_get(value: Union[Any, List[Any]], enumtype: Type[enumBaseType], wrap: bool = False) -> Union[enumBaseType,List[enumBaseType],None]:
 # Return enumtype corresponding to value if it exists (or return None)
     if not isinstance(value, list):
         for i in enumtype:
@@ -36,7 +45,7 @@ def enum_get(value: any, enumtype: Enum, wrap: bool=False) -> Enum:
     return None
 
 
-def enum_value_options(enumtype: Enum, skip=[None]):
+def enum_value_options(enumtype: Type[Enum], skip=[None]) -> Tuple[list, str]:
 # Return lists of an enumtype's values and a cleaned string variant for printing purposes
     if isinstance(skip, enumtype):
         skip = [skip]
@@ -49,14 +58,14 @@ def enum_value_options(enumtype: Enum, skip=[None]):
         options_text.append(i.name)
     return options, str(options_text).replace('\'', '')
 
-def enum_value(enum_in, wrap=False):
+def enum_value(enum_in: Union[Enum, List[Enum]], wrap: bool = False) -> Union[Any, List[Any]]:
     if isinstance(enum_in, list):
         return [i.value for i in enum_in]
     if wrap:
         return [enum_in.value]
     return enum_in.value
 
-def enum_name(enum_in, wrap=False):
+def enum_name(enum_in: Union[Enum, List[Enum]], wrap: bool = False) -> Union[str, List[str]]:
     if isinstance(enum_in, list):
         return [i.name for i in enum_in]
     if wrap:

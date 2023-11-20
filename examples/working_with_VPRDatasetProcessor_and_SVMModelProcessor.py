@@ -65,7 +65,7 @@ svm             = SVMModelProcessor(ros=False, root=None, load_field=True, print
 svm.pass_nns(ref_ip, netvlad=True, hybridnet=False)
 svm.load_model(svm_dict, try_gen=True, gen_datasets=True, save_datasets=True)
 
-def prep_for_video(img, dims, dstack=True):
+def feature2image(img, dims, dstack=True):
     _min      = np.min(img)
     _max      = np.max(img)
     _img_norm = (img - _min) / (_max - _min)
@@ -86,7 +86,7 @@ def make_video(_video_path: str, _ip_dict: dict, nnip=None, netvlad=False, hybri
     if os.path.isfile(file_path): os.remove(file_path)
     vid_writer = cv2.VideoWriter(file_path, 0, fps, _ip.dataset['params']['img_dims'])
     for i in range(len(_ip.dataset['dataset']['time'])):
-        img = prep_for_video(_ip.dataset['dataset']['RAW'][i], _ip.dataset['params']['img_dims'])
+        img = feature2image(_ip.dataset['dataset']['RAW'][i], _ip.dataset['params']['img_dims'])
         vid_writer.write(img)
     vid_writer.release()
 
