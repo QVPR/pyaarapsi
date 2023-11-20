@@ -14,12 +14,12 @@ def compute_distance_in_m(a,b):
 
 def plot_PR(r,p):
     fig,ax=plt.subplots()
-    ax.plot(r,p);
-    ax.set_title('PR Curve');
-    ax.set_xlabel('recall');
-    ax.set_ylabel('precision');
-    ax.set_ylim([0,1.05])
-    ax.set_xlim([0,1])
+    ax.plot(r,p)
+    ax.set_title('PR Curve')
+    ax.set_xlabel('recall')
+    ax.set_ylabel('precision')
+    ax.set_ylim(0,1.05)
+    ax.set_xlim(0,1)
     return fig,ax
 
 class RobotVPR:
@@ -89,10 +89,10 @@ class RobotVPR:
         Plot distance matrix
         '''
         fig,ax=plt.subplots()
-        ax.imshow(self.S);
-        ax.set_xlabel('query');
-        ax.set_ylabel('reference');
-        ax.set_title('Distance Matrix');
+        ax.imshow(self.S)
+        ax.set_xlabel('query')
+        ax.set_ylabel('reference')
+        ax.set_title('Distance Matrix')
         return fig,ax
     
     def distance_vector(self, qry_num):
@@ -142,14 +142,14 @@ class RobotVPR:
         self.find_y()
         if match_found is None:
             match_found=self.ALL_TRUE
-        return find_vpr_performance_metrics(match_found,self.y,self.match_exists,verbose=verbose);
+        return find_vpr_performance_metrics(match_found,self.y,self.match_exists,verbose=verbose)
     
     def plot_PRcurve(self):
         '''
         Plot precision-recall curve of VPR technique
         '''
         p,r,_,_,_,_,_=self.compute_PRcurve_metrics()
-        return plot_PR(r,p);
+        return plot_PR(r,p)
     
     def plot_cl_vs_bl_PRcurve(self,y_pred,ax=None,fig=None):        
         '''
@@ -159,15 +159,15 @@ class RobotVPR:
         if ax == None:
             fig,ax=plt.subplots()
         p,r,_,_,_,_,_=self.compute_PRcurve_metrics()
-        ax.plot(r,p,label='baseline');
+        ax.plot(r,p,label='baseline')
         p,r,_,_,_,_,_=self.compute_cl_PRcurve_metrics(y_pred)
-        ax.plot(r,p,label='closed-loop');
-        ax.set_xlabel('recall');
-        ax.set_ylabel('precision');
-        ax.set_xlim([0,1]);
-        ax.set_ylim([0,1.05]);
-        ax.set_title('PR Curve, Tolerance={0}'.format(self.tolerance));
-        ax.legend();
+        ax.plot(r,p,label='closed-loop')
+        ax.set_xlabel('recall')
+        ax.set_ylabel('precision')
+        ax.set_xlim(0,1)
+        ax.set_ylim(0,1.05)
+        ax.set_title('PR Curve, Tolerance={0}'.format(self.tolerance))
+        ax.legend()
         return fig,ax
     
     def compute_cl_PRcurve_metrics(self,y_pred):
@@ -201,11 +201,11 @@ class RobotVPR:
         
     def plot_runs(self):
         if self.ref.GEO_TAGGED and self.qry.GEO_TAGGED:
-            plt.plot(self.ref.x,self.ref.y,label='ref');
-            plt.plot(self.qry.x,self.qry.y,label='qry');
-            plt.legend();
-            plt.xlabel('x (m)'); plt.ylabel('y (m)');
-            plt.title('Qry and Ref Runs');
+            plt.plot(self.ref.x,self.ref.y,label='ref')
+            plt.plot(self.qry.x,self.qry.y,label='qry')
+            plt.legend()
+            plt.xlabel('x (m)'); plt.ylabel('y (m)')
+            plt.title('Qry and Ref Runs')
         else:
             print('Info: plot_runs: Cannot plot as ref and query are not both GEOTAGGED')
         return
@@ -215,15 +215,15 @@ class RobotVPR:
         Plot the route showing TP and FP prediction locations
         '''
         if ax == None:
-            fig,ax=plt.subplots();
+            fig,ax=plt.subplots()
         if self.qry.GEO_TAGGED:
             tp,fp,tn,fn=find_each_prediction_metric(y_pred,self.y)
-            ax.scatter(self.qry.x,self.qry.y,color='lightgray',marker='.');
-            ax.scatter(self.qry.x[tp],self.qry.y[tp],color='g',marker='.',label='TP');
-            ax.scatter(self.qry.x[fp],self.qry.y[fp],color='r',marker='x',label='FP');
-            ax.legend();
-            ax.set_xlabel('x'); ax.set_ylabel('y');
-            ax.set_title('TP and FP locations along query route');
+            ax.scatter(self.qry.x,    self.qry.y,    marker='.',color='lightgray')
+            ax.scatter(self.qry.x[tp],self.qry.y[tp],marker='.',color='g',label='TP')
+            ax.scatter(self.qry.x[fp],self.qry.y[fp],marker='x',color='r',label='FP')
+            ax.legend()
+            ax.set_xlabel('x'); ax.set_ylabel('y')
+            ax.set_title('TP and FP locations along query route')
         else:
             print('Info: plot_ypred: query run is not GEOTAGGED, cannot plot route')
         return fig,ax
@@ -253,15 +253,16 @@ class RobotVPR:
         elif self.units == 'frames':
             error = self.frame_error
         else:
-            print('Error: robotvpr.py: plot_error_along_route: units needs to be either m or frames');
+            print('Error: robotvpr.py: plot_error_along_route: units needs to be either m or frames')
             return
-        ax.scatter(qrys[fn],error[fn],marker='.',color='lightblue',label='FN (removed)')
-        ax.scatter(qrys[tn],error[tn],marker='.',color='lightgray',label='TN (removed)')
-        ax.scatter(qrys[tp],error[tp],marker='.',color='g',label='TP (retained)');
-        ax.scatter(qrys[fp],error[fp],marker='.',color='r',label='FP (retained)');
+        from matplotlib.markers import MarkerStyle
+        ax.scatter(qrys[fn],error[fn],'.',color='lightblue',label='FN (removed)')
+        ax.scatter(qrys[tn],error[tn],'.',color='lightgray',label='TN (removed)')
+        ax.scatter(qrys[tp],error[tp],'.',color='g',label='TP (retained)')
+        ax.scatter(qrys[fp],error[fp],'.',color='r',label='FP (retained)')
         ax.axhline(self.tolerance,ls='dashed',label='Tolerance')
-        ax.set_xlabel('query number');
-        ax.set_ylabel('localisation error (m)');
+        ax.set_xlabel('query number')
+        ax.set_ylabel('localisation error (m)')
         ax.set_title('Error along the query route - showing retained (predicted good), and removed points');
         ax.legend();
         return fig,ax;
@@ -301,7 +302,7 @@ class RobotVPR_fromS(RobotVPR):
         pass
     
     def plot_ypred(self,y_pred,ax=None,fig=None):
-        print('Warning: robotvpr.py plot_ypred: Cannot plot ypred as not GEOTAGGED (yet)');
+        print('Warning: robotvpr.py plot_ypred: Cannot plot ypred as not GEOTAGGED (yet)')
         pass
     
     def __repr__(self):  # Return a string containing a printable representation of an object.
