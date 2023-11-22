@@ -89,6 +89,45 @@ class RobotMonitor(object):
             ax.legend();
         return fig,ax
 
+    def plotP(self,vpr=None,show_points=True,ax=None,fig=None,basic=False,levels=[0.9]):
+        ZSIZE=200
+        if vpr == None:
+            factor1=self.factor1
+            factor2=self.factor2
+        else:
+            X=self.scaler.inverse_transform(self.formX(vpr))
+            factor1=X[:,0]
+            factor2=X[:,1]
+        f1=np.linspace(factor1.min(),factor1.max(),ZSIZE)
+        f2=np.linspace(factor2.min(),factor2.max(),ZSIZE)    
+        F1,F2=np.meshgrid(f1,f2)
+        Fscaled=self.scaler.transform(np.c_[F1.ravel(), F2.ravel()])
+        P=self.model.predict_proba(Fscaled)[:,1].reshape([ZSIZE,ZSIZE])
+        extent=[f1[0],f1[-1],f2[0],f2[-1]]
+        
+        if ax == None:
+            fig,ax=plt.subplots();
+        if basic == True:
+            ax.imshow(P>=0,origin='lower',extent=extent,aspect='auto',cmap='gray');
+        else:
+            ax.imshow(P,origin='lower',extent=extent,aspect='auto');
+            ax.contour(F1,F2,P,levels=levels)
+        ax.set_xlabel(self.factors[0])
+        ax.set_ylabel(self.factors[1]);
+        ax.set_title('P');
+
+        # Plot points:
+        if show_points:
+            if vpr == None:
+                y=self.training_y
+            else:
+                y=vpr.y
+            ax.scatter(factor1[ y],factor2[ y],color='g',marker='.',label='good');
+            ax.scatter(factor1[~y],factor2[~y],color='r',marker='.',label='bad');
+            ax.legend();
+        return fig,ax
+        
+
 class RobotMonitor2D(RobotMonitor):
     '''
     Robot Monitor using a single SVM with two factors
@@ -115,6 +154,10 @@ class RobotMonitor2D(RobotMonitor):
     
     def formX(self,vpr):
         X = np.c_[find_va_factor(vpr.S),find_grad_factor(vpr.S)]
+        return self.scaler.transform(X)
+    
+    def formX_realtime(self,vector):
+        X = np.c_[find_va_factor(vector),find_grad_factor(vector)]
         return self.scaler.transform(X)
         
 

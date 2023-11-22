@@ -17,6 +17,23 @@ def make_odo_filenames(folder_name,imglist):
         odo_filenames.append(image_names[len(folder_name):len(folder_name)+len('frame_id_000001')] + '.csv')
     return odo_filenames
 
+def find_gaps(xy):
+    num_pts=len(xy)
+    gaps=np.zeros(num_pts-1)
+    for j in range(len(gaps)):
+        gaps[j]=np.linalg.norm(xy[j+1]-xy[j])
+    return gaps
+
+def find_distance_travelled(xy):
+    num_pts=len(xy)
+    gaps=find_gaps(xy)
+    distance_travelled=0
+    path_distance=np.zeros(num_pts)
+    for j in range(len(gaps)):
+        distance_travelled=distance_travelled + gaps[j]
+        path_distance[j+1]=distance_travelled
+    return path_distance
+
 def wrap_heading(heading):
     '''
     Wrap heading in degrees to avoid bouncing around -180 to +180
@@ -39,16 +56,19 @@ class RobotRun:
         ----------
         """
         self.npz_setup = npz_setup #temp fix
+        self.description = ""
         if npz_setup == False:
             self.folder = folder
             self.imlist = extract_imagenames(folder)
             self.imgnum = len(self.imlist)
-        self.description = ""
+            self.description = folder
         self.sample_rate = None
         self.features = np.array([])
         self.odo_list = []
         self.GEO_TAGGED = False
         self.vpr_technique = ""
+        self.timestamp = None
+        self.along_path_distance = None
     
     def set_features(self,features,size):
         '''Manually assign feature matrix'''
@@ -102,6 +122,7 @@ class RobotRun:
             self.x[num]=xy[0]
             self.y[num]=xy[1]
         self.GEO_TAGGED = True
+        self.find_along_path_distances();
         
     def set_yaw(self, yaw, num=None):
         '''
@@ -120,6 +141,12 @@ class RobotRun:
         tmp_heading = wrap_heading(self.yaw)
         self.yaw = tmp_heading
         return self.yaw
+
+# TODO: Add timestamps - need to check timestamp length matches other data, and deal with truncation
+#    def set_timestamp(timestamps):
+#        if len(timestamps) == self.imgnum:
+#            self.timestamp = timestamps
+
             
     def extract_geotags(self, odo_folder):
         '''
@@ -134,6 +161,7 @@ class RobotRun:
         self.x=self.xy[:,0]
         self.y=self.xy[:,1]
         self.GEO_TAGGED = True
+        self.find_along_path_distances();
         
     def truncate(self, start, end):
         '''
@@ -153,6 +181,7 @@ class RobotRun:
             self.imlist=self.imlist[start:end+1]     # update filenames
             self.imgnum = len(self.imlist)
         print('truncate: run is now {0} images long'.format(self.imgnum))
+        self.find_along_path_distances();
         
     def subsample(self):
         #TODO
@@ -173,6 +202,24 @@ class RobotRun:
             ax.imshow(self.feature_image(number),cmap='gray')
             ax.set_axis_off()
         return fig,ax
-        
+
+    def find_along_path_distances(self):
+        '''
+        Return a vector containing along-path distance travelled along the run
+        '''
+        if self.GEO_TAGGED == False:
+            print('Error: RobotRun.find_path_distances: run is not geotagged');
+            return;
+        gaps=np.zeros(self.imgnum-1)
+        distance_travelled=0
+        along_path_distance=np.zeros(self.imgnum)
+        for j in range(len(gaps)):
+            gaps[j]=np.linalg.norm(self.xy[j+1]-self.xy[j])
+            distance_travelled=distance_travelled + gaps[j]
+            along_path_distance[j+1]=distance_travelled
+        self.gaps = gaps
+        self.along_path_distance = along_path_distance
+        return
+
     def __repr__(self):  # Return a string containing a printable representation of an object.
         return f"{self.__class__.__name__}(description={self.description})"

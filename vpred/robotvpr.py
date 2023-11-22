@@ -3,8 +3,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from .vpred_tools import *
+from .gradseq_tools import *
 from .robotrun import *
 from scipy.spatial.distance import cdist
+from pyaarapsi.core.helper_tools import angle_wrap, normalize_angle
 
 def compute_distance_in_m(a,b):
     '''
@@ -12,8 +14,9 @@ def compute_distance_in_m(a,b):
     '''
     return np.diag(cdist(a,b))
 
-def plot_PR(r,p):
-    fig,ax=plt.subplots()
+def plot_PR(r,p,ax=None,fig=None):
+    if ax == None:
+        fig,ax=plt.subplots()
     ax.plot(r,p);
     ax.set_title('PR Curve');
     ax.set_xlabel('recall');
@@ -28,7 +31,7 @@ class RobotVPR:
     A query can be added after initialisation.
     '''
     
-    def __init__(self,reference,query=None):
+    def __init__(self,reference,query=None,norm=True):
         """Constructs the attributes of a RobotVPR object.
         
         Parameters
@@ -40,6 +43,7 @@ class RobotVPR:
         """    
         self.ref=reference
         self.num_refs=reference.imgnum
+        self.norm = norm
         if query != None:
             self.set_query(query)
         self.tolerance = 1 # default tolerance is one frame
@@ -52,7 +56,10 @@ class RobotVPR:
         '''
         self.qry = query
         self.num_qrys = query.imgnum
-        self.S, self.Srefmean, self.Srefstd  = create_normalised_similarity_matrix(self.ref.features,self.qry.features)
+        if self.norm:
+            self.S, self.Srefmean, self.Srefstd  = create_normalised_similarity_matrix(self.ref.features,self.qry.features)
+        else:
+            self.S = create_similarity_matrix(self.ref.features,self.qry.features)
         self.best_match = find_best_match(self.S)
         self.best_match_S = find_best_match_distances(self.S)
         self.ALL_TRUE = np.full(self.num_qrys,True,dtype='bool')
@@ -80,10 +87,6 @@ class RobotVPR:
             return
         self.frame_error=find_frame_error(self.S,self.gt_match)
     
-    def add_query(self,feature_vector):
-        #TODO
-        return
-    
     def show_S(self):
         '''
         Plot distance matrix
@@ -109,8 +112,15 @@ class RobotVPR:
             self.y = (self.frame_error <= self.tolerance)
         elif self.units == 'm':
             self.y = (self.ref_error <= self.tolerance)
+        elif self.units == 'degrees':
+            # difference between the ground_truth yaw of the query image, and the yaw of the best matching
+            # reference image
+            self.yaw_error = angle_wrap(self.qry.yaw - self.ref.yaw[self.best_match])
+            self.y = (abs(self.yaw_error) <= self.tolerance)
         else:
-            print('Error: find_y: tolerance units needs to be in frame or units but is {0}'.format(self.units))
+            #print('Error: find_y: tolerance units needs to be in frame or units but is {0}'.format(self.units))
+            print('Error: find_y: tolerance units needs to be in frames, m or degrees but is {0}'.format(self.units))
+        return
     
     def set_tolerance(self, tolerance, units, verbose=True):
         '''
@@ -144,12 +154,12 @@ class RobotVPR:
             match_found=self.ALL_TRUE
         return find_vpr_performance_metrics(match_found,self.y,self.match_exists,verbose=verbose);
     
-    def plot_PRcurve(self):
+    def plot_PRcurve(self,ax=None):
         '''
         Plot precision-recall curve of VPR technique
         '''
         p,r,_,_,_,_,_=self.compute_PRcurve_metrics()
-        return plot_PR(r,p);
+        return plot_PR(r,p,ax);
     
     def plot_cl_vs_bl_PRcurve(self,y_pred,ax=None,fig=None):        
         '''
@@ -222,7 +232,7 @@ class RobotVPR:
             ax.scatter(self.qry.x[tp],self.qry.y[tp],color='g',marker='.',label='TP');
             ax.scatter(self.qry.x[fp],self.qry.y[fp],color='r',marker='x',label='FP');
             ax.legend();
-            ax.set_xlabel('x'); ax.set_ylabel('y');
+            ax.set_xlabel('x (m)'); ax.set_ylabel('y (m)');
             ax.set_title('TP and FP locations along query route');
         else:
             print('Info: plot_ypred: query run is not GEOTAGGED, cannot plot route')
@@ -252,8 +262,10 @@ class RobotVPR:
             error = self.ref_error
         elif self.units == 'frames':
             error = self.frame_error
+        elif self.units == 'degrees':
+            error = self.yaw_error
         else:
-            print('Error: robotvpr.py: plot_error_along_route: units needs to be either m or frames');
+            print('Error: robotvpr.py: plot_error_along_route: units needs to be either m, frames or degrees');
             return
         ax.scatter(qrys[fn],error[fn],marker='.',color='lightblue',label='FN (removed)')
         ax.scatter(qrys[tn],error[tn],marker='.',color='lightgray',label='TN (removed)')
@@ -261,13 +273,30 @@ class RobotVPR:
         ax.scatter(qrys[fp],error[fp],marker='.',color='r',label='FP (retained)');
         ax.axhline(self.tolerance,ls='dashed',label='Tolerance')
         ax.set_xlabel('query number');
-        ax.set_ylabel('localisation error (m)');
+        ax.set_ylabel('error ({0})'.format(self.units));
         ax.set_title('Error along the query route - showing retained (predicted good), and removed points');
         ax.legend();
         return fig,ax;
     
+    def setup_G(self,tol=1):
+        self.G = create_gradient_matrix(self.S)
+        self.G_match = find_best_match_G(self.G)
+        self.best_match_G = find_best_match_distances_G(self.G)
+        self.consensus = find_consensus(self.S,self.G,tolerance=tol)
+        return
+    
+    def create_weighted_matrix(self,pred,w=0.99):
+        self.Sw = self.S.copy()
+        qrys = np.arange(self.num_qrys, dtype='uint')
+        d_new = self.best_match_S - w * (self.best_match_S - self.best_match_S.min())
+        # TODO: vectorise
+        for q in qrys:
+            if (pred[q] == True):
+                self.Sw[self.best_match[q], q] = d_new[q]
+        return self.Sw
+    
     def __repr__(self):  # Return a string containing a printable representation of an object.
-        return f"{self.__class__.__name__}(ref={self.ref.folder},qry={self.qry.folder})"
+        return f"{self.__class__.__name__}(ref={self.ref.description},qry={self.qry.description})"
     
 
 class RobotVPR_fromS(RobotVPR):
@@ -286,18 +315,10 @@ class RobotVPR_fromS(RobotVPR):
         self.best_match = find_best_match(self.S)
         self.best_match_S = find_best_match_distances(self.S)
         self.ALL_TRUE = np.full(self.num_qrys,True,dtype='bool')
-        
-        #if self.ref.GEO_TAGGED and self.qry.GEO_TAGGED:
-            #self.gt_distances = cdist(self.ref.xy, self.qry.xy)
-            #self.gt_match = self.gt_distances.argmin(axis=0)          # index of the closest reference for each query
         self.frame_error = abs(self.best_match-self.gt_match)     # number of frames between VPR match and actual match
-            #self.abs_error = compute_distance_in_m(self.ref.xy[gt_match],self.qry.xy)              # distance in m between matching points
-            #self.min_error = self.gt_distances.min(axis=0)
-            #self.abs_error = self.gt_distances[self.best_match, np.arange(self.num_qrys)]
-            #self.ref_error = np.diag(cdist(self.ref.xy[self.gt_match],self.ref.xy[self.best_match])) # distance in m along reference route only
-        
         # TODO: rework when matches do not exist for each query
         self.match_exists = self.ALL_TRUE
+        self.assess_performance();
         pass
     
     def plot_ypred(self,y_pred,ax=None,fig=None):
