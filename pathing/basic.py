@@ -111,6 +111,11 @@ def calc_yaw_error(ego, goal) -> float:
     error_yaw       = normalize_angle(np.arctan2(rel_y[0], rel_x[0]))
     return error_yaw
 
+def calc_y_error(ego, goal) -> float:
+    # Heading error (angular):
+    rel_x, rel_y    = global2local(ego, np.array([goal[0]]), np.array([goal[1]])) # Convert to local coordinates
+    return rel_y[0]
+
 def calc_nearest_zone(zone_indices, current_ind, _len):
     return zone_indices[np.argmin(m2m_dist(current_ind, np.transpose(np.matrix(zone_indices))))] % _len
         
