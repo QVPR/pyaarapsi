@@ -3,6 +3,11 @@ import numpy as np
 import cv2
 from enum import Enum
 from tqdm.auto import tqdm
+import json
+from ..pathing.basic import calc_path_stats
+from ..vpr_classes.netvlad import NetVLAD_Container
+from ..vpr_classes.hybridnet import HybridNet_Container
+from typing import Union, List, Optional
 
 # For image processing type
 class FeatureType(Enum):
@@ -11,6 +16,7 @@ class FeatureType(Enum):
     NETVLAD             = 3
     HYBRIDNET           = 4
     ROLLNORM            = 5
+    NORM                = 6
 
 class ViewMode(Enum):
     FORWARD  	        = 0
@@ -34,6 +40,22 @@ class SVM_Tolerance_Mode(Enum):
     DISTANCE            = 0
     FRAME               = 1
 
+def filter_dataset(dataset_in):
+    try:
+        filters = json.loads(str(dataset_in['params']['filters']).replace('\'', '"'))
+        if 'distance' in filters.keys():
+            distance_threshold      = filters['distance']
+            xy                      = np.transpose(np.stack([dataset_in['dataset']['px'].flatten(), dataset_in['dataset']['py'].flatten()]))
+            xy_sum, xy_len          = calc_path_stats(xy)
+            filt_indices            = [np.argmin(np.abs(xy_sum-(distance_threshold*i))) for i in np.arange(int((1/distance_threshold) * xy_len))]
+            dataset_out             = {'params': dataset_in['params']}
+            dataset_out['dataset']  = {key: dataset_in['dataset'][key][filt_indices] for key in dataset_in['dataset'].keys()}
+            return dataset_out
+        else:
+            return dataset_in
+    except:
+        return dataset_in
+
 def discretise(dict_in, metrics=None, mode=None, keep='first'):
     if not len(dict_in):
         raise Exception("[filter] Full dictionary not yet built.")
@@ -53,6 +75,9 @@ def discretise(dict_in, metrics=None, mode=None, keep='first'):
         (filtered['odom'][mode], groupings) = roundSpatial(filtered['odom'][mode], metrics)
     #elif mode in []: #TODO
     #    pass
+    else:
+        return None
+    
     filtered = keep_operation(filtered, groupings, keep) # remove duplications
     return filtered
 
@@ -97,6 +122,8 @@ def keep_operation(d_in, groupings, mode='first'):
             index = 0
         elif mode=='random': 
             index = int(np.random.rand() * (len(group) - 1))
+        else:
+            continue
         # for first and random modes:
         index_to_keep = group[index] + 1 # +1 accounts for label
         groups_store.append(np_dict_to_list[index_to_keep, :])
@@ -111,7 +138,7 @@ def keep_operation(d_in, groupings, mode='first'):
     if ind == -1: raise Exception("Fatal")
     cropped_reorder = cropped_store[cropped_store[:,-1].argsort()]
     d_in.pop('times')
-    d_in['times'] = cropped_reorder[:,c]
+    d_in['times'] = cropped_reorder[:,ind]
 
     # convert back to dictionary and update old dictionary entries
     for bigkey in ['odom', 'img_feats']:
@@ -123,35 +150,45 @@ def keep_operation(d_in, groupings, mode='first'):
                         d_in[bigkey][midkey][i[2]] = np.stack(cropped_reorder[:,c],axis=0)
     return d_in
 
-def getFeat(im, fttypes, dims, use_tqdm=False, nn_hybrid=None, nn_netvlad=None):
+def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType, List[FeatureType]], dims: list, 
+            use_tqdm: bool = False, nn_hybrid: Optional[HybridNet_Container] = None, 
+            nn_netvlad: Optional[NetVLAD_Container] = None) -> Union[np.ndarray, List[np.ndarray]]:
     ft_list     = []
-    req_mode    = isinstance(im, list)
-
-    for fttype in fttypes:
-        if fttype in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.ROLLNORM]:
-            if not req_mode:
-                im = [im]
+    if not isinstance(im, list):
+        _im = [im]
+    else:
+        _im = im
+    if not isinstance(fttypes, list):
+        _fttypes = [fttypes]
+    else:
+        _fttypes = fttypes
+    for fttype in _fttypes:
+        if fttype in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.ROLLNORM, FeatureType.NORM]:
             ft_ready_list = []
-            if use_tqdm: iter_obj = tqdm(im)
-            else: iter_obj = im
+            if use_tqdm: 
+                iter_obj = tqdm(_im)
+            else: 
+                iter_obj = _im
             for i in iter_obj:
                 imr = cv2.resize(i, dims)
                 ft  = cv2.cvtColor(imr, cv2.COLOR_RGB2GRAY)
                 if fttype == FeatureType.PATCHNORM:
                     ft = patchNormaliseImage(ft, 8)
                 elif fttype == FeatureType.ROLLNORM:
-                    ft = rollNormaliseImage(ft, 8)
+                    ft = rollNormaliseImage(ft, 2)
+                elif fttype == FeatureType.NORM:
+                    ft = normaliseImage(ft)
                 ft_ready_list.append(ft.flatten())
             if len(ft_ready_list) == 1:
                 ft_ready = ft_ready_list[0]
             else:
                 ft_ready = np.stack(ft_ready_list)
-        elif fttype == FeatureType.HYBRIDNET:
-            ft_ready = nn_hybrid.getFeat(im, use_tqdm=use_tqdm)
-        elif fttype == FeatureType.NETVLAD:
-            ft_ready = nn_netvlad.getFeat(im, use_tqdm=use_tqdm)
+        elif fttype == FeatureType.HYBRIDNET and not nn_hybrid is None:
+            ft_ready = nn_hybrid.getFeat(_im, use_tqdm=use_tqdm)
+        elif fttype == FeatureType.NETVLAD and not nn_netvlad is None:
+            ft_ready = nn_netvlad.getFeat(_im, use_tqdm=use_tqdm)
         else:
-            raise Exception("[getFeat] fttype not recognised.")
+            raise Exception("[getFeat] fttype could not be handled.")
         ft_list.append(ft_ready)
     if len(ft_list) == 1: 
         return ft_list[0]
@@ -185,6 +222,17 @@ def patchNormaliseImage(img, patchLength):
 
     return img2   
 
+def normaliseImage(img):
+    img1 = img.astype(float)
+    img2 = img1.copy()
+
+    _mean = np.mean(img2.flatten())
+    _std  = np.std(img2.flatten())
+    if _std == 0:
+        _std = 0.1
+        
+    return (img - _mean) / _std
+
 def rollNormaliseImage(img, kernel_size):
 # take input image and use a rolling kernel to noramlise
 # returns: rolling-kernel-normalised image
@@ -199,6 +247,7 @@ def rollNormaliseImage(img, kernel_size):
     
     k_options       = list(range(-kernel_size,kernel_size+1,1))
     rolled_stack    = np.dstack([np.roll(np.roll(img2,i,0),j,1) for j in k_options for i in k_options])
-    rollnormed      = 255 - (np.mean(rolled_stack, 2) / np.std(rolled_stack, 2))
+    #rollnormed      = 255 - (np.mean(rolled_stack, 2) / np.std(rolled_stack, 2))
+    rollnormed      = np.mean(rolled_stack, 2)
 
     return rollnormed  

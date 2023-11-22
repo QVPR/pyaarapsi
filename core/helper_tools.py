@@ -6,17 +6,54 @@ import numpy as np
 import pickle
 from fastdist import fastdist
 from enum import Enum
+import matplotlib
+from matplotlib.backend_bases import FigureCanvasBase
+import matplotlib.pyplot as plt
+from typing import Optional, Callable, TypeVar, Protocol
 
 class Bool(Enum):
     UNSET = -1
     FALSE = 0
     TRUE  = 1
 
+class SupportsCanvas(Protocol):
+    canvas: FigureCanvasBase
+
+def plt_pause(interval: float, fig: SupportsCanvas):
+    '''
+    Matplotlib Helper Function to handle drawing events
+    Awesome for animating plots because it doesn't let matplotlib steal focus! :D
+    '''
+    backend = plt.rcParams['backend']
+    if backend in matplotlib.rcsetup.interactive_bk:
+        if fig.canvas.figure.stale: #type: ignore
+            fig.canvas.draw()
+        fig.canvas.start_event_loop(interval) #type: ignore
+        return
+
+def roll(img: np.ndarray, i: int, fill=0) -> np.ndarray:
+    if abs(i) > img.shape[1]:
+            return np.ones(img.shape) * fill
+    if i == 0:
+        return img
+    i = i * -1 # set direction to be consistent with np.roll
+    _m = img[:,np.max([i, 0]):np.min([i+img.shape[1],img.shape[1]])]
+    _e = np.ones((img.shape[0], np.max([i,0]))) * fill
+    _s = np.ones((img.shape[0], img.shape[1] - np.min([i+img.shape[1],img.shape[1]]))) * fill
+    img_out = np.concatenate([_s, _m, _e], axis=1)
+    return np.array(img_out, dtype=img.dtype)
+
 def m2m_dist(arr_1, arr_2, flatten=False):
     out = fastdist.matrix_to_matrix_distance(np.matrix(arr_1), np.matrix(arr_2), fastdist.euclidean, "euclidean")
     if flatten:
         out = out.flatten()
     return out
+
+def p2p_dist_2d(xy1, xy2, _sqrt=True):
+    _d = np.square(xy1[0]-xy2[0]) + np.square(xy1[1]-xy2[1])
+    if _sqrt:
+        return np.sqrt(_d)
+    return _d
 
 def try_load_var(path: str, var_name: str) -> object:
     try:
@@ -28,9 +65,11 @@ def try_load_var(path: str, var_name: str) -> object:
 def save_var(path: str, var: object, var_name: str) -> None:
     np.savez(path+"/"+var_name, **{var_name: var})
 
-def normalize_angle(angle: float, iter=False) -> float:
+floatOrArrayOfFloats = TypeVar("floatOrArrayOfFloats", float, np.ndarray)
+
+def normalize_angle(angle: floatOrArrayOfFloats) -> floatOrArrayOfFloats:
     # Normalize angle [-pi, +pi]
-    if iter:
+    if isinstance(angle, np.ndarray):
         angle[angle>np.pi] = angle[angle>np.pi] - 2*np.pi
         angle[angle<-np.pi] = angle[angle<-np.pi] + 2*np.pi
         return angle
@@ -58,6 +97,18 @@ def angle_wrap(angle_in: float, mode: str = 'DEG') -> float:
         return ((angle_in + np.pi) % (np.pi * 2)) - np.pi
     else:
         raise Exception('Mode must be either DEG or RAD.')
+    
+def r2d(angle_in: float) -> float:
+    '''
+    Convert radians to degrees
+    '''
+    return angle_in * 180 / np.pi
+    
+def d2r(angle_in: float) -> float:
+    '''
+    Convert degrees to radians
+    '''
+    return angle_in * np.pi / 180
 
 def np_ndarray_to_uint8_list(ndarray: np.ndarray) -> list:
     '''
@@ -100,7 +151,7 @@ class Timer:
             times.append(abs(self.points[-1] - self.points[0]))
         return times
 
-    def show(self, name: str = None, thresh: float = 0.001) -> None:
+    def show(self, name: Optional[str] = None, thresh: float = 0.001) -> None:
         times = self.calc(thresh)
         string = str(["%8.4f" % i for i in times]).replace(' ','')
         if not (name is None):
@@ -124,8 +175,12 @@ class Timer:
 def formatException(dump: bool = False) -> str:
     # https://www.adamsmith.haus/python/answers/how-to-retrieve-the-file,-line-number,-and-type-of-an-exception-in-python
     exception_type, e, exception_traceback = sys.exc_info()
-    filename = exception_traceback.tb_frame.f_code.co_filename
-    line_number = exception_traceback.tb_lineno
+    if not exception_traceback is None:
+        filename = exception_traceback.tb_frame.f_code.co_filename
+        line_number = exception_traceback.tb_lineno
+    else:
+        filename = '<unknown>'
+        line_number = '<unknown>'
     traceback_list = traceback.extract_tb(exception_traceback)
     if dump:
         traceback_string = str(traceback.format_exc())
@@ -148,7 +203,7 @@ def getArrayDetails(arr: np.ndarray) -> str:
     string_to_ret = "%s%s %s<%s<%s [%s]" % (_shape, _type, _min, _mean, _max, _range)
     return string_to_ret
 
-def combine_dicts(dicts: list, cast: object = list) -> dict:
+def combine_dictionaries(dicts: list, cast: Callable = list) -> dict:
     keys = []
     for d in dicts:
         keys.extend(list(d.keys()))

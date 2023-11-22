@@ -2,14 +2,18 @@ from os import listdir, stat
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from typing import List, Optional
 
-
-def gen_df(path, file_list=None, check_dataset=False):
+def gen_df(path, file_list: Optional[List[str]] = None, check_dataset=False):
     if file_list is None:
         file_list = listdir(path)
+
+    if file_list is None:
+        raise Exception
+    
     dataset_dict = []
 
-    for file in tqdm(file_list, disable = ~check_dataset):
+    for file in tqdm(file_list, disable = not check_dataset):
         try:
             data  = np.load(path+file, allow_pickle=True)
         except:
@@ -29,9 +33,6 @@ def gen_df(path, file_list=None, check_dataset=False):
             except EOFError:
                 d.update(dict(
                     corrupted = True,
-                    length = None,
-                    start_time = 0,
-                    end_time = 0,
                 ))
         d.update(dict(
             **dict(data['params'].item())

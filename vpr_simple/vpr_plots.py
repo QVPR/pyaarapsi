@@ -156,9 +156,9 @@ def updateCntrFigBokeh(doc_frame, svm_field_msg, state, update_contour):
     ylims = [svm_field_msg.data.y_min, svm_field_msg.data.y_max, svm_field_msg.data.y_max - svm_field_msg.data.y_min]
 
     colours = ['red', 'orange', 'blue', 'green']
-    color = colours[2*int(state.mStateBin) + int(state.data.gt_state == 1)]
+    color = colours[2*int(state.svm_class) + int(state.gt_class)]
     
-    to_stream = dict(x=[state.factors[0]], y=[state.factors[1]], fill_color=[color])
+    to_stream = dict(x=[state.svm_factors[0]], y=[state.svm_factors[1]], fill_color=[color])
     doc_frame.fig_cntr_handles['data'].data_source.stream(to_stream, rollover = 100)
 
     if not update_contour:

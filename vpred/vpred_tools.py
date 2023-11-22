@@ -111,7 +111,7 @@ def find_vpr_performance_metrics(match_found,in_tolerance,match_exists,verbose=F
          (not issubclass(in_tolerance.dtype.type, np.bool_)) or
           (not issubclass(match_exists.dtype.type, np.bool_))):
         print('ERROR find_vpr_performance_metrics: inputs must all be boolean arrays')
-        return
+        return []
 
     no_match_found = np.logical_not(match_found).astype('int')
     not_in_tolerance = np.logical_not(in_tolerance).astype('int')

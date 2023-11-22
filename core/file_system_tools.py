@@ -52,7 +52,7 @@ def check_structure(root, ft, at=False, skip=[]):
         else: dir_paths.append(dir.path)
     return True, dir_paths
 
-def find_shared_root(dirs):
+def find_shared_root(dirs: list):
     paths       = []
     lengths     = []
     depth       = 0
@@ -75,7 +75,7 @@ def find_shared_root(dirs):
                 break
 
         if add:
-            built_root += ("/" + path[dir_level])
+            built_root += ("/" + paths[0][dir_level])
             depth += 1
     
     dist = max(lengths) - depth

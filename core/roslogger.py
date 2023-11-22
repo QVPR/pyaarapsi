@@ -7,6 +7,7 @@ from hashlib import md5
 from enum import Enum
 from .enum_tools import enum_name, enum_value, enum_get
 from .vars import C_I_GREEN, C_I_YELLOW, C_I_RED, C_I_BLUE, C_RESET, C_CLEAR
+from typing import Optional, Callable
 
 ##############################################################################
 ############# FROM ROSPY.CORE ################################################
@@ -15,17 +16,14 @@ from .vars import C_I_GREEN, C_I_YELLOW, C_I_RED, C_I_BLUE, C_RESET, C_CLEAR
 
 try:
     import rospy
-
-    def is_initialized():
-        return rospy.core._client_ready
-    
+    from rospy.core import _client_ready
     ROSPY_ACCESSIBLE = True
 except:
-    
-    def is_initialized():
-        return False
-    
+    _client_ready = False
     ROSPY_ACCESSIBLE = False
+
+def is_initialized():
+    return _client_ready
 
 class LoggingThrottle(object):
 
@@ -124,33 +122,33 @@ class LogLevel(Enum):
     FATAL       = 50
 
 def log_type_to_level(_type):
-    if not isinstance(_type):
-        _type = enum_name(enum_get(_type, LogType))
+    if not isinstance(_type, LogType):
+        _type = enum_get(_type, LogType).name
     return enum_get(_type, LogLevel)
 
 def log_level_to_type(_level):
     if not isinstance(_level, LogLevel):
-        _level = enum_name(enum_get(_level, LogLevel))
+        _level = enum_get(_level, LogLevel).name
     return enum_get(_level, LogType)
 
 roslog_rospy_types = {1: 'debug', 2: 'info', 4: 'warn', 8: 'error', 16: 'critical'}
 roslog_colours     = {1: C_I_GREEN, 1.5: C_I_BLUE, 2: '', 4: C_I_YELLOW, 8: C_I_RED, 16: C_I_RED}
 
-def _roslogger(logfunc, logtype, ros, text, no_stamp=True):
+def _roslogger(logfunc: Callable, logtype: LogType, ros: bool, text: str, no_stamp: bool = True):
     if ros:
         if no_stamp:
-            text = '\r' + C_CLEAR + '[' + enum_name(logtype) + '] ' + text
+            text = '\r' + C_CLEAR + '[' + logtype.name + '] ' + text
         logfunc(text)
         return is_initialized()
     else:
-        text = roslog_colours[enum_value(logtype)] + '[' + enum_name(logtype) + '] ' + text
+        text = roslog_colours[logtype.value] + '[' + logtype.name + '] ' + text
         if no_stamp:
             text = '\r' + C_CLEAR + text  + C_RESET
         logfunc(text)
         return True
 
-def roslogger(text, logtype: LogType = LogType.INFO, throttle: float = None, ros: bool =True, name: str = None, no_stamp: bool = True,
-                 once: bool = False, throttle_identical: bool = False, log_level: LogType = None):
+def roslogger(text, logtype: LogType = LogType.INFO, throttle: Optional[float] = None, ros: bool = True, name: Optional[str] = None, no_stamp: Optional[bool] = True,
+                 once: bool = False, throttle_identical: bool = False, log_level: Optional[LogType] = None):
     global ROSPY_ACCESSIBLE
     '''
     Print function helper; overrides rospy.core._base_logger
@@ -162,12 +160,12 @@ def roslogger(text, logtype: LogType = LogType.INFO, throttle: float = None, ros
     Inputs:
     - text:                 text string to be printed, must be pre-formatted (can't be done inside roslogger)
     - logtype:              LogType enum type {default: LogType.INFO}; Define which print type (debug, info, etc...) is requested
-    - throttle:             float type {default: None}; Number of seconds of pause between each message (rospy logging only)
+    - throttle:             float type (default: 0); rate to limit publishing contents at if repeatedly executed
     - ros:                  bool type {default: True}; Whether to use rospy logging or default to print
     - name:                 str type {default: None}; If provided as str, prepends a label in the format [name] to the text message (will appear after log level tags)
     - no_stamp:             bool type {default: True}; Whether to remove generic rospy timestamp
-    - once:                 bool type {defualt: False}; Whether to only send once (rospy logging only)
-    - throttle_identical:   bool type {default: False}; Whether to only throttle if message is identical (rospy logging only)
+    - once:                 bool type {defualt: False}; Whether to only send once
+    - throttle_identical:   bool type {default: False}; Whether to only throttle if message is identical
     - log_level:            LogType enumtype {default: None}; Can be passed to override global logging level
 
     Returns:
@@ -179,48 +177,57 @@ def roslogger(text, logtype: LogType = LogType.INFO, throttle: float = None, ros
     if isinstance(name, str):
         text = '[' + name + '] ' + text
 
-    rospy_logger = logging.getLogger('rosout')
-    if log_level is None:
-        log_level = log_level_to_type(rospy_logger.level)
-
     if not ROSPY_ACCESSIBLE:
         ros = False
 
+    if no_stamp is None:
+        no_stamp = False
+        
+    logfunc = print
+
     if ros:
+        rospy_logger = logging.getLogger('rosout')
+        if log_level is None:
+            try:
+                log_level = log_level_to_type(rospy_logger.level)
+            except:
+                log_level = LogType.INFO
         if enum_value(logtype) in roslog_rospy_types.keys():
-            logfunc = getattr(rospy_logger, roslog_rospy_types[enum_value(logtype)])
+            logfunc = getattr(rospy_logger, roslog_rospy_types[int(logtype.value)])
         else:
-            ros     = False
-            logfunc = print
-    else:
-        logfunc     = print
+            ros = False
     
     if not ros:
+        if log_level is None:
+            log_level = LogType.INFO
         # if the requested log level is below the print threshold (i.e. it shouldn't be displayed):
         if enum_value(logtype) < enum_value(log_level):
             return False
+    
+    _currentframe = inspect.currentframe()
+    assert _currentframe != None
+    assert _currentframe.f_back != None
+    caller_id = _frame_to_caller_id(_currentframe.f_back.f_back)
 
     if once:
-        caller_id = _frame_to_caller_id(inspect.currentframe().f_back.f_back)
         if _logging_once(caller_id):
             return _roslogger(logfunc, logtype, ros, text, no_stamp=no_stamp)
     elif throttle_identical:
-        caller_id = _frame_to_caller_id(inspect.currentframe().f_back.f_back)
         throttle_elapsed = False
         if throttle is not None:
             throttle_elapsed = _logging_throttle(caller_id, throttle)
         if _logging_identical(caller_id, text) or throttle_elapsed:
             return _roslogger(logfunc, logtype, ros, text, no_stamp=no_stamp)
     elif throttle:
-        caller_id = _frame_to_caller_id(inspect.currentframe().f_back.f_back)
         if _logging_throttle(caller_id, throttle):
             return _roslogger(logfunc, logtype, ros, text, no_stamp=no_stamp)
     else:
         return _roslogger(logfunc, logtype, ros, text, no_stamp=no_stamp)
     return False
 
-def _base_logger(msg, args, kwargs, throttle=None,
-                 throttle_identical=False, level=None, once=False):
+
+def _base_logger(msg, args, kwargs, level: str, throttle: Optional[float] = None,
+                 throttle_identical: bool = False, once: bool = False):
 
     rospy_logger = logging.getLogger('rosout')
     name = kwargs.pop('logger_name', None)
@@ -228,13 +235,16 @@ def _base_logger(msg, args, kwargs, throttle=None,
         rospy_logger = rospy_logger.getChild(name)
     logfunc = getattr(rospy_logger, level)
 
+    _currentframe = inspect.currentframe()
+    assert _currentframe != None
+    assert _currentframe.f_back != None
+    caller_id = _frame_to_caller_id(_currentframe.f_back.f_back)
+
     if once:
-        caller_id = _frame_to_caller_id(inspect.currentframe().f_back.f_back)
         if _logging_once(caller_id):
             logfunc(msg, *args, **kwargs)
             return is_initialized()
     elif throttle_identical:
-        caller_id = _frame_to_caller_id(inspect.currentframe().f_back.f_back)
         throttle_elapsed = False
         if throttle is not None:
             throttle_elapsed = _logging_throttle(caller_id, throttle)
@@ -242,7 +252,6 @@ def _base_logger(msg, args, kwargs, throttle=None,
             logfunc(msg, *args, **kwargs)
             return is_initialized()
     elif throttle:
-        caller_id = _frame_to_caller_id(inspect.currentframe().f_back.f_back)
         if _logging_throttle(caller_id, throttle):
             logfunc(msg, *args, **kwargs)
             return is_initialized()

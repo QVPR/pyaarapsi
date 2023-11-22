@@ -36,7 +36,7 @@ def convert_img_to_uint8(img_in, resize=None, dstack=True, make_copy=True):
         _max      = np.max(img)
         _img_norm = (img - _min) / (_max - _min)
         img       = np.array(_img_norm * 255, dtype=np.uint8)
-    if not (resize is None):
+    if not resize is None:
         if len(img.shape) == 1: # vector
             img = np.reshape(img, (int(np.sqrt(img.shape[0])),)*2)
         img = cv2.resize(img, resize, interpolation = cv2.INTER_AREA)
@@ -58,7 +58,7 @@ def apply_icon(img_in, position, icon, make_copy=True):
     # Extract slice of image to insert icon on-top:
     img_slice           = img[start_row:end_row, start_col:end_col, :]
     
-    icon_mask_inv       = cv2.inRange(icon, (50,50,50), (255,255,255))  # get background, white region (https://docs.opencv.org/3.4/da/d97/tutorial_threshold_inRange.html)
+    icon_mask_inv       = cv2.inRange(src=icon, lowerb=np.array([50,50,50]), upperb=np.array([255,255,255]))  # get background, white region (https://docs.opencv.org/3.4/da/d97/tutorial_threshold_inRange.html)
     icon_mask           = 255 - icon_mask_inv                           # invert background to get shape
     icon_mask_stack_inv = cv2.merge([icon_mask_inv, icon_mask_inv, icon_mask_inv]) / 255    # stack into rgb layers, convert to range 0.0 -> 1.0
     icon_mask_stack     = cv2.merge([icon_mask, icon_mask, icon_mask]) / 255                # stack into rgb layers, convert to range 0.0 -> 1.0
@@ -97,7 +97,7 @@ def makeImage(query_raw, match_raw, icon_dict):
             # Add Icon:
             img_slice = query_img_lab[-1 - icon_size - icon_dist:-1 - icon_dist, -1 - icon_size - icon_dist:-1 - icon_dist, :]
             # https://docs.opencv.org/3.4/da/d97/tutorial_threshold_inRange.html
-            icon_mask_inv = cv2.inRange(icon_to_use, (50,50,50), (255,255,255)) # get border (white)
+            icon_mask_inv = cv2.inRange(src=icon_to_use, lowerb=np.array([50,50,50]), upperb=np.array([255,255,255])) # get border (white)
             icon_mask = 255 - icon_mask_inv # get shape
             icon_mask_stack_inv = cv2.merge([icon_mask_inv, icon_mask_inv, icon_mask_inv]) / 255 # stack into rgb layers, binary image
             icon_mask_stack = cv2.merge([icon_mask, icon_mask, icon_mask]) / 255 # stack into rgb layers, binary image

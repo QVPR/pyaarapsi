@@ -1,44 +1,42 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import rospy
+from rospy.impl.rosout import _rospy_to_logging_levels
+import genpy
 import rosbag
 import logging
 import numpy as np
 from enum import Enum
 
-import cv2
-from cv_bridge import CvBridge
-from cv_bridge.boost.cv_bridge_boost import cvtColor2
-
 from tqdm.auto import tqdm
 
 from std_msgs.msg               import String
-from geometry_msgs.msg          import Quaternion, Pose, PoseWithCovariance, PoseStamped
-from sensor_msgs.msg            import Image, CompressedImage
+from geometry_msgs.msg          import Quaternion, Pose, PoseWithCovariance, PoseStamped, Twist, TwistStamped
 
 from tf.transformations         import quaternion_from_euler, euler_from_quaternion
 from .helper_tools              import formatException
-from .enum_tools                import enum_name, enum_get, enum_value
 from .roslogger                 import LogType, roslogger
+from .image_transforms          import *
 
-def compressed2np(msg: CompressedImage, encoding: str = "passthrough") -> np.ndarray:
-    buf     = np.ndarray(shape=(1, len(msg.data)), dtype=np.uint8, buffer=msg.data)
-    img_in  = cv2.imdecode(buf, cv2.IMREAD_UNCHANGED)
-    if encoding == "passthrough":
-        img_out = img_in
-    else:
-        img_out = cvtColor2(img_in, "bgr8", encoding)
-    return img_out
+from typing import List, Dict, Union, Optional, Callable, TypeVar, Generic, Generator, Tuple
 
-def np2compressed(img_in: np.ndarray, encoding: str = "jpeg", add_stamp: bool = True):
-    msg_out = CompressedImage()
-    msg_out.format = encoding
-    msg_out.data = np.array(cv2.imencode('.' + encoding, img_in)[1]).tostring()
-    if add_stamp:
-        msg_out.header.stamp = rospy.Time.now()
-    return msg_out
+def open_rosbag(bag_path: str, topics: List[str]) -> Generator[Tuple[str, genpy.Message, rospy.rostime.Time], None, None]:
+    '''
+    Open a rosbag in read-mode as a generator and yield topics
+    This method hides away some of the mean-ness of reading rosbags and guarantees type.
 
-def raw2np(msg: Image, bridge: CvBridge) -> np.ndarray:
-    return bridge.imgmsg_to_cv2(msg)
+    Inputs:
+    - bag_path:     str type; full path to rosbag
+    - topics:       list type; list of strings where each string is a topic to extract from the rosbag
+    Yields:
+    Tuple[str, genpy.Message, rospy.rostime.Time] (contents: ROS topic, ROS message, ROS timestamp)
+    '''
+    ros_bag = rosbag.Bag(bag_path, 'r')
+
+    for i in ros_bag.read_messages(topics=topics):
+        assert isinstance(i, rosbag.bag.BagMessage)
+        yield i[0], i[1], i[2]
 
 def pose_covariance_to_stamped(pose: PoseWithCovariance, frame_id='map') -> PoseStamped:
     '''
@@ -55,21 +53,33 @@ def pose_covariance_to_stamped(pose: PoseWithCovariance, frame_id='map') -> Pose
     out.header.frame_id = frame_id
     return out
 
-def pose2xyw(pose: Pose, stamped=False):
+def pose2xyw(pose: Union[Pose, PoseStamped]) -> List[float]:
     '''
     Extract x, y, and yaw from a geometry_msgs/Pose object
 
     Inputs:
     - pose:     geometry_msgs/Pose[Stamped] ROS message object
-    - stamped:  bool type {default: False}; if true, extracts Pose from PoseStamped
     Returns:
     type list; [x, y, yaw]
     '''
-    if stamped:
+    if isinstance(pose, PoseStamped):
         pose = pose.pose
     return [pose.position.x, pose.position.y, yaw_from_q(pose.orientation)]
 
-def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, use_tqdm=True):
+def twist2xyw(twist: Union[Twist, TwistStamped]) -> List[float]:
+    '''
+    Extract dx, dy, and dyaw from a geometry_msgs/Twist object
+
+    Inputs:
+    - twist:    geometry_msgs/Twist[Stamped] ROS message object
+    Returns:
+    type list; [dx, dy, dyaw]
+    '''
+    if isinstance(twist, TwistStamped):
+        twist = twist.twist
+    return [twist.linear.x, twist.linear.y, twist.angular.z]
+
+def process_bag(bag_path: str, sample_rate: float, odom_topic: Union[str, List[str]], img_topics: List[str], printer: Callable = print, use_tqdm: bool = True) -> dict:
     '''
     Open a ROS bag and extract odometry + image topics, sampling at a specified rate.
     Data is appended by row containing the processed ROS data, stored as numpy types.
@@ -78,7 +88,7 @@ def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, us
     Inputs:
     - bag_path:     String for full file path for bag, i.e. /home/user/bag_file.bag
     - sample_rate:  Float for rate at which rosbag should be sampled
-    - odom_topic:   string for odom topic to extract
+    - odom_topic:   string or list of strings for odom topic/s to extract, if list then the order specifies order in returned data
     - img_topics:   List of strings for image topics to extract, order specifies order in returned data
     - printer:      Method wrapper for printing (default: print)
     - use_tqdm:     Bool to enable/disable use of tqdm (default: True)
@@ -89,16 +99,18 @@ def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, us
     if not bag_path.endswith('.bag'):
         bag_path += '.bag'
 
-    topic_list = [odom_topic] + img_topics
+    if not isinstance(odom_topic, list):
+        _odom_topics = [odom_topic]
+    else:
+        _odom_topics = odom_topic
+
+    topic_list = _odom_topics + img_topics
     # Read rosbag
     data = rip_bag(bag_path, sample_rate, topic_list, printer=printer, use_tqdm=use_tqdm)
 
     printer("Converting stored messages (%s)" % (str(len(data))))
-    bridge          = CvBridge()
     new_dict        = {key: [] for key in img_topics + ['px', 'py', 'pw', 'vx', 'vy', 'vw', 't']}
 
-    compress_func   = lambda msg: bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
-    raw_img_func    = lambda msg: bridge.imgmsg_to_cv2(msg, "passthrough")
     none_rows       =   0
     if len(data) < 1:
         raise Exception('No usable data!')
@@ -110,24 +122,38 @@ def process_bag(bag_path, sample_rate, odom_topic, img_topics, printer=print, us
         if None in row:
             none_rows = none_rows + 1
             continue
-        new_dict['t'].append(row[1].header.stamp.to_sec())
-        new_dict['px'].append(row[1].pose.pose.position.x)
-        new_dict['py'].append(row[1].pose.pose.position.y)
-        new_dict['pw'].append(yaw_from_q(row[1].pose.pose.orientation))
 
-        new_dict['vx'].append(row[1].twist.twist.linear.x)
-        new_dict['vy'].append(row[1].twist.twist.linear.y)
-        new_dict['vw'].append(row[1].twist.twist.angular.z)
+        new_dict['t'].append(row[-1].header.stamp.to_sec()) # get time stamp
 
+        if len(_odom_topics) == 1:
+            new_dict['px'].append(row[1].pose.pose.position.x)
+            new_dict['py'].append(row[1].pose.pose.position.y)
+            new_dict['pw'].append(yaw_from_q(row[1].pose.pose.orientation))
+
+            new_dict['vx'].append(row[1].twist.twist.linear.x)
+            new_dict['vy'].append(row[1].twist.twist.linear.y)
+            new_dict['vw'].append(row[1].twist.twist.angular.z)
+        else:
+            new_odoms = []
+            for topic in _odom_topics:
+                new_odoms.append(np.array(pose2xyw(row[1 + topic_list.index(topic)].pose.pose) + twist2xyw(row[1 + topic_list.index(topic)].twist.twist)))
+            new_odoms = np.array(new_odoms)
+            new_dict['px'].append(new_odoms[:,0])
+            new_dict['py'].append(new_odoms[:,1])
+            new_dict['pw'].append(new_odoms[:,2])
+            new_dict['vx'].append(new_odoms[:,3])
+            new_dict['vy'].append(new_odoms[:,4])
+            new_dict['vw'].append(new_odoms[:,5])
+            
         for topic in img_topics:
             if "/compressed" in topic:
-                new_dict[topic].append(compress_func(row[1 + topic_list.index(topic)]))
+                new_dict[topic].append(compressed2np(row[1 + topic_list.index(topic)]))
             else:
-                new_dict[topic].append(raw_img_func(row[1 + topic_list.index(topic)]))
+                new_dict[topic].append(raw2np(row[1 + topic_list.index(topic)]))
     printer("%0.2f%% of %d rows contained NoneType; these were ignored." % (100 * none_rows / len(data), len(data)))
     return {key: np.array(new_dict[key]) for key in new_dict}
 
-def rip_bag(bag_path, sample_rate, topics_in, printer=print, use_tqdm=True):
+def rip_bag(bag_path: str, sample_rate: float, topics_in: List[str], timing: int = -1, printer: Callable = print, use_tqdm: bool = True) -> list:
     '''
     Open a ROS bag and store messages from particular topics, sampling at a specified rate.
     If no messages are received, list is populated with NoneType (empties are also NoneType)
@@ -139,6 +165,7 @@ def rip_bag(bag_path, sample_rate, topics_in, printer=print, use_tqdm=True):
     - bag_path:     String for full file path for bag, i.e. /home/user/bag_file.bag
     - sample_rate:  Float for rate at which rosbag should be sampled
     - topics_in:    List of strings for topics to extract, order specifies order in returned data (time column added to the front)
+    - timing:       int type; index of topics_in for topic to use as timekeeper
     - printer:      Method wrapper for printing (default: print)
     - use_tqdm:     Bool to enable/disable use of tqdm (default: True)
     Returns:
@@ -149,26 +176,28 @@ def rip_bag(bag_path, sample_rate, topics_in, printer=print, use_tqdm=True):
     logged_t       = -1
     num_topics     = len(topics)
     num_rows       = 0
+    dt             = 1/sample_rate
 
     # Read rosbag
     printer("Ripping through rosbag, processing topics: %s" % str(topics[1:]))
 
     row = [None] * num_topics
     with rosbag.Bag(bag_path, 'r') as ros_bag:
+        iter_obj = ros_bag.read_messages(topics=topics)
         if use_tqdm: 
-            iter_obj = tqdm(ros_bag.read_messages(topics=topics))
-        else: 
-            iter_obj = ros_bag.read_messages(topics=topics)
-        for topic, msg, timestamp in iter_obj:
+           iter_obj = tqdm(iter_obj)
+        for (topic, msg, timestamp) in iter_obj: # type: ignore
             row[topics.index(topic)] = msg
-            if logged_t == -1:
-                logged_t    = timestamp.to_sec()
-            elif timestamp.to_sec() - logged_t > 1/sample_rate:
-                row[0]      = sample_rate * num_rows
-                data.append(row)
-                row         = [None] * num_topics
-                num_rows    = num_rows + 1
-                logged_t    = timestamp.to_sec()
+            _timer = row[timing] # for linting
+            if not isinstance(_timer, genpy.Message) or _timer is None:
+                continue
+            if hasattr(_timer, 'header') and not (_timer is None):
+                if _timer.header.stamp.to_sec() - logged_t > dt:
+                    logged_t    = _timer.header.stamp.to_sec()
+                    row[0]      = (logged_t + dt/2) - ((logged_t + dt/2) % dt)
+                    data.append(row)
+                    row         = [None] * num_topics
+                    num_rows    = num_rows + 1
                 
     return data
 
@@ -183,77 +212,8 @@ def set_rospy_log_lvl(log_level: LogType = LogType.INFO):
     None
     '''
     logger = logging.getLogger('rosout')
-    log_level_rospy = int(enum_value(log_level) + 0.5)
-    logger.setLevel(rospy.impl.rosout._rospy_to_logging_levels[log_level_rospy])
-
-def imgmsgtrans(msg, transform, bridge=None):
-    '''
-    Transform ROS image data
-
-    Inputs:
-    - msg:          sensor_msgs/(Compressed)Image
-    - transform:    handle to function to be applied
-    - bridge:       CvBridge object, or none (function will initialise)
-    Returns:
-    - transformed image of type input msg
-    '''
-    if bridge is None:
-        bridge = CvBridge()
-
-    if isinstance(msg, CompressedImage):
-        img         = bridge.compressed_imgmsg_to_cv2(msg, "passthrough")
-        img_trans   = transform(img)
-        msg_trans   = bridge.cv2_to_compressed_imgmsg(img_trans, "jpeg")
-    elif isinstance(msg, Image):
-        img         = bridge.imgmsg_to_cv2(msg, "passthrough")
-        img_trans   = transform(img)
-        msg_trans   = bridge.cv2_to_imgmsg(img_trans, "bgr8")
-    else:
-        raise Exception("Type not CompressedImage or Image.")
-    return msg_trans
-
-def msg2img(msg, bridge=None):
-    '''
-    Convert ROS msg to cv2 image
-
-    Inputs:
-    - msg:      sensor_msgs/(Compressed)Image
-    - bridge:   CvBridge object, or none (function will initialise)
-    Returns:
-    - converted image as cv2 array
-    '''
-    if bridge is None:
-        bridge = CvBridge()
-
-    if isinstance(msg, CompressedImage):
-        img         = bridge.compressed_imgmsg_to_cv2(msg, "passthrough")
-    elif isinstance(msg, Image):
-        img         = bridge.imgmsg_to_cv2(msg, "passthrough")
-    else:
-        raise Exception("Type not CompressedImage or Image.")
-    return img
-
-def img2msg(img, mode, bridge=None):
-    '''
-    Convert cv2 img to ROS msg
-
-    Inputs:
-    - img:      cv2 image array
-    - mode:     string, either 'Image' or 'CompressedImage'
-    - bridge:   CvBridge object, or none (function will initialise)
-    Returns:
-    - sensor_msgs/(Compressed)Image
-    '''
-    if bridge is None:
-        bridge = CvBridge()
-
-    if mode == 'CompressedImage':
-        msg = bridge.cv2_to_compressed_imgmsg(img, "jpeg")
-    elif mode == 'Image':
-        msg = bridge.cv2_to_imgmsg(img, "bgr8")
-    else:
-        raise Exception("Mode not 'CompressedImage' or 'Image'.")
-    return msg
+    log_level_rospy = int(log_level.value + 0.5)
+    logger.setLevel(_rospy_to_logging_levels[log_level_rospy])
 
 class NodeState(Enum):
     '''
@@ -332,6 +292,7 @@ class Heartbeat:
 
         Triggers publish of new heartbeat message
         '''
+        assert self.server != None
         self.hb_msg.header.stamp = rospy.Time.now()
         self.hb_msg.topics = list(self.server.pubs.keys())
         now = rospy.Time.now().to_sec()
@@ -442,7 +403,9 @@ def q_from_rpy(r,p,y, mode='RAD'):
     q = quaternion_from_euler(r, p, y) # roll, pitch, yaw
     return Quaternion(x=q[0], y=q[1], z=q[2], w=q[3])
 
-class ROS_Param:
+
+ROS_ParamType = TypeVar("ROS_ParamType")
+class ROS_Param(Generic[ROS_ParamType]):
     '''
     ROS Parameter Class
 
@@ -454,7 +417,7 @@ class ROS_Param:
     updates_possible    = [] # list of parameter names to check against (in case a parameter update was triggered against a parameter not in scope)
     param_objects       = []
 
-    def __init__(self, name, value, evaluation, force=False, server=None, printer=roslogger):
+    def __init__(self, name, value: ROS_ParamType, evaluation, force=False, server: Optional["ROS_Param_Server"] = None, printer=roslogger):
         '''
         Initialisation
 
@@ -482,10 +445,10 @@ class ROS_Param:
         else:
             self.get = self._get_server
 
-        self.evaluation = evaluation
-        self.value      = None
-        self.old        = None
-        self.printer    = printer
+        self.evaluation                     = evaluation
+        self.value: Optional[ROS_ParamType] = None
+        self.old                            = None
+        self.printer                        = printer
         
 
         if (not rospy.has_param(self.name)) or (force):
@@ -525,7 +488,7 @@ class ROS_Param:
             self.printer(formatException())
             return False
 
-    def _get_server(self):
+    def _get_server(self) -> ROS_ParamType:
         '''
         Return value of variable
 
@@ -534,12 +497,14 @@ class ROS_Param:
         Returns:
         - parsed value of variable
         '''
+        assert self.server != None
         if self.server.autochecker:
+            assert self.value != None
             return self.value
         else:
             return self._get_no_server()
 
-    def _get_no_server(self):
+    def _get_no_server(self) -> ROS_ParamType:
         '''
         Retrieve value of variable if no ROS_Param_Server exists
         Runs a check to see if a change has been made to parameter server value
@@ -549,6 +514,7 @@ class ROS_Param:
         Returns:
         - parsed value of variable
         '''
+        assert self.value != None
         if self.name in self.updates_queued:
             self.updates_queued.remove(self.name)
             try:
@@ -582,7 +548,7 @@ class ROS_Param:
         
     def set_param(self, value):
         if issubclass(type(value), Enum):
-            rospy.set_param(self.name, enum_name(value))
+            rospy.set_param(self.name, value.value)
         else:
             rospy.set_param(self.name, value)
 
@@ -592,7 +558,7 @@ class ROS_Param_Server:
     Purpose:
     - Wrapper class that for ROS_Param that manages and handles dynamic updates to ROS_Param instances
     '''
-    def __init__(self, printer=roslogger):
+    def __init__(self, printer: Callable = roslogger):
         '''
         Initialisation
 
@@ -601,15 +567,15 @@ class ROS_Param_Server:
         Returns:
         None
         '''
-        self.updates_possible   = []
-        self.params             = {}
-        self.autochecker        = False
-        self.param_sub          = None
-        self.printer            = printer
+        self.updates_possible               = []
+        self.params: Dict[str, ROS_Param]   = {}
+        self.autochecker                    = False
+        self.param_sub                      = None
+        self.printer                        = printer
 
-        self.connection_timer   = rospy.Timer(rospy.Duration(5), self._check_server)
+        self.connection_timer               = rospy.Timer(rospy.Duration(5), self._check_server)
 
-    def _check_server(self, event):
+    def _check_server(self, event) -> bool:
         if self.param_sub is None:
             self.autochecker = False
         elif self.param_sub.get_num_connections() > 0:
@@ -621,7 +587,7 @@ class ROS_Param_Server:
     def add_sub(self, topic, cb, queue_size=100):
         self.param_sub = rospy.Subscriber(topic, String, cb, queue_size=queue_size)
 
-    def add(self, name, value, evaluation, force=False):
+    def add(self, name: str, value, evaluation: Callable, force: bool = False) -> ROS_Param:
         '''
         Add new ROS_Param
 
@@ -633,11 +599,11 @@ class ROS_Param_Server:
         Returns:
         Generated ROS_Param
         '''
-        self.params[name] = ROS_Param(name, value, evaluation, force, server=self, printer=self.printer)
+        self.params[name] = ROS_Param[type(value)](name, value, evaluation, force, server=self, printer=self.printer)
         self.updates_possible.append(name)
         return self.params[name]
 
-    def update(self, name):
+    def update(self, name: str) -> bool:
         '''
         Update specified parameter / ROS_Param
 
@@ -646,7 +612,8 @@ class ROS_Param_Server:
         Returns:
         None 
         '''
-
+        if not name in self.params:
+            return False
         try:
             current_value = str(rospy.get_param(name))
         except:
@@ -657,7 +624,7 @@ class ROS_Param_Server:
                       % (str(name), current_value, str(self.params[name].value)), LogType.ERROR)
         return update_status
 
-    def exists(self, name):
+    def exists(self, name: str):
         '''
         Check if specified parameter / ROS_Param exists on server
 
@@ -677,7 +644,7 @@ class ROS_Publisher:
     Purpose:
     - Wrapper class for ROS Publishers
     '''
-    def __init__(self, topic, data_class, queue_size=1, latch=False, server=None, subscriber_listener=None):
+    def __init__(self, topic: str, data_class, queue_size: int = 1, latch: bool = False, server = None, subscriber_listener: Optional[SubscribeListener] = None):
         '''
         Initialisation
 
