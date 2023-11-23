@@ -4,7 +4,7 @@ import numpy as np
 import os
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
-from visual_preproc import *
+from .visual_preproc import *
 
 def extract_imagenames(folder_name):
     imgList = np.sort(os.listdir(folder_name))
