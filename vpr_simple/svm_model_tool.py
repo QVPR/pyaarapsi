@@ -20,11 +20,12 @@ from sklearn.preprocessing import StandardScaler
 
 from ..core.file_system_tools   import scan_directory
 from ..core.ros_tools           import roslogger, LogType
-from ..core.enum_tools          import enum_get, enum_name
+from ..core.enum_tools          import enum_get
 from ..core.helper_tools        import formatException
 from .vpr_dataset_tool          import VPRDatasetProcessor
 from .vpr_helpers               import SVM_Tolerance_Mode
-from ..vpred                    import find_factors, find_prediction_performance_metrics
+from ..vpred.vpred_tools        import find_prediction_performance_metrics
+from ..vpred.vpred_factors      import find_factors
 
 class SVMModelProcessor:
     def __init__(self, ros=False, root=None, load_field=False, printer=None):
