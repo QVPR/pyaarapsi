@@ -1,25 +1,23 @@
+#! /usr/bin/env python3
+
 import rospy
 import numpy as np
 import sys
 import pydbus
 import cv2
-import matplotlib
 import matplotlib.pyplot as plt
 
 from rospy_message_converter import message_converter
 
 from nav_msgs.msg           import Path, Odometry
 from std_msgs.msg           import String
-from geometry_msgs.msg      import Twist, Pose, PoseStamped, PoseWithCovarianceStamped
+from geometry_msgs.msg      import Twist, PoseStamped, PoseWithCovarianceStamped
 from visualization_msgs.msg import MarkerArray
 from sensor_msgs.msg        import Joy, CompressedImage
-from aarapsi_robot_pack.msg import ControllerStateInfo, Label, RequestDataset, ResponseDataset, ExpResults, GoalExpResults, xyw
+from aarapsi_robot_pack.msg import ControllerStateInfo, Label, RequestDataset, ResponseDataset, SpeedCommand
 
-from gazebo_msgs.msg        import ModelState
-from gazebo_msgs.srv        import SetModelState, SetModelStateRequest
-
-from pyaarapsi.core.ros_tools               import LogType, pose2xyw, q_from_rpy, twist2xyw, np2compressed, compressed2np
-from pyaarapsi.core.helper_tools            import formatException, p2p_dist_2d, roll
+from pyaarapsi.core.ros_tools               import LogType, twist2xyw, np2compressed, compressed2np, NodeState
+from pyaarapsi.core.helper_tools            import formatException, roll, normalize_angle
 from pyaarapsi.core.vars                    import C_I_RED, C_I_GREEN, C_I_YELLOW, C_I_BLUE, C_I_WHITE, C_RESET, C_CLEAR, C_UP_N
 
 from pyaarapsi.vpr_simple.vpr_dataset_tool  import VPRDatasetProcessor
@@ -30,7 +28,21 @@ from pyaarapsi.core.argparse_tools          import check_positive_float, check_b
 from pyaarapsi.pathing.enums                import *
 from pyaarapsi.pathing.basic                import *
 
-class Main_ROS_Class(Base_ROS_Class):
+class Simple_Follower_Class(Base_ROS_Class):
+    def __init__(self, **kwargs):
+        '''
+
+        Node Initialisation
+
+        '''
+        super().__init__(**kwargs)
+
+        self.init_params(kwargs['rate_num'], kwargs['log_level'], kwargs['reset'])
+        self.init_vars()
+        self.init_rospy()
+
+        self.node_ready(kwargs['order_id'])
+        
     def init_params(self, rate_num: float, log_level: float, reset):
         super().init_params(rate_num, log_level, reset)
 
@@ -61,13 +73,6 @@ class Main_ROS_Class(Base_ROS_Class):
         self.SAFETY_OVERRIDE        = self.params.add(self.nodespace + "/override/safety",          Safety_Mode.UNSET,      lambda x: check_enum(x, Safety_Mode),       force=reset)
         self.AUTONOMOUS_OVERRIDE    = self.params.add(self.nodespace + "/override/autonomous",      Command_Mode.STOP,      lambda x: check_enum(x, Command_Mode),      force=reset)
 
-        # Experiment-specific Parameters:
-        self.SLICE_LENGTH           = self.params.add(self.nodespace + "/exp/slice_length",         1.5,                    check_positive_float,                       force=reset)
-        self.APPEND_DIST            = self.params.add(self.nodespace + "/exp/append_dist",          0.05,                   check_positive_float,                       force=reset)
-        self.APPEND_MAX             = self.params.add(self.nodespace + "/exp/append_max",           50,                     check_positive_int,                         force=reset)
-        self.EXPERIMENT_MODE        = self.params.add(self.nodespace + "/exp/mode",                 Experiment_Mode.UNSET,  lambda x: check_enum(x, Experiment_Mode),   force=reset)
-        self.TECHNIQUE              = self.params.add(self.nodespace + "/exp/technique",            Technique.VPR,          lambda x: check_enum(x, Technique),         force=reset)
-    
     def init_vars(self):
         super().init_vars() # Call base class method
 
@@ -81,25 +86,21 @@ class Main_ROS_Class(Base_ROS_Class):
         self.adjusted_lookahead = 0.0                       # Speed-adjusted lookahead distance
         self.lookahead_mode     = Lookahead_Mode.DISTANCE   # Lookahead mode
 
+        self.commanded          = False
+        self.command_msg        = SpeedCommand()
+
         # Inter-loop variables for velocity control:
         self.old_lin            = 0.0                       # Last-made-command's linear velocity
         self.old_ang            = 0.0                       # Last-made-command's angular velocity
 
-        # Inter-loop variables for Zone-Return Features:
-        self.zone_index         = -1                        # Index in path dataset corresponding to target zone
-        self.return_stage       = Return_Stage.UNSET        # Enum to control flow of autonomous zone return commands
-        self.saved_index        = -1                        # Index in path dataset user has selected to store
-        self.saved_pose         = None                      # Saved position; in simulation, can teleport here.
-        self.save_request       = Save_Request.NONE         # Enum to command setting/clearing of self.saved_index
-
-        # Inter-loop variables for historical data management:
-        self.match_hist         = []                        # Core historical data array
-        self.new_history        = False                     # Whether new historical information has been appended
-        self.current_hist_pos   = [None]*3                  # Most recent position estimate from historical data
-
         # Inter-loop variables for dataset loading control:
         self.dataset_queue      = []                        # List of dataset parameters pending construction
         self.dataset_loaded     = False                     # Whether datasets are ready
+
+        # Initialise dataset processor:
+        self.ip                 = VPRDatasetProcessor(None, try_gen=False, ros=True, printer=self.print) 
+        self.dsinfo             = self.make_dataset_dict() # Get VPR pipeline's dataset dictionary
+        self.dsinfo['ft_types'] = [FeatureType.RAW.name] # Ensure feature is raw because we do roll-matching
 
         # Empty structures to initialise memory requirements:
         self.viz_path           = Path()
@@ -112,20 +113,13 @@ class Main_ROS_Class(Base_ROS_Class):
         self.ready              = False
         self.new_label          = False
 
-        # Initialise dataset processor:
-        self.ip                 = VPRDatasetProcessor(None, try_gen=False, ros=True, printer=self.print) 
-        self.dsinfo             = self.make_dataset_dict() # Get VPR pipeline's dataset dictionary
-        self.dsinfo['ft_types'] = [FeatureType.RAW.name] # Ensure feature is raw because we do roll-matching
-
         # Set initial mode states:
         self.set_command_mode(Command_Mode.STOP)
         self.set_safety_mode(Safety_Mode.STOP)
 
         # Controller bind information:
-        self.vpr_mode_ind       = PS4_Pressed.Square
         self.stop_mode_ind      = PS4_Pressed.X
         self.slam_mode_ind      = PS4_Pressed.O
-        self.zone_mode_ind      = PS4_Pressed.Triangle
 
         self.slow_mode_ind      = PS4_Pressed.LeftBumper
         self.fast_mode_ind      = PS4_Pressed.RightBumper
@@ -137,13 +131,6 @@ class Main_ROS_Class(Base_ROS_Class):
 
         self.lin_cmd_ind        = PS4_Axes.LeftStickYAxis
         self.ang_cmd_ind        = PS4_Axes.RightStickXAxis
-
-        self.store_pose_ind     = PS4_Pressed.Options
-        self.clear_pose_ind     = PS4_Pressed.Share
-
-        self.teleport_ind       = PS4_Pressed.RightStickIn
-
-        self.experiment_ind     = PS4_Pressed.PS
 
         # Hashed entries for compact & fast access:
         self.feature_hash        = { self.raw_ind: FeatureType.RAW,           self.patchnorm_ind: FeatureType.PATCHNORM, 
@@ -159,12 +146,6 @@ class Main_ROS_Class(Base_ROS_Class):
                                     Command_Mode.VPR: C_I_RED + 'VPR mode',         Command_Mode.ZONE_RETURN: C_I_YELLOW + 'Returning to Zone', 
                                     Command_Mode.SPECIAL: C_I_BLUE + 'Special mode'}
 
-        self.experi_str_hash    = { Experiment_Mode.UNSET: C_I_GREEN + 'STOPPED',           Experiment_Mode.DRIVE_PATH: C_I_YELLOW + 'Path Following', 
-                                    Experiment_Mode.INIT:  C_I_YELLOW + 'Initialising',     Experiment_Mode.HALT1:      C_I_YELLOW + 'Halting', 
-                                    Experiment_Mode.ALIGN: C_I_YELLOW + 'Align to Start',   Experiment_Mode.DRIVE_GOAL: C_I_RED + 'Heading to Goal', 
-                                    Experiment_Mode.HALT2: C_I_YELLOW + 'Halting',          Experiment_Mode.DANGER:     C_I_RED + 'Halting',
-                                    Experiment_Mode.DONE:  C_I_GREEN + 'Complete' }
-
         self.safety_str_hash    = { Safety_Mode.STOP: C_I_GREEN + 'STOPPED', Safety_Mode.SLOW: C_I_YELLOW + 'SLOW mode', 
                                     Safety_Mode.FAST: C_I_RED + 'FAST mode', }
         
@@ -179,22 +160,6 @@ class Main_ROS_Class(Base_ROS_Class):
         self.num_zones          = -1        # Number of zones after adjustment
         self.zone_indices       = []        # List of (self.num_zones + 1) elements, path indices for zone boundaries
         self.slam_zone          = -1        # Current zone as per SLAM
-
-        # Experiment variables:
-        self.exp_start_SLAM     = None      # Index in path dataset experiment will start SLAM
-        self.exp_stop_SLAM      = None      # Index in path dataset experiment will stop SLAM
-        self.exp_dist           = None      # Adjusted length of experiment (in case user starts too close to reference set edges)
-        self.new_goal           = False     # Whether a new 2D Nav Goal has been requested
-        self.goal_pose          = [0]*3     # Position of the 2D Nav Goal
-        self.exp_transform      = None      # Numpy array Homogenous Transform
-        self.exp_rotation       = 0         # 2D pose transformation correction
-        self.point_shoot_stage  = Point_Shoot_Stage.UNSET
-        self.point_shoot_start  = [None]*3  # Initial position to measure relative to
-        self.point_shoot_point  = 0         # Angle to correct
-        self.point_shoot_shoot  = 0         # Distance to cover
-        self.current_results    = ExpResults()
-        self.exp_results        = GoalExpResults()
-        self.exp_count          = 0
         
         # General loop variables:
         self.est_current_ind    = -1        # Estimated path index closest to robot
@@ -216,11 +181,12 @@ class Main_ROS_Class(Base_ROS_Class):
 
     def init_rospy(self):
         super().init_rospy()
-
+        
         ds_requ                 = self.namespace + "/requests/dataset/"
         self.path_pub           = self.add_pub(      self.namespace + '/path',                 Path,                                       queue_size=1, latch=True, subscriber_listener=self.sublis)
         self.speed_pub          = self.add_pub(      self.namespace + '/speeds',               MarkerArray,                                queue_size=1, latch=True, subscriber_listener=self.sublis)
         self.zones_pub          = self.add_pub(      self.namespace + '/zones',                MarkerArray,                                queue_size=1, latch=True, subscriber_listener=self.sublis)
+        self.ds_requ_pub        = self.add_pub(      ds_requ + "request",                      RequestDataset,                             queue_size=1)
         self.COR_pub            = self.add_pub(      self.namespace + '/cor',                  PoseStamped,                                queue_size=1)
         self.goal_pub           = self.add_pub(      self.namespace + '/path_goal',            PoseStamped,                                queue_size=1)
         self.slam_pub           = self.add_pub(      self.namespace + '/slam_pose',            PoseStamped,                                queue_size=1)
@@ -228,120 +194,38 @@ class Main_ROS_Class(Base_ROS_Class):
         self.info_pub           = self.add_pub(      self.nodespace + '/info',                 ControllerStateInfo,                        queue_size=1)
         self.rollmatch_pub      = self.add_pub(      self.nodespace + '/rollmatch/compressed', CompressedImage,                            queue_size=1)
         self.init_pose_pub      = self.add_pub(      '/initialpose',                           PoseWithCovarianceStamped,                  queue_size=1)
-        self.teleport_pose_pub  = self.add_pub(      self.nodespace + '/teleport/pose',        PoseStamped,                                queue_size=1, latch=True, subscriber_listener=self.sublis)
-        self.teleport_index_pub = self.add_pub(      self.nodespace + '/teleport/index',       PoseStamped,                                queue_size=1, latch=True, subscriber_listener=self.sublis)
-        self.experi_goal_pub    = self.add_pub(      self.nodespace + '/exp/goal',             PoseStamped,                                queue_size=1, latch=True, subscriber_listener=self.sublis)
-        self.experi_start_pub   = self.add_pub(      self.nodespace + '/exp/start',            PoseStamped,                                queue_size=1, latch=True, subscriber_listener=self.sublis)
-        self.experi_finish_pub  = self.add_pub(      self.nodespace + '/exp/finish',           PoseStamped,                                queue_size=1, latch=True, subscriber_listener=self.sublis)
-        self.experi_pos_pub     = self.add_pub(      self.nodespace + '/exp/result',           ExpResults,                                 queue_size=1)
-        self.experi_results_pub = self.add_pub(      self.nodespace + '/exp/goal_results',     GoalExpResults,                             queue_size=1)
-        self.ds_requ_pub        = self.add_pub(      ds_requ + "request",                      RequestDataset,                             queue_size=1)
+        
         self.ds_requ_sub        = rospy.Subscriber(  ds_requ + "ready",                        ResponseDataset,           self.ds_requ_cb, queue_size=1)
-        self.goal_sub           = rospy.Subscriber(  '/move_base_simple/goal',                 PoseStamped,               self.goal_cb,    queue_size=1)
         self.state_sub          = rospy.Subscriber(  self.namespace + '/state',                Label,                     self.state_cb,   queue_size=1)
         self.joy_sub            = rospy.Subscriber(  self.JOY_TOPIC.get(),                     Joy,                       self.joy_cb,     queue_size=1)
         self.velo_sub           = rospy.Subscriber(  self.ROBOT_ODOM_TOPIC.get(),              Odometry,                  self.velo_cb,    queue_size=1)
-        self.teleport_srv       = rospy.ServiceProxy('/gazebo/set_model_state',                SetModelState)
+        self.command_sub        = rospy.Subscriber(  self.nodespace + '/command',              SpeedCommand,              self.command_cb, queue_size=1)
+
         self.timer_chk          = rospy.Timer(rospy.Duration(2), self.check_controller)
 
         self.sublis.add_operation(self.namespace + '/path',             method_sub=self.path_peer_subscribe)
         self.sublis.add_operation(self.namespace + '/zones',            method_sub=self.path_peer_subscribe)
         self.sublis.add_operation(self.namespace + '/speeds',           method_sub=self.path_peer_subscribe)
-        self.sublis.add_operation(self.nodespace + '/exp/goal',         method_sub=self.path_peer_subscribe)
-        self.sublis.add_operation(self.nodespace + '/teleport/pose',    method_sub=self.path_peer_subscribe)
-        self.sublis.add_operation(self.nodespace + '/teleport/index',   method_sub=self.path_peer_subscribe)
-        self.sublis.add_operation(self.nodespace + '/exp/start',        method_sub=self.path_peer_subscribe)
-        self.sublis.add_operation(self.nodespace + '/exp/finish',       method_sub=self.path_peer_subscribe)
 
-    def teleport(self, pos=None, vel=None, model='jackal', frame_id='map'):
-        if not self.SIMULATION.get():
-            self.print('Cannot teleport outside of a simulation environment!', LogType.ERROR)
-            return
-        
-        twist = Twist()
-        if not (vel is None):
-            twist.linear.x  = vel[0]
-            twist.angular.z = vel[1]
+    def path_peer_subscribe(self, topic_name: str):
+        if topic_name == self.namespace + '/path':
+            self.path_pub.publish(self.viz_path)
 
-        pose  = Pose()
-        if pos is None:
-            pose.orientation = q_from_yaw(0)
+        elif topic_name == self.namespace + '/zones':
+            self.zones_pub.publish(self.viz_zones)
+
+        elif topic_name == self.namespace + '/speeds':
+            self.speed_pub.publish(self.viz_speeds)
+
         else:
-            pose.position.x  = pos[0]
-            pose.position.y  = pos[1]
-            pose.orientation = q_from_yaw(pos[2])
+            raise Exception('Unknown path_peer_subscribe topic: %s' % str(topic_name))
 
-
-        model_state                 = ModelState(model_name=model, pose=pose, twist=twist, reference_frame=frame_id)
-        init_pose                   = PoseWithCovarianceStamped()
-        init_pose.pose.pose         = pose
-        init_pose.header.stamp      = rospy.Time.now()
-        init_pose.header.frame_id   = frame_id
-        resp = self.teleport_srv.call(SetModelStateRequest(model_state=model_state))
-        if resp.success:
-            self.init_pose_pub.publish(init_pose)
-
-    def velo_cb(self, msg: Odometry):
-        '''
-        Callback to store robot wheel encoder velocities
-        '''
-        if not self.ready:
+    def command_cb(self, msg: SpeedCommand):
+        if msg.component == msg.OFF:
+            self.commanded = False
             return
-        self.robot_velocities = twist2xyw(msg.twist.twist)
-        
-    def ds_requ_cb(self, msg: ResponseDataset):
-        '''
-        Dataset request callback; handle confirmation of dataset readiness
-        '''
-        if msg.success == False:
-            self.print('Dataset request processed, error. Parameters: %s' % str(msg.params), LogType.ERROR)
-        try:
-            index = self.dataset_queue.index(msg.params) # on separate line to try trigger ValueError failure
-            self.print('Dataset request processed, success. Removing from dataset queue.')
-            self.dataset_queue.pop(index)
-        except ValueError:
-            pass
-
-    def goal_cb(self, msg: PoseStamped):
-        '''
-        Callback to handle new 2D Nav Goal requests
-        '''
-        if not self.ready:
-            return
-        
-        self.goal_pose      = pose2xyw(msg.pose)
-        self.new_goal       = True
-        publish_xyzrpy_pose([self.goal_pose[0], self.goal_pose[1], -0.5, 0, -np.pi/2, 0], self.experi_goal_pub)
-
-    def state_cb(self, msg: Label):
-        '''
-        Callback to handle new labels from the VPR pipeline
-        '''
-        if not self.ready:
-            return
-        
-        self.label              = msg
-        
-        self.vpr_ego            = [msg.vpr_ego.x, msg.vpr_ego.y, msg.vpr_ego.w]
-        self.robot_ego          = [msg.robot_ego.x, msg.robot_ego.y, msg.robot_ego.w]
-        self.slam_ego           = [msg.gt_ego.x, msg.gt_ego.y, msg.gt_ego.w]
-        self.new_label          = True
-        
-        # Update historical data:
-        # Order defined in enumeration HDi
-        _append = [msg.match_index, msg.truth_index, msg.distance_vector[msg.match_index], msg.gt_class, msg.svm_class, *self.slam_ego, *self.robot_ego, *self.vpr_ego]
-        if not len(self.match_hist): # If this is the first entry,
-            self.match_hist.append(_append + [0])
-            self.new_history = True
-            return
-        
-        _dist = p2p_dist_2d(self.match_hist[-1][HDi.robot_x.value:HDi.robot_y.value+1], self.robot_ego[0:2])
-        if _dist > self.APPEND_DIST.get():
-            self.match_hist.append(_append + [_dist])
-            self.new_history = True
-
-        while len(self.match_hist) > self.APPEND_MAX.get():
-            self.match_hist.pop(0)
+        self.command_msg = msg
+        self.commanded = True
 
     def joy_cb(self, msg: Joy):
         '''
@@ -363,38 +247,9 @@ class Main_ROS_Class(Base_ROS_Class):
             if not self.command_mode == Command_Mode.SLAM:
                 if self.set_command_mode(Command_Mode.SLAM):
                     self.print("Autonomous Commands: SLAM", LogType.WARN)
-        elif self.vpr_mode_ind(msg):
-            if not self.command_mode == Command_Mode.VPR:
-                if self.set_command_mode(Command_Mode.VPR):
-                    self.print("Autonomous Commands: VPR", LogType.ERROR)
-        elif self.zone_mode_ind(msg):
-            if not self.command_mode == Command_Mode.ZONE_RETURN:
-                if self.set_command_mode(Command_Mode.ZONE_RETURN):
-                    self.zone_index   = None
-                    self.return_stage = Return_Stage.UNSET
-                    self.print("Autonomous Commands: Zone Reset", LogType.WARN)
         elif self.stop_mode_ind(msg):
             if self.set_command_mode(Command_Mode.STOP):
                 self.print("Autonomous Commands: Disabled", LogType.INFO)
-
-        # Start experiment:
-        if self.experiment_ind(msg):
-            if self.EXPERIMENT_MODE.get() == Experiment_Mode.UNSET:
-                self.EXPERIMENT_MODE.set(Experiment_Mode.INIT)
-                self.print("Experiment: Starting.", LogType.WARN)
-            elif not (self.EXPERIMENT_MODE.get() == Experiment_Mode.INIT):
-                self.EXPERIMENT_MODE.set(Experiment_Mode.INIT)
-                self.print("Experiment: Resetting.", LogType.WARN)
-
-        # Toggle store/clear specific zone:
-        if self.store_pose_ind(msg): # If a user wants to assign a zone:
-            self.save_request = Save_Request.SET
-        elif self.clear_pose_ind(msg): # If a user wants to clear a zone:
-            self.save_request = Save_Request.CLEAR
-
-        # Check if teleport request:
-        if self.teleport_ind(msg): # If a user wants to teleport:
-            self.teleport(pos=self.saved_pose)
 
         # Toggle feature type:
         try:
@@ -420,49 +275,40 @@ class Main_ROS_Class(Base_ROS_Class):
                 if self.set_safety_mode(Safety_Mode.STOP):
                     self.print('Safety released.', LogType.INFO)
 
-    def path_peer_subscribe(self, topic_name: str):
+    def velo_cb(self, msg: Odometry):
         '''
-        Callback to handle subscription events
+        Callback to store robot wheel encoder velocities
         '''
         if not self.ready:
             return
-        if topic_name == self.namespace + '/path':
-            self.path_pub.publish(self.viz_path)
+        self.robot_velocities = twist2xyw(msg.twist.twist)
+        
+    def ds_requ_cb(self, msg: ResponseDataset):
+        '''
+        Dataset request callback; handle confirmation of dataset readiness
+        '''
+        if msg.success == False:
+            self.print('Dataset request processed, error. Parameters: %s' % str(msg.params), LogType.ERROR)
+        try:
+            index = self.dataset_queue.index(msg.params) # on separate line to try trigger ValueError failure
+            self.print('Dataset request processed, success. Removing from dataset queue.')
+            self.dataset_queue.pop(index)
+        except ValueError:
+            pass
 
-        elif topic_name == self.namespace + '/zones':
-            self.zones_pub.publish(self.viz_zones)
-
-        elif topic_name == self.namespace + '/speeds':
-            self.speed_pub.publish(self.viz_speeds)
-
-        elif topic_name == self.nodespace + '/exp/goal':
-            publish_xyzrpy_pose([self.goal_pose[0], self.goal_pose[1], -0.5, 0, -np.pi/2, 0], self.experi_goal_pub)
-
-        elif topic_name == self.nodespace + '/teleport/pose':
-            if not (self.saved_pose is None):
-                publish_xyzrpy_pose([self.saved_pose[0], self.saved_pose[1], -0.5, 0, -np.pi/2, 0], self.teleport_pose_pub)
-            else:
-                publish_xyzrpy_pose([0, 0, -0.5, 0, -np.pi/2, 0], self.teleport_pose_pub)
-
-        elif topic_name == self.nodespace + '/teleport/index':
-            if not (self.saved_index == -1):
-                publish_xyzrpy_pose([self.path_xyws[self.saved_index,0], self.path_xyws[self.saved_index,1], -0.5, 0, -np.pi/2, 0], self.teleport_index_pub)
-            else:
-                publish_xyzrpy_pose([0, 0, -0.5, 0, -np.pi/2, 0], self.teleport_index_pub)
-
-        elif topic_name == self.nodespace + '/exp/start':
-            if not (self.exp_start_SLAM is None):
-                publish_xyzrpy_pose([self.path_xyws[self.exp_start_SLAM,0], self.path_xyws[self.exp_start_SLAM,1], -0.5, 0, -np.pi/2, 0], self.experi_start_pub)
-            else:
-                publish_xyzrpy_pose([0, 0, -0.5, 0, -np.pi/2, 0], self.experi_start_pub)
-
-        elif topic_name == self.nodespace + '/exp/finish':
-            if not (self.exp_stop_SLAM is None):
-                publish_xyzrpy_pose([self.path_xyws[self.exp_stop_SLAM,0], self.path_xyws[self.exp_stop_SLAM,1], -0.5, 0, -np.pi/2, 0], self.experi_finish_pub)
-            else:
-                publish_xyzrpy_pose([0, 0, -0.5, 0, -np.pi/2, 0], self.experi_finish_pub)
-        else:
-            raise Exception('Unknown path_peer_subscribe topic: %s' % str(topic_name))
+    def state_cb(self, msg: Label):
+        '''
+        Callback to handle new labels from the VPR pipeline
+        '''
+        if not self.ready:
+            return
+        
+        self.label              = msg
+        
+        self.vpr_ego            = [msg.vpr_ego.x, msg.vpr_ego.y, msg.vpr_ego.w]
+        self.robot_ego          = [msg.robot_ego.x, msg.robot_ego.y, msg.robot_ego.w]
+        self.slam_ego           = [msg.gt_ego.x, msg.gt_ego.y, msg.gt_ego.w]
+        self.new_label          = True
 
     def set_safety_mode(self, mode: Safety_Mode, override=False):
         '''
@@ -477,11 +323,6 @@ class Main_ROS_Class(Base_ROS_Class):
         '''
         Manage changes to command mdoe and sync with ROS parameter server
         '''
-        if mode == Command_Mode.STOP:
-            if self.EXPERIMENT_MODE.get() == Experiment_Mode.DRIVE_GOAL:
-                self.EXPERIMENT_MODE.set(Experiment_Mode.DANGER)
-            else:
-                self.EXPERIMENT_MODE.set(Experiment_Mode.UNSET)
         self.command_mode = mode
         if not override:
             self.AUTONOMOUS_OVERRIDE.set(mode)
@@ -542,16 +383,16 @@ class Main_ROS_Class(Base_ROS_Class):
             else:
                 self.set_safety_mode(Safety_Mode.STOP)
 
-    def try_load_dataset(self, dataset_dict):
+    def try_load_dataset(self, dataset_dict) -> bool:
         '''
         Try-except wrapper for load_dataset
         '''
         if not self.dataset_loaded:
             try:
-                self.ip.load_dataset(dataset_dict)
-                self.dataset_loaded = True
+                self.dataset_loaded = bool(self.ip.load_dataset(dataset_dict))
             except:
                 self.dataset_loaded = False
+        return self.dataset_loaded
 
     def load_dataset(self):
         '''
@@ -651,10 +492,7 @@ class Main_ROS_Class(Base_ROS_Class):
         '''
         Construct and print a Human-Machine Interface
         '''
-        if self.EXPERIMENT_MODE.get() == Experiment_Mode.UNSET:
-            automation_mode_string = '  Command Mode: ' + self.command_str_hash[self.command_mode] + C_RESET
-        else:
-            automation_mode_string = '  [' + C_I_BLUE + 'Experiment' + C_RESET + ']: ' + self.experi_str_hash[self.EXPERIMENT_MODE.get()] + C_RESET
+        automation_mode_string = '  Command Mode: ' + self.command_str_hash[self.command_mode] + C_RESET
         safety_mode_string  = self.safety_str_hash[self.safety_mode] + C_RESET
 
         base_pos_string = ''.join([C_I_YELLOW + i + ': ' + C_I_WHITE + '% 4.1f ' for i in 'xyw']) + C_RESET
@@ -678,6 +516,39 @@ class Main_ROS_Class(Base_ROS_Class):
                  ' ' + '    SVM Status: %s' % svm_string]
         print(''.join([C_CLEAR + line + '\n' for line in lines]) + (C_UP_N%1)*(len(lines)), end='')
 
+    def handle_commanding(self, new_lin, new_ang):
+        if self.command_msg.mode == SpeedCommand.SCALE:
+            if self.command_msg.component in [SpeedCommand.LIN, SpeedCommand.ALL]:
+                new_lin *= self.command_msg.lin_speed[0]
+            if self.command_msg.component in [SpeedCommand.ANG, SpeedCommand.ALL]:
+                new_ang *= self.command_msg.ang_speed[0]
+        elif self.command_msg.mode == SpeedCommand.MIN:
+            if self.command_msg.component in [SpeedCommand.LIN, SpeedCommand.ALL]:
+                new_lin = np.max([self.command_msg.lin_speed[0], new_lin])
+            if self.command_msg.component in [SpeedCommand.ANG, SpeedCommand.ALL]:
+                new_ang = np.max([self.command_msg.ang_speed[0], new_ang])
+        elif self.command_msg.mode == SpeedCommand.MAX:
+            if self.command_msg.component in [SpeedCommand.LIN, SpeedCommand.ALL]:
+                new_lin = np.min([self.command_msg.lin_speed[0], new_lin])
+            if self.command_msg.component in [SpeedCommand.ANG, SpeedCommand.ALL]:
+                new_ang = np.min([self.command_msg.ang_speed[0], new_ang])
+        elif self.command_msg.mode == SpeedCommand.RANGE:
+            if self.command_msg.component in [SpeedCommand.LIN, SpeedCommand.ALL]:
+                new_lin = np.max([self.command_msg.lin_speed[0], new_lin])
+                new_lin = np.min([self.command_msg.lin_speed[1], new_lin])
+            if self.command_msg.component in [SpeedCommand.ANG, SpeedCommand.ALL]:
+                new_ang = np.max([self.command_msg.ang_speed[0], new_ang])
+                new_ang = np.min([self.command_msg.ang_speed[1], new_ang])
+        elif self.command_msg.mode == SpeedCommand.OVERRIDE:
+            if self.command_msg.component in [SpeedCommand.LIN, SpeedCommand.ALL]:
+                new_lin = self.command_msg.lin_speed[0]
+            if self.command_msg.component in [SpeedCommand.ANG, SpeedCommand.ALL]:
+                new_ang = self.command_msg.ang_speed[0]
+        else:
+            raise Exception('Unknown SpeedCommand mode, %d' % self.command_msg.mode)
+        
+        return new_lin, new_ang
+
     def try_send_command(self, error_lin: float, error_ang: float) -> bool:
         '''
         Generate linear and angular commands; send to ROS if a safety is enabled. 
@@ -692,6 +563,9 @@ class Main_ROS_Class(Base_ROS_Class):
         else:
             new_lin             = self.reject_hash[self.REJECT_MODE.get()](self.old_lin)
             new_ang             = self.reject_hash[self.REJECT_MODE.get()](self.old_ang)
+
+        if self.commanded:
+            new_lin, new_ang = self.handle_commanding(new_lin, new_ang)
 
         # Update the last-sent-command to be the one we just made:
         self.old_lin            = new_lin
@@ -750,89 +624,109 @@ class Main_ROS_Class(Base_ROS_Class):
 
         return yaw_fix_rad
 
-    def update_historical_data(self):
+    def main(self):
         '''
-        Use historical data to generate new localisation estimate
+
+        Main function
+
+        Handles:
+        - Pre-loop duties
+        - Keeping main loop alive
+        - Exit
+
         '''
-        if not self.new_history: # ensure there is a new point to process
+        self.set_state(NodeState.MAIN)
+
+        self.load_dataset() # Load reference data
+        self.make_path()    # Generate reference path
+
+        # Publish path, speed, zones for RViz:
+        self.path_pub.publish(self.viz_path)
+        self.speed_pub.publish(self.viz_speeds)
+        self.zones_pub.publish(self.viz_zones)
+
+        self.ready = True
+
+        # Commence main loop; do forever:
+        self.print('Entering main loop.')
+        while not rospy.is_shutdown():
+            try:
+                # Denest main loop; wait for new messages:
+                if not (self.new_label):# and self.new_robot_odom):
+                    self.print("Waiting for new position information...", LogType.DEBUG, throttle=10)
+                    rospy.sleep(0.005)
+                    continue
+                
+                self.rate_obj.sleep()
+                self.new_label          = False
+                #self.new_robot_odom     = False
+
+                self.loop_contents()
+
+            except rospy.exceptions.ROSInterruptException as e:
+                pass
+            except Exception as e:
+                if self.parameters_ready:
+                    raise Exception('Critical failure. ' + formatException()) from e
+                else:
+                    self.print('Main loop exception, attempting to handle; waiting for parameters to update. Details:\n' + formatException(), LogType.DEBUG, throttle=5)
+                    rospy.sleep(0.5)
+
+    def path_follow(self, ego, current_ind):
+        '''
+        
+        Follow a pre-defined path
+        
+        '''
+
+        # Ensure robot is within path limits
+        if not self.check_for_safety_stop():
             return
-        self.new_history = False
-
-        _match_arr      = np.array(self.match_hist) # cast list of lists to array
-
-        # Find index that is slice_length distance away from most recent position
-        _ind            = -1
-        for i in range(-2, -_match_arr.shape[0] - 1, -1):
-            if np.sum(_match_arr[i:,HDi.dist.value]) > self.SLICE_LENGTH.get():
-                _ind    = i
-                break
-        if _ind         == -1:
-            return
         
-        _distances      = np.array([np.sum(_match_arr[_ind+i+1:,HDi.dist.value]) for i in range(abs(_ind)-1)] + [0])
-        
-        _results        = ExpResults()
-        _results.gt_pos = xyw(*self.match_hist[-1][HDi.slam_x.value:HDi.slam_w.value+1])
+        # Calculate heading, cross-track, velocity errors and the target index:
+        self.target_ind, self.adjusted_lookahead = calc_target(current_ind, self.lookahead, self.lookahead_mode, self.path_xyws)
 
-        # Calculate VPR-only position estimate:
-        _vpr_matches        = _match_arr[_ind:,:]
-        _best_vpr           = np.argmin(_vpr_matches[:,HDi.mDist.value])
-        _vpr_ind            = int(_vpr_matches[_best_vpr, HDi.mInd.value])
-        _vpr_sum_so_far     = _distances[_best_vpr]
-        _vpr_now_ind        = np.argmin(abs(np.array(self.path_sum) - (self.path_sum[_vpr_ind] + _vpr_sum_so_far)))
-        _vpr_pos_now        = self.path_xyws[_vpr_now_ind, 0:3]
-        _results.vpr_pos    = xyw(*_vpr_pos_now)
+        # Publish a pose to visualise the target:
+        publish_xyw_pose(self.path_xyws[self.target_ind], self.goal_pub)
 
-        # Calculate SVM position estimate:
-        _svm_matches        = _vpr_matches[np.asarray(_vpr_matches[:,HDi.svm_class.value],dtype=bool),:]
-        if not _svm_matches.shape[0]:
-            _svm_pos_now        = [np.nan, np.nan, np.nan]
-            _svm_ind            = np.nan
-            _results.svm_state  = _results.FAIL
+        # Calculate control signal for angular velocity:
+        if self.command_mode == Command_Mode.VPR:
+            error_ang = angle_wrap(self.path_xyws[self.target_ind, 2] - ego[2], 'RAD')
         else:
-            _best_svm           = np.argmin(_svm_matches[:,HDi.mDist.value])
-            _svm_ind            = int(_svm_matches[_best_svm, HDi.mInd.value])
-            _svm_sum_so_far     = _distances[_best_svm]
-            _svm_now_ind        = np.argmin(abs(np.array(self.path_sum) - (self.path_sum[_svm_ind] + _svm_sum_so_far))) # This will fail if a path is a loop
-            _svm_pos_now        = self.path_xyws[_svm_now_ind, 0:3]
-            _results.svm_pos    = xyw(*_svm_pos_now)
-            _results.svm_state  = _results.SUCCESS
-
-        # Pick which value to store:
-        if self.TECHNIQUE.get() == Technique.VPR:
-            self.current_hist_pos = list(_vpr_pos_now)
-        elif self.TECHNIQUE.get() == Technique.SVM:
-            self.current_hist_pos = list(_svm_pos_now)
-        else:
-            raise Exception('Bad technique: %s' % self.TECHNIQUE.get().name)
+            error_ang = calc_yaw_error(ego, self.path_xyws[self.target_ind])
         
-        self.current_results = _results
+        # Calculate control signal for linear velocity
+        error_lin = self.path_xyws[current_ind, 3]
 
-        self.experi_pos_pub.publish(_results) # Publish results to ROS
+        # Send a new command to drive the robot based on the errors:
+        self.try_send_command(error_lin, error_ang)
 
-    def update_zone_target(self):
+    def loop_contents(self):
         '''
-        Update zone return's target index
-        '''
-        if self.save_request        == Save_Request.SET:
-            self.saved_index        = self.slam_current_ind
-            self.saved_pose         = self.slam_ego
-            publish_xyzrpy_pose([self.saved_pose[0], self.saved_pose[1], -0.5, 0, -np.pi/2, 0], self.teleport_pose_pub)
-            publish_xyzrpy_pose([self.path_xyws[self.saved_index,0], self.path_xyws[self.saved_index,1], -0.5, 0, -np.pi/2, 0], self.teleport_index_pub)
-            self.print('Saved current position.')
-        elif self.save_request      == Save_Request.CLEAR:
-            self.saved_index        = -1
-            self.saved_pose         = None
-            publish_xyzrpy_pose([0, 0, -0.5, 0, -np.pi/2, 0], self.teleport_pose_pub)
-            publish_xyzrpy_pose([0, 0, -0.5, 0, -np.pi/2, 0], self.teleport_index_pub)
-            self.print('Cleared saved position.')
-        self.save_request           = Save_Request.NONE
+        
+        Main Loop
 
-    def update_COR(self, ego):
         '''
-        Update centre-of-rotation for visualisation and precise alignment
-        '''
-        COR_x                   = ego[0] + self.COR_OFFSET.get() * np.cos(ego[2])
-        COR_y                   = ego[1] + self.COR_OFFSET.get() * np.sin(ego[2])
-        publish_xyzrpy_pose([COR_x, COR_y, -0.5, 0, -np.pi/2, 0], self.COR_pub)
-        return [COR_x, COR_y]
+
+        # Calculate current SLAM position and zone:
+        self.slam_current_ind       = calc_current_ind(self.slam_ego, self.path_xyws)
+        self.slam_zone              = calc_current_zone(self.slam_current_ind, self.num_zones, self.zone_indices)
+
+        self.est_current_ind    = self.slam_current_ind
+        self.heading_fixed      = normalize_angle(angle_wrap(self.slam_ego[2] + self.roll_match(self.est_current_ind), 'RAD'))
+        self.ego                = self.slam_ego
+        
+        publish_xyw_pose(self.path_xyws[self.slam_current_ind], self.slam_pub) # Visualise SLAM nearest position on path
+
+        # Check if stopped:
+        if self.command_mode in [Command_Mode.STOP]:
+            pass
+
+        # Else: if the current command mode is a path-following exercise:
+        elif self.command_mode in [Command_Mode.SLAM]:
+            self.path_follow(self.ego, self.est_current_ind)
+
+        # Print HMI:
+        if self.PRINT_DISPLAY.get():
+            self.print_display()
+        self.publish_controller_info()
