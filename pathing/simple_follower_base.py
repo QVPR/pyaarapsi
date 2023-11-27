@@ -6,6 +6,7 @@ import sys
 import pydbus
 import cv2
 import matplotlib.pyplot as plt
+from typing import Tuple
 
 from rospy_message_converter import message_converter
 
@@ -152,7 +153,7 @@ class Simple_Follower_Class(Base_ROS_Class):
         # Path variables:
         self.path_xyws          = np.array(None)    # Large numpy array of n rows by four columns (x, y, yaw, speed)
         self.path_len           = -1                # Circumferential Path length
-        self.path_sum           = []                # List of n elements with running sum of distance since first path position (zero to self.path_len)
+        self.path_sum           = np.array(None)    # numpy array of n elements with running sum of distance since first path position (zero to self.path_len)
         self.path_indices       = []                # Downsampled selection of self.path_xyws for visualisation
 
         # Zone variables:
@@ -221,7 +222,7 @@ class Simple_Follower_Class(Base_ROS_Class):
             raise Exception('Unknown path_peer_subscribe topic: %s' % str(topic_name))
 
     def command_cb(self, msg: SpeedCommand):
-        if msg.component == msg.OFF:
+        if msg.enabled == False:
             self.commanded = False
             return
         self.command_msg = msg
@@ -314,8 +315,10 @@ class Simple_Follower_Class(Base_ROS_Class):
         '''
         Manage changes to safety mode and sync with ROS parameter server
         '''
-        if override or self.SAFETY_OVERRIDE.get() == Safety_Mode.UNSET:
+        if override or self.SAFETY_OVERRIDE.get() == Safety_Mode.UNSET or not hasattr(self, 'safety_mode'):
             self.safety_mode = mode
+            if not override:
+                self.SAFETY_OVERRIDE.set(mode)
             return True
         return False
 
@@ -328,11 +331,14 @@ class Simple_Follower_Class(Base_ROS_Class):
             self.AUTONOMOUS_OVERRIDE.set(mode)
         return True
 
-    def check_for_safety_stop(self):
+    def check_for_safety_stop(self, reverse: bool = False):
         '''
         Ensure vehicle is safely on-path
         '''
+
         self.path_lin_err, self.path_ang_err = calc_path_errors(self.slam_ego, self.slam_current_ind, self.path_xyws)
+        if reverse:
+            self.path_ang_err = angle_wrap(self.path_ang_err - np.pi, 'RAD')
         if self.path_lin_err > self.LINSTOP_OVERRIDE.get() and self.LINSTOP_OVERRIDE.get() > 0:
             self.set_command_mode(Command_Mode.STOP)
             return False
@@ -516,36 +522,19 @@ class Simple_Follower_Class(Base_ROS_Class):
                  ' ' + '    SVM Status: %s' % svm_string]
         print(''.join([C_CLEAR + line + '\n' for line in lines]) + (C_UP_N%1)*(len(lines)), end='')
 
-    def handle_commanding(self, new_lin, new_ang):
-        if self.command_msg.mode == SpeedCommand.SCALE:
-            if self.command_msg.component in [SpeedCommand.LIN, SpeedCommand.ALL]:
-                new_lin *= self.command_msg.lin_speed[0]
-            if self.command_msg.component in [SpeedCommand.ANG, SpeedCommand.ALL]:
-                new_ang *= self.command_msg.ang_speed[0]
-        elif self.command_msg.mode == SpeedCommand.MIN:
-            if self.command_msg.component in [SpeedCommand.LIN, SpeedCommand.ALL]:
-                new_lin = np.max([self.command_msg.lin_speed[0], new_lin])
-            if self.command_msg.component in [SpeedCommand.ANG, SpeedCommand.ALL]:
-                new_ang = np.max([self.command_msg.ang_speed[0], new_ang])
-        elif self.command_msg.mode == SpeedCommand.MAX:
-            if self.command_msg.component in [SpeedCommand.LIN, SpeedCommand.ALL]:
-                new_lin = np.min([self.command_msg.lin_speed[0], new_lin])
-            if self.command_msg.component in [SpeedCommand.ANG, SpeedCommand.ALL]:
-                new_ang = np.min([self.command_msg.ang_speed[0], new_ang])
-        elif self.command_msg.mode == SpeedCommand.RANGE:
-            if self.command_msg.component in [SpeedCommand.LIN, SpeedCommand.ALL]:
-                new_lin = np.max([self.command_msg.lin_speed[0], new_lin])
-                new_lin = np.min([self.command_msg.lin_speed[1], new_lin])
-            if self.command_msg.component in [SpeedCommand.ANG, SpeedCommand.ALL]:
-                new_ang = np.max([self.command_msg.ang_speed[0], new_ang])
-                new_ang = np.min([self.command_msg.ang_speed[1], new_ang])
+    def handle_commanding(self, new_lin: float, new_ang: float) -> Tuple[float, float]:
+        if self.command_msg.mode == SpeedCommand.NONE:
+            pass
+        elif self.command_msg.mode == SpeedCommand.SCALE:
+            new_lin *= self.command_msg.speed[0]
         elif self.command_msg.mode == SpeedCommand.OVERRIDE:
-            if self.command_msg.component in [SpeedCommand.LIN, SpeedCommand.ALL]:
-                new_lin = self.command_msg.lin_speed[0]
-            if self.command_msg.component in [SpeedCommand.ANG, SpeedCommand.ALL]:
-                new_ang = self.command_msg.ang_speed[0]
+            new_lin = self.command_msg.speed[0]
         else:
             raise Exception('Unknown SpeedCommand mode, %d' % self.command_msg.mode)
+        
+        if self.command_msg.reverse:
+            new_lin *= -1
+            #new_ang *= -1
         
         return new_lin, new_ang
 
@@ -672,7 +661,7 @@ class Simple_Follower_Class(Base_ROS_Class):
                     self.print('Main loop exception, attempting to handle; waiting for parameters to update. Details:\n' + formatException(), LogType.DEBUG, throttle=5)
                     rospy.sleep(0.5)
 
-    def path_follow(self, ego, current_ind):
+    def path_follow(self, ego, current_ind, reverse=False):
         '''
         
         Follow a pre-defined path
@@ -680,14 +669,17 @@ class Simple_Follower_Class(Base_ROS_Class):
         '''
 
         # Ensure robot is within path limits
-        if not self.check_for_safety_stop():
+        if not self.check_for_safety_stop(reverse=reverse):
             return
         
+        if reverse:
+            ego[2] = angle_wrap(ego[2] + np.pi, 'RAD')
+
         # Calculate heading, cross-track, velocity errors and the target index:
-        self.target_ind, self.adjusted_lookahead = calc_target(current_ind, self.lookahead, self.lookahead_mode, self.path_xyws)
+        self.target_ind, self.adjusted_lookahead = calc_target(current_ind, self.lookahead, self.lookahead_mode, self.path_xyws, self.path_sum, reverse=reverse)
 
         # Publish a pose to visualise the target:
-        publish_xyw_pose(self.path_xyws[self.target_ind], self.goal_pub)
+        publish_reversible_xyw_pose(self.path_xyws[self.target_ind], self.goal_pub, reverse=reverse)
 
         # Calculate control signal for angular velocity:
         if self.command_mode == Command_Mode.VPR:
@@ -707,16 +699,26 @@ class Simple_Follower_Class(Base_ROS_Class):
         Main Loop
 
         '''
+        
+        _reverse = False
+        if self.commanded:
+            if self.command_msg.reverse:
+                _reverse = True
 
         # Calculate current SLAM position and zone:
-        self.slam_current_ind       = calc_current_ind(self.slam_ego, self.path_xyws)
-        self.slam_zone              = calc_current_zone(self.slam_current_ind, self.num_zones, self.zone_indices)
-
+        raw_current_ind         = calc_current_ind(self.slam_ego, self.path_xyws)
+        _half_vehicle_len       = 0.2
+        if _reverse:
+            _half_vehicle_len  *= -1
+        self.slam_current_ind   = int(np.argmin(np.abs(self.path_sum - ((self.path_sum[raw_current_ind] + _half_vehicle_len) % self.path_sum[-1]))))
+        self.slam_zone          = calc_current_zone(self.slam_current_ind, self.num_zones, self.zone_indices)
+        
+        # not used in simple but generated for display and the info topic:
         self.est_current_ind    = self.slam_current_ind
         self.heading_fixed      = normalize_angle(angle_wrap(self.slam_ego[2] + self.roll_match(self.est_current_ind), 'RAD'))
         self.ego                = self.slam_ego
         
-        publish_xyw_pose(self.path_xyws[self.slam_current_ind], self.slam_pub) # Visualise SLAM nearest position on path
+        publish_reversible_xyw_pose(self.path_xyws[self.slam_current_ind], self.slam_pub, reverse=_reverse) # Visualise SLAM nearest position on path
 
         # Check if stopped:
         if self.command_mode in [Command_Mode.STOP]:
@@ -724,7 +726,7 @@ class Simple_Follower_Class(Base_ROS_Class):
 
         # Else: if the current command mode is a path-following exercise:
         elif self.command_mode in [Command_Mode.SLAM]:
-            self.path_follow(self.ego, self.est_current_ind)
+            self.path_follow(self.ego, self.slam_current_ind, reverse=_reverse)
 
         # Print HMI:
         if self.PRINT_DISPLAY.get():
