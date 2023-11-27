@@ -472,35 +472,6 @@ class Extended_Follower_Class(Simple_Follower_Class):
                     self.print('Main loop exception, attempting to handle; waiting for parameters to update. Details:\n' + formatException(), LogType.DEBUG, throttle=5)
                     rospy.sleep(0.5)
 
-    def path_follow(self, ego, current_ind):
-        '''
-        
-        Follow a pre-defined path
-        
-        '''
-
-        # Ensure robot is within path limits
-        if not self.check_for_safety_stop():
-            return
-        
-        # Calculate heading, cross-track, velocity errors and the target index:
-        self.target_ind, self.adjusted_lookahead = calc_target(current_ind, self.lookahead, self.lookahead_mode, self.path_xyws)
-
-        # Publish a pose to visualise the target:
-        publish_xyw_pose(self.path_xyws[self.target_ind], self.goal_pub)
-
-        # Calculate control signal for angular velocity:
-        if self.command_mode == Command_Mode.VPR:
-            error_ang = angle_wrap(self.path_xyws[self.target_ind, 2] - ego[2], 'RAD')
-        else:
-            error_ang = calc_yaw_error(ego, self.path_xyws[self.target_ind])
-
-        # Calculate control signal for linear velocity
-        error_lin = self.path_xyws[current_ind, 3]
-
-        # Send a new command to drive the robot based on the errors:
-        self.try_send_command(error_lin, error_ang)
-
     def zone_return(self, ego, target, ignore_heading=False):
         '''
 
