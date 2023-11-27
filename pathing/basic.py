@@ -7,8 +7,10 @@ from visualization_msgs.msg         import MarkerArray, Marker
 
 from pyaarapsi.core.ros_tools       import q_from_yaw, q_from_rpy, ROS_Publisher
 from pyaarapsi.core.helper_tools    import angle_wrap, normalize_angle, m2m_dist
-from .enums                         import Lookahead_Mode
-from typing import Union
+from pyaarapsi.pathing.enums        import Lookahead_Mode
+
+from numpy.typing                   import NDArray
+from typing                         import Union, List, Tuple
 
 def make_speed_array(w_interp):
     # Generate speed profile based on curvature of track:
@@ -23,19 +25,22 @@ def make_speed_array(w_interp):
 
     return s_interp
 
-def calc_path_stats(path_xyws):
+def calc_path_stats(path_xyws: NDArray[np.float32]) -> Tuple[NDArray[np.float32], float]:
     path_dists      = np.sqrt( \
                             np.square(path_xyws[:,0] - np.roll(path_xyws[:,0], 1)) + \
                             np.square(path_xyws[:,1] - np.roll(path_xyws[:,1], 1)) \
                         )[1:]
-    path_sum        = [0]
+    
+    path_sum        = [0.0]
     for i in path_dists:
         path_sum.append(np.sum([path_sum[-1], i]))
+
     path_len        = path_sum[-1]
+    path_sum        = np.array(path_sum)
 
     return path_sum, path_len
 
-def calc_zone_stats(path_len, len_guess, num_guess):
+def calc_zone_stats(path_len: float, len_guess: float, num_guess: Union[float, int]) -> Tuple[float, int]:
     
 
     if path_len / len_guess > num_guess:
@@ -46,7 +51,7 @@ def calc_zone_stats(path_len, len_guess, num_guess):
 
     return len_true, num_true
 
-def make_path_speeds(path_xyws, path_indices):
+def make_path_speeds(path_xyws: NDArray[np.float32], path_indices: List[int]) -> Tuple[Path, MarkerArray]:
     path            = Path(header=Header(stamp=rospy.Time.now(), frame_id="map"))
     path.poses      = []
     speeds          = MarkerArray()
@@ -70,7 +75,7 @@ def make_path_speeds(path_xyws, path_indices):
         speeds.markers.append(new_speed)
     return path, speeds
 
-def make_zones(path_xyws, zone_indices):
+def make_zones(path_xyws: NDArray[np.float32], zone_indices: List[int]) -> MarkerArray:
     zones           = MarkerArray()
     zones.markers   = []
     for c, i in enumerate(zone_indices):
@@ -87,7 +92,7 @@ def make_zones(path_xyws, zone_indices):
         zones.markers.append(new_zone)
     return zones
 
-def calc_path_errors(ego, current_ind, path_xyws):
+def calc_path_errors(ego, current_ind: int, path_xyws: NDArray[np.float32]) -> Tuple[float, float]:
     _dx     = ego[0] - path_xyws[current_ind, 0]
     _dy     = ego[1] - path_xyws[current_ind, 1]
     _dw     = np.arctan2(_dy, _dx)
@@ -96,7 +101,7 @@ def calc_path_errors(ego, current_ind, path_xyws):
     ang_err = abs(angle_wrap(path_xyws[current_ind, 2] - ego[2], 'RAD'))
     return lin_err, ang_err
 
-def global2local(ego, x, y):
+def global2local(ego, x: Union[float, NDArray[np.float32]], y: Union[float, NDArray[np.float32]]) -> Tuple[List[float], List[float]]:
 
     Tx  = x - ego[0]
     Ty  = y - ego[1]
@@ -116,34 +121,41 @@ def calc_y_error(ego, goal) -> float:
     rel_x, rel_y    = global2local(ego, np.array([goal[0]]), np.array([goal[1]])) # Convert to local coordinates
     return rel_y[0]
 
-def calc_nearest_zone(zone_indices, current_ind, _len):
+def calc_nearest_zone(zone_indices: List[int], current_ind: int, _len: int) -> int:
     return zone_indices[np.argmin(m2m_dist(current_ind, np.transpose(np.matrix(zone_indices))))] % _len
         
-def calc_current_zone(ind: int, num_zones: int, zone_indices: list):
+def calc_current_zone(ind: int, num_zones: int, zone_indices: list) -> int:
     # The closest zone boundary that is 'behind' the closest index (in the direction of the path):
     zone        = np.max(np.arange(num_zones)[np.array(zone_indices[0:-1]) <= ind] + 1)
     return zone
     
-def calc_current_ind(ego, path_xyws):
+def calc_current_ind(ego, path_xyws: NDArray[np.float32]) -> int:
     # Closest index based on provided ego:
     ind         = np.argmin(m2m_dist(path_xyws[:,0:2], ego[0:2], True), axis=0)
     return ind
     
-def calc_target(current_ind: int, lookahead: float, lookahead_mode: Lookahead_Mode, path_xyws: np.ndarray):
-    adj_lookahead = np.max([lookahead * (path_xyws[current_ind, 3]/np.max(path_xyws[:, 3].flatten())), 0.3])
+def calc_target(current_ind: int, lookahead: float, lookahead_mode: Lookahead_Mode, path_xyws: NDArray[np.float32], path_sum: NDArray[np.float32], reverse: bool = False):
+    adj_lookahead = np.max([lookahead * (path_xyws[current_ind, 3]/np.max(path_xyws[:, 3].flatten())), 0.4])
+    if reverse:
+        adj_lookahead *= -1
     if lookahead_mode == Lookahead_Mode.INDEX:
         target_ind  = (current_ind + int(np.round(adj_lookahead))) % path_xyws.shape[0]
     elif lookahead_mode == Lookahead_Mode.DISTANCE:
-        target_ind  = current_ind
-        # find first index at least lookahead-distance-away from current index:
-        dist        = np.sqrt(np.sum(np.square(path_xyws[target_ind, 0:2] - path_xyws[current_ind, 0:2])))
-        while dist < adj_lookahead:
-            target_ind  = (target_ind + 1) % path_xyws.shape[0] 
-            dist        = np.sqrt(np.sum(np.square(path_xyws[target_ind, 0:2] - path_xyws[current_ind, 0:2])))
+        target_ind    = int(np.argmin(np.abs(path_sum - ((path_sum[current_ind] + adj_lookahead) % path_sum[-1]))))
+        dist = (path_sum[target_ind] - path_sum[current_ind]) % path_sum[-1]
+        while dist < np.abs(adj_lookahead):
+            target_ind = int((target_ind + np.sign(adj_lookahead)) % path_sum.shape[0])
+            dist = (path_sum[target_ind] - path_sum[current_ind]) % path_sum[-1]
         adj_lookahead = dist
     else:
         raise Exception('Unknown lookahead_mode: %s' % str(lookahead_mode))
     return target_ind, adj_lookahead
+
+def publish_reversible_xyw_pose(pose_xyw: list, pub: Union[rospy.Publisher, ROS_Publisher], frame_id='map', reverse: bool = False) -> None:
+    pose = [*pose_xyw] # decouple from input
+    if reverse:
+        pose[2] = angle_wrap(pose[2] + np.pi, 'RAD')
+    publish_xyw_pose(pose, pub, frame_id)
 
 def publish_xyw_pose(pose_xyw: list, pub: Union[rospy.Publisher, ROS_Publisher], frame_id='map') -> None:
     # Update visualisation of current goal/target pose
