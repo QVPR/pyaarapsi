@@ -333,8 +333,6 @@ class Simple_Follower_Class(Base_ROS_Class):
         '''
         Manage changes to safety mode and sync with ROS parameter server
         '''
-        print(mode)
-        print(override, self.SAFETY_OVERRIDE.get())
         if override or self.SAFETY_OVERRIDE.get() == Safety_Mode.UNSET or not hasattr(self, 'safety_mode'):
             self.safety_mode = mode
             if override:
