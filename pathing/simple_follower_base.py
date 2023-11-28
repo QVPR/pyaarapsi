@@ -17,7 +17,7 @@ from visualization_msgs.msg import MarkerArray
 from sensor_msgs.msg        import Joy, CompressedImage
 from aarapsi_robot_pack.msg import ControllerStateInfo, Label, RequestDataset, ResponseDataset, SpeedCommand
 
-from pyaarapsi.core.ros_tools               import LogType, twist2xyw, np2compressed, compressed2np, NodeState
+from pyaarapsi.core.ros_tools               import LogType, twist2xyw, np2compressed, compressed2np, NodeState, pose2xyw
 from pyaarapsi.core.helper_tools            import formatException, roll, normalize_angle
 from pyaarapsi.core.vars                    import C_I_RED, C_I_GREEN, C_I_YELLOW, C_I_BLUE, C_I_WHITE, C_RESET, C_CLEAR, C_UP_N
 
@@ -38,8 +38,10 @@ class Simple_Follower_Class(Base_ROS_Class):
         '''
         super().__init__(**kwargs)
 
+        print(kwargs)
+
         self.init_params(kwargs['rate_num'], kwargs['log_level'], kwargs['reset'])
-        self.init_vars()
+        self.init_vars(kwargs['simple'])
         self.init_rospy()
 
         self.node_ready(kwargs['order_id'])
@@ -74,14 +76,16 @@ class Simple_Follower_Class(Base_ROS_Class):
         self.SAFETY_OVERRIDE        = self.params.add(self.nodespace + "/override/safety",          Safety_Mode.UNSET,      lambda x: check_enum(x, Safety_Mode),       force=reset)
         self.AUTONOMOUS_OVERRIDE    = self.params.add(self.nodespace + "/override/autonomous",      Command_Mode.STOP,      lambda x: check_enum(x, Command_Mode),      force=reset)
 
-    def init_vars(self):
+    def init_vars(self, simple=False):
         super().init_vars() # Call base class method
 
+        self.simple = simple
+
         # Vehicle state information:
-        self.ego                = []                        # ego to be used
-        self.vpr_ego            = []                        # ego from VPR
-        self.slam_ego           = []                        # ego from SLAM gt
-        self.robot_ego          = []                        # ego from robot odometry / wheel encoders
+        self.ego                = [0.0,0.0,0.0]             # ego to be used
+        self.vpr_ego            = [0.0,0.0,0.0]             # ego from VPR
+        self.slam_ego           = [0.0,0.0,0.0]             # ego from SLAM gt
+        self.robot_ego          = [0.0,0.0,0.0]             # ego from robot odometry / wheel encoders
         self.robot_velocities   = []                        # velocities from robot odometry / wheel encoders
         self.lookahead          = 1.0                       # Lookahead amount
         self.adjusted_lookahead = 0.0                       # Speed-adjusted lookahead distance
@@ -108,6 +112,7 @@ class Simple_Follower_Class(Base_ROS_Class):
         self.viz_speeds         = MarkerArray()
         self.viz_zones          = MarkerArray()
         self.label              = Label()
+        self.odom               = Odometry()
         self.last_command       = Twist()
 
         # Flags for loop progression control:
@@ -197,7 +202,10 @@ class Simple_Follower_Class(Base_ROS_Class):
         self.init_pose_pub      = self.add_pub(      '/initialpose',                           PoseWithCovarianceStamped,                  queue_size=1)
         
         self.ds_requ_sub        = rospy.Subscriber(  ds_requ + "ready",                        ResponseDataset,           self.ds_requ_cb, queue_size=1)
-        self.state_sub          = rospy.Subscriber(  self.namespace + '/state',                Label,                     self.state_cb,   queue_size=1)
+        if self.simple:
+            self.odom_sub       = rospy.Subscriber(  self.SLAM_ODOM_TOPIC.get(),               Odometry,                  self.odom_cb,    queue_size=1)
+        else:
+            self.state_sub      = rospy.Subscriber(  self.namespace + '/state',                Label,                     self.state_cb,   queue_size=1)
         self.joy_sub            = rospy.Subscriber(  self.JOY_TOPIC.get(),                     Joy,                       self.joy_cb,     queue_size=1)
         self.velo_sub           = rospy.Subscriber(  self.ROBOT_ODOM_TOPIC.get(),              Odometry,                  self.velo_cb,    queue_size=1)
         self.command_sub        = rospy.Subscriber(  self.nodespace + '/command',              SpeedCommand,              self.command_cb, queue_size=1)
@@ -297,6 +305,18 @@ class Simple_Follower_Class(Base_ROS_Class):
         except ValueError:
             pass
 
+
+    def odom_cb(self, msg: Odometry):
+        '''
+        Callback to handle new odometry
+        '''
+        if not self.ready:
+            return
+        
+        self.odom       = msg
+        self.slam_ego   = pose2xyw(msg.pose.pose)
+        self.new_label  = True
+
     def state_cb(self, msg: Label):
         '''
         Callback to handle new labels from the VPR pipeline
@@ -365,10 +385,10 @@ class Simple_Follower_Class(Base_ROS_Class):
         self.path_sum, self.path_len     = calc_path_stats(self.path_xyws)
         self.zone_length, self.num_zones = calc_zone_stats(self.path_len, self.ZONE_LENGTH.get(), self.ZONE_NUMBER.get(), )
         _end                             = [self.path_xyws.shape[0] + (int(not self.LOOP_PATH.get()) - 1)]
-        self.zone_indices                = [np.argmin(np.abs(self.path_sum-(self.zone_length*i))) for i in np.arange(self.num_zones)] + _end
+        self.zone_indices                = [int(np.argmin(np.abs(self.path_sum-(self.zone_length*i)))) for i in np.arange(self.num_zones)] + _end
         
         # generate stuff for visualisation:
-        self.path_indices                = [np.argmin(np.abs(self.path_sum-(0.2*i))) for i in np.arange(int(5 * self.path_len))]
+        self.path_indices                = [int(np.argmin(np.abs(self.path_sum-(0.2*i)))) for i in np.arange(int(5 * self.path_len))]
         self.viz_path, self.viz_speeds   = make_path_speeds(self.path_xyws, self.path_indices)
         self.viz_zones                   = make_zones(self.path_xyws, self.zone_indices)
 
@@ -715,7 +735,7 @@ class Simple_Follower_Class(Base_ROS_Class):
         
         # not used in simple but generated for display and the info topic:
         self.est_current_ind    = self.slam_current_ind
-        self.heading_fixed      = normalize_angle(angle_wrap(self.slam_ego[2] + self.roll_match(self.est_current_ind), 'RAD'))
+        self.heading_fixed      = self.slam_ego[2]
         self.ego                = self.slam_ego
         
         publish_reversible_xyw_pose(self.path_xyws[self.slam_current_ind], self.slam_pub, reverse=_reverse) # Visualise SLAM nearest position on path
