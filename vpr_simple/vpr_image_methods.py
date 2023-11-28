@@ -11,7 +11,8 @@ def grey2dToColourMap(matrix, colourmap=cv2.COLORMAP_JET, dims=None):
     mat_rgb = cv2.applyColorMap(matnorm, colourmap)
     return mat_rgb
 
-def label_image(img_in, text, position, colour, border=(0,0,0), make_copy=True, scale=1, thickness=2, border_thickness=7):
+def label_image(img_in, text: str, position, colour, border=(0,0,0), make_copy: bool = True, 
+                scale: float = 1, thickness: int = 2, border_thickness: int = 7):
 # Write text at position position, with colour and black border on img_in
     if make_copy:
         img = img_in.copy()
