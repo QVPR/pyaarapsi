@@ -38,8 +38,6 @@ class Simple_Follower_Class(Base_ROS_Class):
         '''
         super().__init__(**kwargs)
 
-        print(kwargs)
-
         self.init_params(kwargs['rate_num'], kwargs['log_level'], kwargs['reset'])
         self.init_vars(kwargs['simple'])
         self.init_rospy()
