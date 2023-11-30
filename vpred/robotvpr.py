@@ -7,6 +7,7 @@ from .gradseq_tools import *
 from .robotrun import *
 from scipy.spatial.distance import cdist
 from pyaarapsi.core.helper_tools import angle_wrap, normalize_angle
+from matplotlib.markers import MarkerStyle
 
 def compute_distance_in_m(a,b):
     '''
@@ -270,11 +271,11 @@ class RobotVPR:
         else:
             print('Error: robotvpr.py: plot_error_along_route: units needs to be either m, frames or degrees');
             return
-        from matplotlib.markers import MarkerStyle
-        ax.scatter(qrys[fn],error[fn],'.',color='lightblue',label='FN (removed)')
-        ax.scatter(qrys[tn],error[tn],'.',color='lightgray',label='TN (removed)')
-        ax.scatter(qrys[tp],error[tp],'.',color='g',label='TP (retained)')
-        ax.scatter(qrys[fp],error[fp],'.',color='r',label='FP (retained)')
+        
+        ax.scatter(qrys[fn],error[fn],marker='.',color='lightblue',label='FN (removed)')
+        ax.scatter(qrys[tn],error[tn],marker='.',color='lightgray',label='TN (removed)')
+        ax.scatter(qrys[tp],error[tp],marker='.',color='g',label='TP (retained)')
+        ax.scatter(qrys[fp],error[fp],marker='.',color='r',label='FP (retained)')
         ax.axhline(self.tolerance,ls='dashed',label='Tolerance')
         ax.set_xlabel('query number')
         ax.set_ylabel('error ({0})'.format(self.units))
