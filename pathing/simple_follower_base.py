@@ -5,6 +5,7 @@ import numpy as np
 import sys
 import pydbus
 import cv2
+import copy
 import matplotlib.pyplot as plt
 from typing import Tuple
 
@@ -47,9 +48,11 @@ class Simple_Follower_Class(Base_ROS_Class):
     def init_params(self, rate_num: float, log_level: float, reset):
         super().init_params(rate_num, log_level, reset)
 
-        # Zone set-up:
+        # Path set-up:
         self.ZONE_LENGTH            = self.params.add(self.namespace + "/path/zones/length",        0,                      check_positive_float,                       force=False)
         self.ZONE_NUMBER            = self.params.add(self.namespace + "/path/zones/number",        0,                      check_positive_int,                         force=False)
+        self.PATH_SAMPLE_RATE       = self.params.add(self.namespace + "/path/sample_rate",         5.0,                    check_positive_float,                       force=False) # Hz
+        self.PATH_FILTERS           = self.params.add(self.namespace + "/path/filters",             "{}",                   check_string,                               force=False)
         
         # Vehicle speed limits:
         self.SLOW_LIN_VEL_MAX       = self.params.add(self.namespace + "/limits/slow/linear",       0,                      check_positive_float,                       force=False)
@@ -91,6 +94,7 @@ class Simple_Follower_Class(Base_ROS_Class):
 
         self.commanded          = False
         self.command_msg        = SpeedCommand()
+        self.last_command_time  = 0.0
 
         # Inter-loop variables for velocity control:
         self.old_lin            = 0.0                       # Last-made-command's linear velocity
@@ -98,14 +102,19 @@ class Simple_Follower_Class(Base_ROS_Class):
 
         # Inter-loop variables for dataset loading control:
         self.dataset_queue      = []                        # List of dataset parameters pending construction
-        self.dataset_loaded     = False                     # Whether datasets are ready
 
-        # Initialise dataset processor:
-        self.ip                 = VPRDatasetProcessor(None, try_gen=False, ros=True, printer=self.print) 
-        self.dsinfo             = self.make_dataset_dict() # Get VPR pipeline's dataset dictionary
-        self.dsinfo['ft_types'] = [FeatureType.RAW.name] # Ensure feature is raw because we do roll-matching
+        # Initialise dataset processors:
+        self.ref_ip             = VPRDatasetProcessor(None, try_gen=False, ros=True, printer=self.print) 
+        self.path_ip            = VPRDatasetProcessor(None, try_gen=False, ros=True, printer=self.print) 
 
+        self.ref_info                   = self.make_dataset_dict() # Get VPR pipeline's dataset dictionary
+        self.ref_info['ft_types']       = [FeatureType.RAW.name] # Ensure feature is raw because we do roll-matching
+        self.path_info                  = copy.deepcopy(self.ref_info)
+        self.path_info['sample_rate']   = self.PATH_SAMPLE_RATE.get()
+        self.path_info['filters']       = self.PATH_FILTERS.get()
+        
         # Empty structures to initialise memory requirements:
+        self.viz_ref            = Path()
         self.viz_path           = Path()
         self.viz_speeds         = MarkerArray()
         self.viz_zones          = MarkerArray()
@@ -187,6 +196,7 @@ class Simple_Follower_Class(Base_ROS_Class):
         super().init_rospy()
         
         ds_requ                 = self.namespace + "/requests/dataset/"
+        self.ref_pub            = self.add_pub(      self.namespace + '/ref',                  Path,                                       queue_size=1, latch=True, subscriber_listener=self.sublis)
         self.path_pub           = self.add_pub(      self.namespace + '/path',                 Path,                                       queue_size=1, latch=True, subscriber_listener=self.sublis)
         self.speed_pub          = self.add_pub(      self.namespace + '/speeds',               MarkerArray,                                queue_size=1, latch=True, subscriber_listener=self.sublis)
         self.zones_pub          = self.add_pub(      self.namespace + '/zones',                MarkerArray,                                queue_size=1, latch=True, subscriber_listener=self.sublis)
@@ -210,12 +220,16 @@ class Simple_Follower_Class(Base_ROS_Class):
 
         self.timer_chk          = rospy.Timer(rospy.Duration(2), self.check_controller)
 
+        self.sublis.add_operation(self.namespace + '/ref',              method_sub=self.path_peer_subscribe)
         self.sublis.add_operation(self.namespace + '/path',             method_sub=self.path_peer_subscribe)
         self.sublis.add_operation(self.namespace + '/zones',            method_sub=self.path_peer_subscribe)
         self.sublis.add_operation(self.namespace + '/speeds',           method_sub=self.path_peer_subscribe)
 
     def path_peer_subscribe(self, topic_name: str):
-        if topic_name == self.namespace + '/path':
+        if topic_name == self.namespace + '/ref':
+            self.ref_pub.publish(self.viz_ref)
+
+        elif topic_name == self.namespace + '/path':
             self.path_pub.publish(self.viz_path)
 
         elif topic_name == self.namespace + '/zones':
@@ -228,9 +242,12 @@ class Simple_Follower_Class(Base_ROS_Class):
             raise Exception('Unknown path_peer_subscribe topic: %s' % str(topic_name))
 
     def command_cb(self, msg: SpeedCommand):
+        self.last_command_time = rospy.Time.now().to_sec()
+
         if msg.enabled == False:
             self.commanded = False
             return
+        
         self.command_msg = msg
         self.commanded = True
 
@@ -303,7 +320,6 @@ class Simple_Follower_Class(Base_ROS_Class):
         except ValueError:
             pass
 
-
     def odom_cb(self, msg: Odometry):
         '''
         Callback to handle new odometry
@@ -372,21 +388,30 @@ class Simple_Follower_Class(Base_ROS_Class):
         - Downsampled list of path points
         - ROS structures for visualising path, speed along path, and zone boundaries
         '''
-        assert not self.ip.dataset is None
-        # generate an n-row, 4 column array (x, y, yaw, speed) corresponding to each reference image (same index)
-        self.path_xyws  = np.transpose(np.stack([self.ip.dataset['dataset']['px'].flatten(), 
-                                                 self.ip.dataset['dataset']['py'].flatten(),
-                                                 self.ip.dataset['dataset']['pw'].flatten(),
-                                                 make_speed_array(self.ip.dataset['dataset']['pw'].flatten())]))
+        assert not self.path_ip.dataset is None
+        # generate an n-row, 4 column array (x, y, yaw, speed) corresponding to each path node / reference image (same index)
+        self.path_xyws  = np.transpose(np.stack([self.path_ip.dataset['dataset']['px'].flatten(), 
+                                                 self.path_ip.dataset['dataset']['py'].flatten(),
+                                                 self.path_ip.dataset['dataset']['pw'].flatten(),
+                                                 make_speed_array(self.path_ip.dataset['dataset']['pw'].flatten())]))
+        self.ref_xyws  = np.transpose(np.stack([self.ref_ip.dataset['dataset']['px'].flatten(), 
+                                                 self.ref_ip.dataset['dataset']['py'].flatten(),
+                                                 self.ref_ip.dataset['dataset']['pw'].flatten(),
+                                                 make_speed_array(self.ref_ip.dataset['dataset']['pw'].flatten())]))
         
-        # determine zone number, length, indices:
+        # generate path / ref stats:
         self.path_sum, self.path_len     = calc_path_stats(self.path_xyws)
+        self.ref_sum, self.ref_len       = calc_path_stats(self.ref_xyws)
+
+        # determine zone number, length, indices:
         self.zone_length, self.num_zones = calc_zone_stats(self.path_len, self.ZONE_LENGTH.get(), self.ZONE_NUMBER.get(), )
         _end                             = [self.path_xyws.shape[0] + (int(not self.LOOP_PATH.get()) - 1)]
         self.zone_indices                = [int(np.argmin(np.abs(self.path_sum-(self.zone_length*i)))) for i in np.arange(self.num_zones)] + _end
         
         # generate stuff for visualisation:
         self.path_indices                = [int(np.argmin(np.abs(self.path_sum-(0.2*i)))) for i in np.arange(int(5 * self.path_len))]
+        self.ref_indices                 = [int(np.argmin(np.abs(self.ref_sum-(0.2*i)))) for i in np.arange(int(5 * self.ref_len))]
+        self.viz_ref, _                  = make_path_speeds(self.ref_xyws, self.ref_indices)
         self.viz_path, self.viz_speeds   = make_path_speeds(self.path_xyws, self.path_indices)
         self.viz_zones                   = make_zones(self.path_xyws, self.zone_indices)
 
@@ -407,28 +432,30 @@ class Simple_Follower_Class(Base_ROS_Class):
             else:
                 self.set_safety_mode(Safety_Mode.STOP)
 
-    def try_load_dataset(self, dataset_dict) -> bool:
+        # TODO: path parameters, probably.
+
+    def try_load_dataset(self, _ip: VPRDatasetProcessor, _dict: dict, dataset_loaded: bool) -> bool:
         '''
         Try-except wrapper for load_dataset
         '''
-        if not self.dataset_loaded:
+        if not dataset_loaded:
             try:
-                self.dataset_loaded = bool(self.ip.load_dataset(dataset_dict))
+                dataset_loaded = bool(_ip.load_dataset(_dict))
             except:
-                self.dataset_loaded = False
-        return self.dataset_loaded
+                dataset_loaded = False
+        return dataset_loaded
 
-    def load_dataset(self):
+    def load_dataset(self, _ip: VPRDatasetProcessor, _dict: dict):
         '''
         Load in dataset to generate path and to utilise VPR index information
         '''
 
         # Try load in dataset:
-        self.try_load_dataset(self.dsinfo)
+        dataset_loaded = self.try_load_dataset(_ip, _dict, False)
 
-        if not self.dataset_loaded: # if the model failed to generate, the dataset is not ready, therefore...
+        if not dataset_loaded: # if the model failed to generate, the dataset is not ready, therefore...
             # Request dataset generation:
-            dataset_msg = message_converter.convert_dictionary_to_ros_message('aarapsi_robot_pack/RequestDataset', self.dsinfo)
+            dataset_msg = message_converter.convert_dictionary_to_ros_message('aarapsi_robot_pack/RequestDataset', _dict)
             self.dataset_queue.append(dataset_msg)
             self.ds_requ_pub.publish(self.dataset_queue[0])
 
@@ -437,7 +464,7 @@ class Simple_Follower_Class(Base_ROS_Class):
             while len(self.dataset_queue): # while there is a dataset we are waiting on:
                 if rospy.is_shutdown():
                     sys.exit()
-                self.print('Waiting for path dataset construction...', throttle=5)
+                self.print('Waiting for dataset construction...', throttle=5)
                 self.rate_obj.sleep()
                 wait_intervals += 1
                 if wait_intervals > 10 / (1/self.RATE_NUM.get()):
@@ -449,9 +476,9 @@ class Simple_Follower_Class(Base_ROS_Class):
                     wait_intervals = 0
 
             # Try load in the dataset again now that it is ready
-            self.try_load_dataset(self.dsinfo)
-            if not self.dataset_loaded:
-                raise Exception('Datasets were constructed, but could not be loaded!')
+            dataset_loaded = self.try_load_dataset(_ip, _dict, dataset_loaded)
+            if not dataset_loaded:
+                raise Exception('Dataset was constructed, but could not be loaded!')
 
     def publish_controller_info(self):
         '''
@@ -541,6 +568,7 @@ class Simple_Follower_Class(Base_ROS_Class):
         print(''.join([C_CLEAR + line + '\n' for line in lines]) + (C_UP_N%1)*(len(lines)), end='')
 
     def handle_commanding(self, new_lin: float, new_ang: float) -> Tuple[float, float]:
+    
         if self.command_msg.mode == SpeedCommand.NONE:
             pass
         elif self.command_msg.mode == SpeedCommand.SCALE:
@@ -572,7 +600,10 @@ class Simple_Follower_Class(Base_ROS_Class):
             new_ang             = self.reject_hash[self.REJECT_MODE.get()](self.old_ang)
 
         if self.commanded:
-            new_lin, new_ang = self.handle_commanding(new_lin, new_ang)
+            if rospy.Time.now().to_sec() - self.last_command_time > 1.0: # longer than a second ago:
+                self.commanded = False
+            else:    
+                new_lin, new_ang = self.handle_commanding(new_lin, new_ang)
 
         # Update the last-sent-command to be the one we just made:
         self.old_lin            = new_lin
@@ -597,17 +628,17 @@ class Simple_Follower_Class(Base_ROS_Class):
         '''
         Sliding match of a downsampled image to generate a yaw correction estimate
         '''
-        assert not self.ip.dataset is None
+        assert not self.ref_ip.dataset is None
         resize          = [int(self.IMG_HFOV.get()), 8]
         img_dims        = self.IMG_DIMS.get()
-        query_raw       = cv2.cvtColor(compressed2np(self.label.query_image), cv2.COLOR_BGR2GRAY)
+        query_raw       = cv2.cvtColor(compressed2np(self.label.query_image), cv2.COLOR_BGR2GRAY) #type: ignore
         img             = cv2.resize(query_raw, resize)
         img_mask        = np.ones(img.shape)
 
         _b              = int(resize[0] / 2)
         sliding_options = range((-_b) + 1, _b)
 
-        against_image   = cv2.resize(np.reshape(self.ip.dataset['dataset']['RAW'][ind], [img_dims[1], img_dims[0]]), resize)
+        against_image   = cv2.resize(np.reshape(self.ref_ip.dataset['dataset']['RAW'][ind], [img_dims[1], img_dims[0]]), resize)
         options_stacked = np.stack([roll(against_image, i).flatten() for i in sliding_options])
         img_stacked     = np.stack([(roll(img_mask, i)*img).flatten() for i in sliding_options])
         matches         = np.sum(np.square(img_stacked - options_stacked),axis=1)
@@ -644,10 +675,14 @@ class Simple_Follower_Class(Base_ROS_Class):
         '''
         self.set_state(NodeState.MAIN)
 
-        self.load_dataset() # Load reference data
-        self.make_path()    # Generate reference path
+        self.print('Loading reference data...')
+        self.load_dataset(self.ref_ip, self.ref_info) # Load reference data
+        self.print('Loading path data...')
+        self.load_dataset(self.path_ip, self.path_info) # Load path data
 
-        # Publish path, speed, zones for RViz:
+        # Generate and publish ref, path, speed, zones for RViz:
+        self.make_path()
+        self.ref_pub.publish(self.viz_ref)
         self.path_pub.publish(self.viz_path)
         self.speed_pub.publish(self.viz_speeds)
         self.zones_pub.publish(self.viz_zones)
