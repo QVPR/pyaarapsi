@@ -28,7 +28,7 @@ from ..vpred.vpred_tools        import find_prediction_performance_metrics
 from ..vpred.vpred_factors      import find_factors
 
 class SVMModelProcessor:
-    def __init__(self, ros=False, root=None, load_field=False, printer=None):
+    def __init__(self, ros=False, root=None, load_field=False, printer=None, use_tqdm: bool = False, cuda: bool = False):
 
         self.model_ready    = False
         self.do_field       = load_field
@@ -41,8 +41,13 @@ class SVMModelProcessor:
             self.root       = root
 
         # for making new models (prep but don't load anything yet)
-        self.cal_qry_ip     = VPRDatasetProcessor(None, ros=self.ros, root=root, printer=self.printer)
-        self.cal_ref_ip     = VPRDatasetProcessor(None, ros=self.ros, root=root, printer=self.printer)
+        self.cal_qry_ip     = VPRDatasetProcessor(None, ros=self.ros, root=root, printer=self.printer, use_tqdm=use_tqdm, cuda=cuda)
+        self.cal_ref_ip     = VPRDatasetProcessor(None, ros=self.ros, root=root, printer=self.printer, use_tqdm=use_tqdm, cuda=cuda)
+
+        self.qry_loaded     = False
+        self.ref_loaded     = False
+
+        self._vars_ready    = False
 
         self.print("[SVMModelProcessor] Processor Ready.")
 
@@ -139,41 +144,6 @@ class SVMModelProcessor:
         self.print("[save_model] Parameters: \n%s" % str(self.model['params']), LogType.DEBUG)
         return self
     
-    def _save_field(self, path: str):
-        if path.endswith('.npz'):
-            field_name = path[0:-3] + 'png'
-        elif not path.endswith('.png'):
-            field_name = path + '.png'
-        else:
-            field_name = path
-        assert not self.field is None
-
-        # Generate exif metadata:
-        exif_ifd = {piexif.ExifIFD.UserComment: json.dumps({'x_lim': self.field['x_lim'], 'y_lim': self.field['y_lim']}).encode()}
-        exif_dat = piexif.dump({"Exif": exif_ifd})
-
-        # Save image:
-        im = Image.fromarray(self.field['image']) 
-        im.save(field_name, exif=exif_dat)
-
-    def _load_field(self, path: str):
-        del self.field
-        self.field_ready = False
-        if path.endswith('.npz'):
-            field_name = path[0:-3] + 'png'
-        elif not path.endswith('.png'):
-            field_name = path + '.png'
-        else:
-            field_name = path
-
-        image = Image.open(field_name)
-        _field = {'image': np.array(image)}
-        _field.update(json.loads(image.getexif()[37510].decode())) # may need to be _getexif
-        self.field = _field
-        self.field_ready = True
-
-        return True
-
     def load_model(self, model_params: dict, try_gen: bool = False, gen_datasets: bool = False, save_datasets: bool = False) -> str:
     # load via search for param match
         self.svm_dbp = model_params['svm_dbp']
@@ -216,14 +186,14 @@ class SVMModelProcessor:
     def predict(self, dvc, mInd, rXY, init_pos=np.array([0,0])):
         if not self.model_ready:
             raise Exception("Model not loaded in system. Either call 'generate_model' or 'load_model' before using this method.")
-        factor1_qry, factor2_qry = find_factors(self.model['params']['svm']['factors'], dvc, rXY, mInd, init_pos=init_pos)
-
-        X          = np.c_[factor1_qry, factor2_qry]                           # put the two factors into a 2-column vector
-        X_scaled   = self.model['model']['scaler'].transform(X)                # perform scaling using same parameters as calibration set
-        zvalues    = self.model['model']['svm'].decision_function(X_scaled)[0] # 'z' value; not probability but "related"...
-        pred       = self.model['model']['svm'].predict(X_scaled)[0]           # Make the prediction: predict whether this match is good or bad
-        prob       = self.model['model']['svm'].predict_proba(X_scaled)[:,1]   # get probability of prediction
-        return (pred, zvalues, [factor1_qry[0], factor2_qry[0]], prob)
+        X = np.c_[find_factors(self.model['params']['svm']['factors'], dvc, rXY, mInd, init_pos=init_pos)]
+        if X.shape[1] == 1:
+            X      = np.transpose(X)                                 # put the factors into a column vector
+        X_scaled   = self.model['model']['scaler'].transform(X)                 # perform scaling using same parameters as calibration set
+        zvalues    = self.model['model']['svm'].decision_function(X_scaled)[0]  # 'z' value; not probability but "related"...
+        pred       = self.model['model']['svm'].predict(X_scaled)[0]            # Make the prediction: predict whether this match is good or bad
+        prob       = self.model['model']['svm'].predict_proba(X_scaled)[:,1]      # get probability of prediction
+        return (pred, zvalues, X, prob)
     
     def generate_svm_mat(self, array_dim=500):
         # Generate decision function matrix:
@@ -260,7 +230,38 @@ class SVMModelProcessor:
         final_image         = np.array(cv2.resize(img_np_crop, (array_dim, array_dim), interpolation = cv2.INTER_AREA), dtype=np.uint8)
         
         return {'image': final_image, 'x_lim': x_lim, 'y_lim': y_lim}
-    
+
+    def get_performance_metrics(self, try_gen=False, save_datasets=False):
+        return self.performance_metrics
+        
+    def generate_missing_variables(self, try_gen=False, save_datasets=False):
+        '''
+        Generate all training meta variables: assumes training has been performed!
+        '''
+        if self._vars_ready:
+            return
+        
+        if not (self.qry_loaded and self.ref_loaded):
+            self.load_training_data(self.ref_params, self.qry_params, self.svm_params, self.bag_dbp, self.npz_dbp, self.svm_dbp, try_gen=try_gen, save_datasets=save_datasets)
+            if not (self.qry_loaded and self.ref_loaded):
+                raise Exception("Could not load datasets. Did you permit generation?")
+            
+        # Generate supporting variables; matrices and corresponding indices:
+        self._generate_helper_variables()
+
+        # Generate data transforming scaler:
+        self.X_train_scaled = self.scaler.transform(self.X_train)
+        
+        # Classify input data:
+        self._classify()
+
+        # Make predictions on calibration set to assess performance
+        self.pred_train     = self.svm_model.predict(self.X_train_scaled)
+        self.zvalues_train  = self.svm_model.decision_function(self.X_train_scaled)
+        self.prob_train     = self.svm_model.predict_proba(self.X_train_scaled)[:,1]
+
+        self._vars_ready    = True
+
     #### Private methods:
     def _check(self):
         models = self._get_models()
@@ -274,44 +275,12 @@ class SVMModelProcessor:
         self.cal_qry_ip.autosave = save_datasets
         self.cal_ref_ip.autosave = save_datasets
         self.print("Loading calibration query dataset...", LogType.DEBUG)
-        load_qry = self.cal_qry_ip.load_dataset(self.qry_params, try_gen=try_gen)
+        self.qry_loaded = self.cal_qry_ip.load_dataset(self.qry_params, try_gen=try_gen)
         self.print("Loading calibration reference dataset...", LogType.DEBUG)
-        load_ref = self.cal_ref_ip.load_dataset(self.ref_params, try_gen=try_gen)
-        return (load_qry, load_ref)
+        self.ref_loaded = self.cal_ref_ip.load_dataset(self.ref_params, try_gen=try_gen)
+        return (self.qry_loaded, self.ref_loaded)
     
-    def _classify(self, ref_xy, qry_xy, S_train):
-        # Use ground truth to label classes of SVM training data
-
-        # Generate similarity matrix for reference to query **Positions**:
-        euc_dists_train = fastdist.matrix_to_matrix_distance(
-            ref_xy,
-            qry_xy,
-            fastdist.euclidean, "euclidean")
-        
-        true_inds_train     = np.argmin(euc_dists_train, axis=0) # From position we find true matches
-        match_inds_train    = np.argmin(S_train,    axis=0)      # From features we find VPR matches
-        
-        tol_mode = enum_get(self.svm_params['tol_mode'], SVM_Tolerance_Mode)
-        if tol_mode == SVM_Tolerance_Mode.DISTANCE:
-            error_dist_train    = np.sqrt( \
-                                        np.square(ref_xy[match_inds_train,0] - ref_xy[true_inds_train,0]) + \
-                                        np.square(ref_xy[match_inds_train,1] - ref_xy[true_inds_train,1]) \
-                                        )
-            y_train             = error_dist_train <= self.svm_params['tol_thres']
-
-        elif tol_mode == SVM_Tolerance_Mode.FRAME:
-            error_inds_train    = np.min(np.array([-1 * abs(match_inds_train - true_inds_train) + len(match_inds_train), 
-                                                abs(match_inds_train - true_inds_train)]), axis=0)
-        
-            y_train             = error_inds_train <= self.svm_params['tol_thres']
-        else:
-            raise Exception("Unknown tolerance mode (%s, %s)" % (str(tol_mode), str(self.svm_params['tol_mode'])))
-
-        return y_train
-
-    def _train(self):
-        self.print("Performing training...")
-        assert (not self.cal_ref_ip.dataset is None) and (not self.cal_qry_ip.dataset is None)
+    def _generate_helper_variables(self):
 
         # Generate similarity matrix for reference to query **Features**::
         self.S_train = fastdist.matrix_to_matrix_distance(  
@@ -320,26 +289,72 @@ class SVMModelProcessor:
             fastdist.euclidean, "euclidean")
         
         # Generate reference and query numpy array; columns are x,y
-        ref_xy       = np.stack([self.cal_ref_ip.dataset['dataset']['px'], self.cal_ref_ip.dataset['dataset']['py']], 1)
-        qry_xy       = np.stack([self.cal_qry_ip.dataset['dataset']['px'], self.cal_qry_ip.dataset['dataset']['py']], 1)
+        self.cal_ref_xy       = np.stack([self.cal_ref_ip.dataset['dataset']['px'], self.cal_ref_ip.dataset['dataset']['py']], 1)
+        self.cal_qry_xy       = np.stack([self.cal_qry_ip.dataset['dataset']['px'], self.cal_qry_ip.dataset['dataset']['py']], 1)
 
         # Extract factors:
-        self.factor1_train, self.factor2_train = find_factors(self.svm_params['factors'], self.S_train, ref_xy, np.argmin(self.S_train, axis=0))
+        self.factors_train = find_factors(self.svm_params['factors'], self.S_train, self.cal_ref_xy, np.argmin(self.S_train, axis=0))
 
         # Form input vector
-        self.X_train        = np.c_[self.factor1_train, self.factor2_train]
-        self.scaler         = StandardScaler()
-        self.X_train_scaled = self.scaler.fit_transform(self.X_train)
+        self.X_train        = np.transpose(np.array(self.factors_train))
 
-        # Create class labels for training data:
-        self.y_train        = self._classify(ref_xy, qry_xy, self.S_train)
+        # Generate similarity matrix for reference to query **Positions**:
+        self.euc_dists_train = fastdist.matrix_to_matrix_distance(
+            self.cal_ref_xy,
+            self.cal_qry_xy,
+            fastdist.euclidean, "euclidean")
+        
+        # Generate minima indices:
+        self.true_inds_train     = np.argmin(self.euc_dists_train,  axis=0) # From position we find true matches
+        self.match_inds_train    = np.argmin(self.S_train,          axis=0) # From features we find VPR matches
+    
+    def _classify(self):
+        # Classify input data:
+        tol_mode = enum_get(self.svm_params['tol_mode'], SVM_Tolerance_Mode)
+        if tol_mode == SVM_Tolerance_Mode.DISTANCE:
+            error_dist_train    = np.sqrt( \
+                                        np.square(self.cal_ref_xy[self.match_inds_train,0] - self.cal_ref_xy[self.true_inds_train,0]) + \
+                                        np.square(self.cal_ref_xy[self.match_inds_train,1] - self.cal_ref_xy[self.true_inds_train,1]) \
+                                        )
+            minimum_in_tol      = self.euc_dists_train[self.match_inds_train,np.arange(self.match_inds_train.shape[0])]
+            self.y_train        = ((error_dist_train <= self.svm_params['tol_thres']).astype(int) + \
+                                   (minimum_in_tol <= self.svm_params['tol_thres']).astype(int)) == 2
 
-        # Define and train the Support Vector Machine
-        self.svm_model      = svm.SVC(kernel='rbf', C=1, gamma='scale', class_weight='balanced', probability=True)
-        classes = {unique: count for unique, count in np.unique(self.y_train, return_counts=True)}
+        elif tol_mode == SVM_Tolerance_Mode.FRAME:
+            self.print('[_train] Frame mode has been selected; no accounting for off-path training.', LogType.WARN)
+            error_inds_train    = np.min(np.array([-1 * abs(self.match_inds_train - self.true_inds_train) + len(self.match_inds_train), 
+                                                abs(self.match_inds_train - self.true_inds_train)]), axis=0)
+        
+            self.y_train        = error_inds_train <= self.svm_params['tol_thres']
+        else:
+            raise Exception("Unknown tolerance mode (%s, %s)" % (str(tol_mode), str(self.svm_params['tol_mode'])))
+        
+        # Check input data is appropriately classed:
+        _classes, _class_counts = np.unique(self.y_train, return_counts=True)
+        classes = {_class: _count for _class, _count in zip(tuple(_classes), tuple(_class_counts))}
         if len(classes.keys()) < 2:
             self.print('Bad class state! Could not define two classes based on parameters provided. Classes: %s' % str(classes), LogType.ERROR)
+            if tol_mode == SVM_Tolerance_Mode.DISTANCE:
+                self.print('Minimum Distance: %.2fm, Minimum Error: %.2fm' % (np.min(minimum_in_tol), np.min(error_dist_train)), LogType.DEBUG)
+            elif tol_mode == SVM_Tolerance_Mode.FRAME:
+                self.print('Minimum Error: %.2fi' % (np.min(error_inds_train)), LogType.DEBUG)
+
+    def _train(self):
+        self.print("Performing training...")
+        assert (not self.cal_ref_ip.dataset is None) and (not self.cal_qry_ip.dataset is None)
+
+        # Generate supporting variables; matrices and corresponding indices:
+        self._generate_helper_variables()
+
+        # Generate data transforming scaler:
+        self.scaler         = StandardScaler()
+        self.X_train_scaled = self.scaler.fit_transform(self.X_train)
         
+        # Classify input data:
+        self._classify()
+        
+        # Define and train the Support Vector Machine
+        self.svm_model      = svm.SVC(kernel='rbf', C=1, gamma='scale', class_weight='balanced', probability=True)
         self.svm_model.fit(self.X_train_scaled, self.y_train)
 
         # Make predictions on calibration set to assess performance
@@ -347,13 +362,15 @@ class SVMModelProcessor:
         self.zvalues_train  = self.svm_model.decision_function(self.X_train_scaled)
         self.prob_train     = self.svm_model.predict_proba(self.X_train_scaled)[:,1]
 
+        self._vars_ready    = True
+
         [precision, recall, num_tp, num_fp, num_tn, num_fn] = \
             find_prediction_performance_metrics(self.pred_train, self.y_train, verbose=False)
         self.print('Performance of prediction on calibration set:\nTP={0}, TN={1}, FP={2}, FN={3}\nprecision={4:3.1f}% recall={5:3.1f}%\n' \
                    .format(num_tp,num_tn,num_fp,num_fn,precision*100,recall*100))
         
         self.performance_metrics = {'precision': precision, 'recall': recall, 'num_tp': num_tp, 'num_fp': num_fp, 'num_tn': num_tn, 'num_fn': num_fn}
-
+        
     def _get_models(self):
         models      = {}
         entry_list  = os.scandir(self.root + '/' + self.svm_dbp + "/params/")
@@ -366,7 +383,7 @@ class SVMModelProcessor:
     def _make(self):
         params_dict         = dict(ref=self.ref_params, qry=self.qry_params, svm=self.svm_params,\
                                     npz_dbp=self.npz_dbp, bag_dbp=self.bag_dbp, svm_dbp=self.svm_dbp)
-        model_dict          = dict(svm=self.svm_model, scaler=self.scaler, factors=[self.factor1_train, self.factor2_train])
+        model_dict          = dict(svm=self.svm_model, scaler=self.scaler, factors=list(self.factors_train))
 
         try:
             del self.model
@@ -374,8 +391,23 @@ class SVMModelProcessor:
         except:
             pass
         self.model          = dict(params=params_dict, model=model_dict, perf=self.performance_metrics)
-        self.field          = self.generate_svm_mat()
+        if len(self.factors_train) == 2:
+            self.field      = self.generate_svm_mat()
+        else:
+            self.field      = None
         self.model_ready    = True
+
+    def _unfurl_model(self):
+        self.ref_params             = self.model['params']['ref']
+        self.qry_params             = self.model['params']['qry']
+        self.svm_params             = self.model['params']['svm']
+        self.npz_dbp                = self.model['params']['npz_dbp']
+        self.bag_dbp                = self.model['params']['bag_dbp']
+        self.svm_dbp                = self.model['params']['svm_dbp']
+        self.svm_model              = self.model['model']['svm']
+        self.scaler                 = self.model['model']['scaler']
+        self.factors_train          = np.array(self.model['model']['factors'])
+        self.performance_metrics    = self.model['perf']
     
     def _fix(self, model_name):
         if not model_name.endswith('.npz'):
@@ -406,10 +438,51 @@ class SVMModelProcessor:
         self.model_ready = False
         del self.model
         self.model       = dict(model=raw_model['model'].item(), params=raw_model['params'].item(), perf=raw_model['perf'].item())
+        self._unfurl_model()
         if self.do_field:
             self._load_field(self.root +  '/' + self.svm_dbp + '/fields/' + model_name)
         self.model_ready = True
+        self._vars_ready = False
+    
+    def _save_field(self, path: str) -> bool:
+        if self.field is None:
+            self.print('[_save_field] Field is none, cannot proceed!', LogType.DEBUG)
+            return False
+        
+        if path.endswith('.npz'):
+            field_name = path[0:-3] + 'png'
+        elif not path.endswith('.png'):
+            field_name = path + '.png'
+        else:
+            field_name = path
 
+        # Generate exif metadata:
+        exif_ifd = {piexif.ExifIFD.UserComment: json.dumps({'x_lim': self.field['x_lim'], 'y_lim': self.field['y_lim']}).encode()}
+        exif_dat = piexif.dump({"Exif": exif_ifd})
+
+        # Save image:
+        im = Image.fromarray(self.field['image']) 
+        im.save(field_name, exif=exif_dat)
+        return True
+
+    def _load_field(self, path: str):
+        del self.field
+        self.field_ready = False
+        if path.endswith('.npz'):
+            field_name = path[0:-3] + 'png'
+        elif not path.endswith('.png'):
+            field_name = path + '.png'
+        else:
+            field_name = path
+
+        image = Image.open(field_name)
+        _field = {'image': np.array(image)}
+        _field.update(json.loads(image.getexif()[37510].decode())) # may need to be _getexif
+        self.field = _field
+        self.field_ready = True
+
+        return True
+    
 class SVMFieldLoader(SVMModelProcessor):
     def __init__(self, model_params, ros=False):
         self.field          = None
