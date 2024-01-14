@@ -22,20 +22,6 @@ from pyaarapsi.pathing.basic                import *
 from pyaarapsi.pathing.simple_follower_base import Simple_Follower_Class
 
 class Extended_Follower_Class(Simple_Follower_Class):
-    def __init__(self, **kwargs):
-        '''
-
-        Node Initialisation
-
-        '''
-        super().__init__(**kwargs)
-
-        self.init_params(kwargs['rate_num'], kwargs['log_level'], kwargs['reset'])
-        self.init_vars()
-        self.init_rospy()
-
-        self.node_ready(kwargs['order_id'])
-
     def init_params(self, rate_num: float, log_level: float, reset):
         super().init_params(rate_num, log_level, reset)
 
@@ -46,8 +32,8 @@ class Extended_Follower_Class(Simple_Follower_Class):
         self.EXPERIMENT_MODE        = self.params.add(self.nodespace + "/exp/mode",                 Experiment_Mode.UNSET,  lambda x: check_enum(x, Experiment_Mode),   force=reset)
         self.TECHNIQUE              = self.params.add(self.nodespace + "/exp/technique",            Technique.VPR,          lambda x: check_enum(x, Technique),         force=reset)
 
-    def init_vars(self):
-        super().init_vars() # Call base class method
+    def init_vars(self, simple=True):
+        super().init_vars(simple) # Call base class method
 
         # Inter-loop variables for Zone-Return Features:
         self.zone_index         = -1                        # Index in path dataset corresponding to target zone
@@ -423,54 +409,6 @@ class Extended_Follower_Class(Simple_Follower_Class):
                  ' ' + '    Path Error: %s' % path_err_string,
                  ' ' + '    SVM Status: %s' % svm_string]
         print(''.join([C_CLEAR + line + '\n' for line in lines]) + (C_UP_N%1)*(len(lines)), end='')
-
-    def main(self):
-        '''
-
-        Main function
-
-        Handles:
-        - Pre-loop duties
-        - Keeping main loop alive
-        - Exit
-
-        '''
-        self.set_state(NodeState.MAIN)
-
-        self.load_dataset() # Load reference data
-        self.make_path()    # Generate reference path
-
-        # Publish path, speed, zones for RViz:
-        self.path_pub.publish(self.viz_path)
-        self.speed_pub.publish(self.viz_speeds)
-        self.zones_pub.publish(self.viz_zones)
-
-        self.ready = True
-
-        # Commence main loop; do forever:
-        self.print('Entering main loop.')
-        while not rospy.is_shutdown():
-            try:
-                # Denest main loop; wait for new messages:
-                if not (self.new_label):# and self.new_robot_odom):
-                    self.print("Waiting for new position information...", LogType.DEBUG, throttle=10)
-                    rospy.sleep(0.005)
-                    continue
-                
-                self.rate_obj.sleep()
-                self.new_label          = False
-                #self.new_robot_odom     = False
-
-                self.loop_contents()
-
-            except rospy.exceptions.ROSInterruptException as e:
-                pass
-            except Exception as e:
-                if self.parameters_ready:
-                    raise Exception('Critical failure. ' + formatException()) from e
-                else:
-                    self.print('Main loop exception, attempting to handle; waiting for parameters to update. Details:\n' + formatException(), LogType.DEBUG, throttle=5)
-                    rospy.sleep(0.5)
 
     def zone_return(self, ego, target, ignore_heading=False):
         '''
