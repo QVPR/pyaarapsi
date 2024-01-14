@@ -7,6 +7,7 @@ import genpy
 import rosbag
 import logging
 import numpy as np
+import gc
 from enum import Enum
 
 from tqdm.auto import tqdm
@@ -104,15 +105,16 @@ def process_bag(bag_path: str, sample_rate: float, odom_topic: Union[str, List[s
     else:
         _odom_topics = odom_topic
 
-    topic_list = _odom_topics + img_topics
+    topic_list      = _odom_topics + img_topics
+
     # Read rosbag
     data = rip_bag(bag_path, sample_rate, topic_list, printer=printer, use_tqdm=use_tqdm)
-
-    printer("Converting stored messages (%s)" % (str(len(data))))
+    _len = len(data)
+    printer("Converting stored messages (%s)" % (str(_len)))
     new_dict        = {key: [] for key in img_topics + ['px', 'py', 'pw', 'vx', 'vy', 'vw', 't']}
 
     none_rows       =   0
-    if len(data) < 1:
+    if _len < 1:
         raise Exception('No usable data!')
     if use_tqdm:
         iter_obj = tqdm(data)
@@ -150,7 +152,8 @@ def process_bag(bag_path: str, sample_rate: float, odom_topic: Union[str, List[s
                 new_dict[topic].append(compressed2np(row[1 + topic_list.index(topic)]))
             else:
                 new_dict[topic].append(raw2np(row[1 + topic_list.index(topic)]))
-    printer("%0.2f%% of %d rows contained NoneType; these were ignored." % (100 * none_rows / len(data), len(data)))
+    
+    printer("%0.2f%% of %d rows contained NoneType; these were ignored." % (100 * none_rows / _len, _len))
     return {key: np.array(new_dict[key]) for key in new_dict}
 
 def rip_bag(bag_path: str, sample_rate: float, topics_in: List[str], timing: int = -1, printer: Callable = print, use_tqdm: bool = True) -> list:
