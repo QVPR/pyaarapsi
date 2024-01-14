@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import os
 import inspect
 import logging
 import pickle
@@ -199,7 +199,10 @@ def roslogger(text, logtype: LogType = LogType.INFO, throttle: Optional[float] =
     
     if not ros:
         if log_level is None:
-            log_level = LogType.INFO
+            try:
+                log_level = enum_get(os.environ['ROSLOGGER_LOGLEVEL'], LogType)
+            except KeyError:
+                log_level = LogType.INFO
         # if the requested log level is below the print threshold (i.e. it shouldn't be displayed):
         if enum_value(logtype) < enum_value(log_level):
             return False
