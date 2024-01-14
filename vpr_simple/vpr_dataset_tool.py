@@ -6,6 +6,7 @@ import numpy as np
 import copy
 import logging
 import os
+import gc
 try:
     import rospkg
     ROSPKG_ROOT = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__)))
@@ -25,74 +26,19 @@ from .vpr_helpers import *
 from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
 
-from typing import Optional, Union, Protocol, overload
+from typing import Optional, Union, overload
 
-class SupportsNetVLADHybridNet(Protocol):
-    netvlad: NetVLAD_Container
-    hybridnet: HybridNet_Container
-
-class VPRDatasetProcessor:
-    def __init__(self, dataset_params: Optional[dict] = None, try_gen: bool = True, init_netvlad: bool = False, 
-                 init_hybridnet: bool = False, cuda: bool = False, use_tqdm: bool = False, 
-                 autosave: bool = False, ros: bool = True, root: Optional[str] = None, printer=None):
-        '''
-        Initialisation
-
-        Inputs:
-        - dataset_params:   dict type with following keys (str type) and values (detailed below):
-                            - npz_dbp:        str type; directory relative to root to find compressed data sets
-                            - bag_dbp:        str type; directory relative to root to find rosbags
-                            - bag_name:       str type; name of rosbag to find
-                            - sample_rate:    float type; rate to sample messages in rosbag
-                            - odom_topic:     str type; name of ROS topic to extract nav_msgs/Odometry messages from. If a list is provided, each will be stored as a column in the dataset
-                            - img_topics:     list type; list of str types. names of ROS topics to extract sensor_msgs/CompressedImage messages from.
-                            - img_dims:       list type; list of int types (two-positive-integer list). Dimensions to reduce input images to (height x width).
-                            - ft_types:       list type; list of str types (names from FeatureType). Features to extract from each image; will become accessible keys in the dataset.
-                            - filters:        str type; json string for designating filters to be applied. See pyaarapsi.vpr_simple.vpr_helpers.filter_dataset()
-        - try_gen:          bool type {default: True}; whether or not to attempt generation if load fails
-        - init_netvlad:     bool type {default: False}; whether or not to initialise netvlad (loads model into GPU)
-        - init_hybridnet:   bool type {default: False}; whether or not to initialise hybridnet (loads model into GPU)
-        - cuda:             bool type {default: False}; whether or not to use CUDA for feature type/GPU acceleration
-        - use_tqdm:         bool type {default: False}; whether or not to display extraction/loading statuses using tqdm
-        - autosave:         bool type {default: False}; whether or not to automatically save any generated datasets
-        - ros:              bool type {default: True}; whether or not to use rospy logging (requires operation within ROS node scope)
-        - root:             str type {default: None}; base root inserted in front of npz_dbp, bag_dbp, and svm_dbp
-        - printer:          method {default: None}; if provided, overrides logging and will pass inputs to specified method on print
-        Returns:
-            self
-        '''
-        self.cuda           = cuda
-        self.ros            = ros
-        self.use_tqdm       = use_tqdm
-        self.autosave       = autosave
-        self.init_netvlad   = init_netvlad
-        self.init_hybridnet = init_hybridnet
-        self.printer        = printer
-        if root is None:
-            self.root       = ROSPKG_ROOT
-        else:
-            self.root       = root
+class VPRProcessorBase:
+    def __init__(self):
+        self.dataset        = {}
+        self.printer        = None
+        self.ros            = False
+        self.cuda           = False
         self.borrowed_nns   = [False, False]
-
-        # Declare attributes:
-        self.dataset: dict                              = {}
-        self.netvlad: Optional[NetVLAD_Container]       = None
-        self.hybridnet: Optional[HybridNet_Container]   = None
-        self.netvlad_rdy                                = False
-        self.hybridnet_rdy                              = False
-        self.npz_dbp: str                               = ''
-        self.bag_dbp: str                               = ''
-
-        if not (dataset_params is None): # If parameters have been provided:
-            self.print("Loading model from parameters...")
-            name = self.load_dataset(dataset_params, try_gen=try_gen)
-
-            if not self.dataset:
-                raise Exception("Dataset load failed.")
-            self.print("Dataset Ready (loaded: %s)." % str(name))
-
-        else: # None-case needed for SVM training
-            self.print("Ready; no dataset loaded.")
+        self.netvlad        = None
+        self.hybridnet      = None
+        self.init_netvlad   = False
+        self.init_hybridnet = False
 
     def get(self) -> dict:
         '''
@@ -159,40 +105,45 @@ class VPRDatasetProcessor:
         else:
             self.printer(text, logtype, throttle=throttle, ros=self.ros)
 
-    def prep_netvlad(self, cuda: Optional[bool] = None, load: bool = True, prep: bool = True) -> bool:
+    def prep_netvlad(self, cuda: Optional[bool] = None, ready_up: bool = True) -> bool:
         '''
         Prepare netvlad for use
 
         Inputs:
-        - cuda:   bool type {default: None}; if not None, overrides initialisation cuda variable for netvlad loading
-        - load:   bool type {default: True}; whether or not to automatically trigger netvlad.load()
-        - prep:   bool type {default: True}; whether or not to automatically trigger netvlad.prep()
+        - cuda:     bool type {default: None}; if not None, overrides initialisation cuda variable for netvlad loading
+        - ready_up: bool type {default: True}; whether or not to automatically ready the model
         Returns:
             bool type; True (on success, else Exception)
         '''
-        if cuda is None:
-            cuda = self.cuda
-        self.netvlad        = NetVLAD_Container(cuda=cuda, ngpus=int(self.cuda), logger=self.print, load=load, prep=prep)
-        self.init_netvlad   = True
+        if not isinstance(self.netvlad, NetVLAD_Container):
+            if cuda is None:
+                cuda = self.cuda
+            self.netvlad        = NetVLAD_Container(cuda=cuda, ngpus=int(self.cuda), logger=self.print)
+            self.init_netvlad   = True
+        if ready_up:
+            self.netvlad.ready_up()
         return True
 
-    def prep_hybridnet(self, cuda: Optional[bool] = None, load: bool = True) -> bool:
+    def prep_hybridnet(self, cuda: Optional[bool] = None, ready_up: bool = True) -> bool:
         '''
         Prepare hybridnet for use
 
         Inputs:
-        - cuda:   bool type {default: None}; if not None, overrides initialisation cuda variable for hybridnet loading
-        - load:   bool type {default: True}; whether or not to automatically trigger hybridnet.load()
+        - cuda:     bool type {default: None}; if not None, overrides initialisation cuda variable for hybridnet loading
+        - ready_up: bool type {default: True}; whether or not to automatically ready the model
         Returns:
             bool type; True (on success, else Exception)
         '''
-        if cuda is None:
-            cuda = self.cuda
-        self.hybridnet      = HybridNet_Container(cuda=cuda, logger=self.print, load=load)
-        self.init_hybridnet = True
+        if not isinstance(self.hybridnet, HybridNet_Container):
+            if cuda is None:
+                cuda = self.cuda
+            self.hybridnet      = HybridNet_Container(cuda=cuda, logger=self.print)
+            self.init_hybridnet = True
+        if ready_up:
+            self.hybridnet.ready_up()
         return True
 
-    def pass_nns(self, processor: SupportsNetVLADHybridNet, netvlad: bool = True, hybridnet: bool = True) -> bool:
+    def pass_nns(self, processor: VPRDatasetProcessor, netvlad: bool = True, hybridnet: bool = True, try_load_if_missing: bool = True) -> bool:
         '''
         Overwrite this VPRDatasetProcessor's instances of netvlad and hybridnet with another's instantiations
         Will check and, if initialised, destroy existing netvlad/hybridnet
@@ -204,18 +155,31 @@ class VPRDatasetProcessor:
         Returns:
             bool type; True (on success, else Exception)
         '''
+        assert isinstance(processor, VPRDatasetProcessor)
         if netvlad:
+            if processor.netvlad is None:
+                if try_load_if_missing:
+                    processor.prep_netvlad()
+                else:
+                    raise Exception('Passing requires a NetVLAD_Container, or pass argument try_load_if_missing=True.')
             if isinstance(self.netvlad, NetVLAD_Container):
                 self.netvlad.destroy()
             self.netvlad = processor.netvlad
             self.init_netvlad = True
             self.borrowed_nns[0] = True
+            self.print('Passed NetVLAD.', LogType.DEBUG)
         if hybridnet:
+            if processor.hybridnet is None:
+                if try_load_if_missing:
+                    processor.prep_hybridnet()
+                else:
+                    raise Exception('Passing requires a HybridNet_Container, or pass argument try_load_if_missing=True.')
             if isinstance(self.hybridnet, HybridNet_Container):
                 self.hybridnet.destroy()
             self.hybridnet = processor.hybridnet
             self.init_hybridnet = True
             self.borrowed_nns[1] = True
+            self.print('Passed HybridNet.', LogType.DEBUG)
         return True
 
     def check_netvlad(self, ft_types: list) -> bool:
@@ -226,11 +190,15 @@ class VPRDatasetProcessor:
         Inputs:
             ft_types:  list type; list of FeatureType enumerations. If it contains FeatureType.NETVLAD and NetVLAD is not loaded, this method will attempt to initialise NetVLAD
         Returns:
-            bool type; True (on success, else Exception)
+            bool type; True on successful update, False if no change
         '''
-        if (FeatureType.NETVLAD in ft_types) and (self.netvlad_rdy == False) and self.init_netvlad: # If needed, initialise NetVLAD
-            self.netvlad        = NetVLAD_Container(cuda=self.cuda, ngpus=int(self.cuda), logger=self.print)
-            self.netvlad_rdy    = True
+        if (FeatureType.NETVLAD in ft_types) and self.init_netvlad: # If needed and we've been asked to initialise NetVLAD:
+            if self.netvlad is None: # if it currently doesn't exist,
+                self.prep_netvlad(self.cuda, True)
+            elif not self.netvlad.is_ready(): # if it exists but isn't ready,
+                self.netvlad.ready_up()
+            else:
+                return False
             return True
         return False
     
@@ -242,13 +210,136 @@ class VPRDatasetProcessor:
         Inputs:
             ft_types:  list type; list of FeatureType enumerations. If it contains FeatureType.HYBRIDNET and HybridNet is not loaded, this method will attempt to initialise HybridNet
         Returns:
-            bool type; True (on success, else Exception)
+            bool type; True on successful update, False if no change
         '''
-        if (FeatureType.HYBRIDNET in ft_types) and (self.hybridnet_rdy == False) and self.init_hybridnet: # If needed, initialise HybridNet
-            self.hybridnet      = HybridNet_Container(cuda=self.cuda, logger=self.print)
-            self.hybridnet_rdy  = True
+        if (FeatureType.HYBRIDNET in ft_types) and self.init_hybridnet: # If needed and we've been asked to initialise HybridNet:
+            if self.hybridnet is None: # if it currently doesn't exist,
+                self.prep_hybridnet(self.cuda, True)
+            elif not self.hybridnet.is_ready(): # if it exists but isn't ready,
+                self.hybridnet.ready_up()
+            else:
+                return False
             return True
         return False
+    
+    @overload
+    def getFeat(self, img: np.ndarray, fttype_in: FeatureType, dims: list, use_tqdm: bool = False) -> np.ndarray: ...
+    
+    @overload
+    def getFeat(self, img: List[np.ndarray], fttype_in: FeatureType, dims: list, use_tqdm: bool = False) -> List[np.ndarray]: ...
+        
+    def getFeat(self, img: Union[np.ndarray, List[np.ndarray]], fttype_in: FeatureType, dims: list, use_tqdm: bool = False) -> Union[np.ndarray, List[np.ndarray]]:
+        '''
+        Feature Extraction Helper
+
+        Inputs:
+        - img:          np.ndarray type (or list of np.ndarray); Image array (can be RGB or greyscale; if greyscale, will be stacked to RGB equivalent dimensions for neural network input.
+        - fttype_in:    FeatureType type; Type of feature to extract from each image.
+        - dims:         list type; list of int types (two-positive-integer list). Dimensions to reduce input images to (height x width).
+        - use_tqdm:     bool type {default: False}; whether or not to display extraction/loading statuses using tqdm
+        Returns:
+            np.ndarray type (or list of np.ndarray); flattened features from image
+
+        '''
+        # Get features from img, using VPRDatasetProcessor's set image dimensions.
+        # Specify type via fttype_in= (from FeatureType enum; list of FeatureType elements is also handled)
+        # Specify dimensions with dims= (two-element positive integer tuple)
+        # Returns feature array, as a flattened array
+
+        if not (dims[0] > 0 and dims[1] > 0):
+            raise Exception("[getFeat] image dimensions are invalid")
+        if not isinstance(fttype_in, list):
+            fttypes = [fttype_in]
+        else:
+            fttypes = fttype_in
+        if not all([isinstance(fttype, FeatureType) for fttype in fttypes]):
+            raise Exception("[getFeat] fttype_in provided contains elements that are not of type FeatureType")
+        if any([fttype == FeatureType.HYBRIDNET for fttype in fttypes]):
+            if self.init_hybridnet:
+                self.check_hybridnet(fttypes)
+            else:
+                raise Exception("[getFeat] FeatureType.HYBRIDNET provided but VPRDatasetProcessor not initialised with init_hybridnet=True")
+        if any([fttype == FeatureType.NETVLAD for fttype in fttypes]):
+            if self.init_netvlad:
+                self.check_netvlad(fttypes)
+            else:
+                raise Exception("[getFeat] FeatureType.NETVLAD provided but VPRDatasetProcessor not initialised with init_netvlad=True")
+        try:
+            feats = getFeat(img, fttypes, dims, use_tqdm=use_tqdm, nn_hybrid=self.hybridnet, nn_netvlad=self.netvlad)
+            if isinstance(feats, list):
+                return [np.array(i, dtype=np.float32) for i in feats]
+            return np.array(feats, dtype=np.float32)
+        except Exception as e:
+            raise Exception("[getFeat] Feature vector could not be constructed.\nCode: %s" % (e))
+
+
+class VPRDatasetProcessor(VPRProcessorBase):
+    def __init__(self, dataset_params: Optional[dict] = None, try_gen: bool = True, init_netvlad: bool = False, 
+                 init_hybridnet: bool = False, cuda: bool = False, use_tqdm: bool = False, 
+                 autosave: bool = False, ros: bool = True, root: Optional[str] = None, printer=None):
+        '''
+        Initialisation
+
+        Inputs:
+        - dataset_params:   dict type with following keys (str type) and values (detailed below):
+                            - npz_dbp:        str type; directory relative to root to find compressed data sets
+                            - bag_dbp:        str type; directory relative to root to find rosbags
+                            - bag_name:       str type; name of rosbag to find
+                            - sample_rate:    float type; rate to sample messages in rosbag
+                            - odom_topic:     str type; name of ROS topic to extract nav_msgs/Odometry messages from. If a list is provided, each will be stored as a column in the dataset
+                            - img_topics:     list type; list of str types. names of ROS topics to extract sensor_msgs/CompressedImage messages from.
+                            - img_dims:       list type; list of int types (two-positive-integer list). Dimensions to reduce input images to (height x width).
+                            - ft_types:       list type; list of str types (names from FeatureType). Features to extract from each image; will become accessible keys in the dataset.
+                            - filters:        str type; json string for designating filters to be applied. See pyaarapsi.vpr_simple.vpr_helpers.filter_dataset()
+        - try_gen:          bool type {default: True}; whether or not to attempt generation if load fails
+        - init_netvlad:     bool type {default: False}; whether or not to initialise netvlad (loads model)
+        - init_hybridnet:   bool type {default: False}; whether or not to initialise hybridnet (loads model)
+        - cuda:             bool type {default: False}; whether or not to use CUDA for feature type/GPU acceleration
+        - use_tqdm:         bool type {default: False}; whether or not to display extraction/loading statuses using tqdm
+        - autosave:         bool type {default: False}; whether or not to automatically save any generated datasets
+        - ros:              bool type {default: True}; whether or not to use rospy logging (requires operation within ROS node scope)
+        - root:             str type {default: None}; base root inserted in front of npz_dbp, bag_dbp, and svm_dbp
+        - printer:          method {default: None}; if provided, overrides logging and will pass inputs to specified method on print
+        Returns:
+            self
+        '''
+        self.cuda           = cuda
+        self.ros            = ros
+        self.use_tqdm       = use_tqdm
+        self.autosave       = autosave
+        self.init_netvlad   = init_netvlad
+        self.init_hybridnet = init_hybridnet
+        self.printer        = printer
+        if root is None:
+            self.root       = ROSPKG_ROOT
+        else:
+            self.root       = root
+        self.borrowed_nns   = [False, False]
+
+        # Declare attributes:
+        self.dataset: dict                              = {}
+        self.netvlad: Optional[NetVLAD_Container]       = None
+        self.hybridnet: Optional[HybridNet_Container]   = None
+        self.npz_dbp: str                               = ''
+        self.bag_dbp: str                               = ''
+
+        if not (dataset_params is None): # If parameters have been provided:
+            self.print("Loading model from parameters...", LogType.DEBUG)
+            name = self.load_dataset(dataset_params, try_gen=try_gen)
+
+            if not self.dataset:
+                raise Exception("Dataset load failed.")
+            self.print("Dataset Ready (loaded: %s)." % str(name))
+
+        else: # None-case needed for SVM training
+            self.print("Ready; no dataset loaded.")
+
+    def unload(self):
+        try:
+            del self.dataset
+        except:
+            pass
+        self.dataset = {}
 
     def generate_dataset(self, npz_dbp: str, bag_dbp: str, bag_name: str, sample_rate: float, 
                          odom_topic: str, img_topics: list, img_dims: list, ft_types: list, 
@@ -282,19 +373,35 @@ class VPRDatasetProcessor:
 
         # generate:
         rosbag_dict         = process_bag(self.root +  '/' + bag_dbp + '/' + bag_name, sample_rate, odom_topic, img_topics, printer=self.print, use_tqdm=self.use_tqdm)
+        gc.collect()
         self.print('[generate_dataset] Performing feature extraction...')
-        feature_vector_dict = {ft_type: self.getFeat(list(rosbag_dict[img_topics[0]]), enum_get(ft_type, FeatureType), img_dims, use_tqdm=self.use_tqdm) for ft_type in ft_types}
+        
+        feat_vect_dict_raw  = {ft_type: np.stack([self.getFeat(list(rosbag_dict[i]), # Extract features ...
+                                                    enum_get(ft_type, FeatureType), # convert string to enum
+                                                    img_dims, use_tqdm=self.use_tqdm)
+                                        for i in img_topics], axis=1) # for each image topic provided,
+                                    for ft_type in ft_types} # for each feature type provided
+        [rosbag_dict.pop(i,None) for i in img_topics] # reduce memory overhead
+
+        # Flatten arrays if only one image topic provided:
+        feature_vector_dict = {i: feat_vect_dict_raw[i][:,0] \
+                               if feat_vect_dict_raw[i].shape[1] == 1 else feat_vect_dict_raw[i] \
+                                for i in feat_vect_dict_raw}
+        
+        del feat_vect_dict_raw
+        gc.collect()
+
         self.print('[generate_dataset] Done.')
 
         # Create dataset dictionary and add feature vectors
         params_dict         = dict( bag_name=bag_name, npz_dbp=npz_dbp, bag_dbp=bag_dbp, odom_topic=odom_topic, img_topics=img_topics, \
                                     sample_rate=sample_rate, ft_types=ft_types, img_dims=img_dims, filters=filters)
-        dataset_dict        = dict( time=rosbag_dict['t'], \
-                                    px=rosbag_dict['px'], py=rosbag_dict['py'], pw=rosbag_dict['pw'], \
-                                    vx=rosbag_dict['vx'], vy=rosbag_dict['vy'], vw=rosbag_dict['vw'] )
+        dataset_dict        = dict( time=rosbag_dict.pop('t'), \
+                                    px=rosbag_dict.pop('px'), py=rosbag_dict.pop('py'), pw=rosbag_dict.pop('pw'), \
+                                    vx=rosbag_dict.pop('vx'), vy=rosbag_dict.pop('vy'), vw=rosbag_dict.pop('vw') )
         dataset_dict.update(feature_vector_dict)
         dataset_raw         = dict(params=params_dict, dataset=dataset_dict)
-        dataset             = filter_dataset(dataset_raw)
+        dataset             = filter_dataset(dataset_raw, _printer=lambda msg: self.print(msg, LogType.DEBUG))
 
         if store:
             if hasattr(self, 'dataset'):
@@ -332,7 +439,7 @@ class VPRDatasetProcessor:
         else:
             name = datetime.datetime.today().strftime("dataset_%Y%m%d")
 
-        self.print("[save_dataset] Splitting dataset into files for feature types: %s" % self.dataset['params']['ft_types'])
+        self.print("[save_dataset] Splitting dataset into files for feature types: %s" % self.dataset['params']['ft_types'], LogType.DEBUG)
         for ft_type in self.dataset['params']['ft_types']:
             # Generate unique name:
             file_name = name
@@ -351,7 +458,7 @@ class VPRDatasetProcessor:
 
             file_ = self._check(params=sub_params)
             if file_:
-                self.print("[save_dataset] File exists with identical parameters (%s); skipping save." % file_)
+                self.print("[save_dataset] File exists with identical parameters (%s); skipping save." % file_, LogType.DEBUG)
                 continue
             
             np.savez(full_file_path, **sub_dataset)
@@ -431,7 +538,7 @@ class VPRDatasetProcessor:
                     self.print("[open_dataset] Loading ...", LogType.DEBUG)
                     return self._load(name, store=False)
                 except:
-                    self.print(formatException())
+                    self._fix(name)
         if try_gen:
             try:
                 self.print("[open_dataset] Generating ...", LogType.DEBUG)
@@ -533,58 +640,6 @@ class VPRDatasetProcessor:
             raise Exception('Dataset failed to load.')
         return False
     
-    @overload
-    def getFeat(self, img: np.ndarray, fttype_in: FeatureType, dims: list, use_tqdm: bool = False) -> np.ndarray: ...
-    
-    @overload
-    def getFeat(self, img: List[np.ndarray], fttype_in: FeatureType, dims: list, use_tqdm: bool = False) -> List[np.ndarray]: ...
-        
-    def getFeat(self, img: Union[np.ndarray, List[np.ndarray]], fttype_in: FeatureType, dims: list, use_tqdm: bool = False) -> Union[np.ndarray, List[np.ndarray]]:
-        '''
-        Feature Extraction Helper
-
-        Inputs:
-        - img:          np.ndarray type (or list of np.ndarray); Image array (can be RGB or greyscale; if greyscale, will be stacked to RGB equivalent dimensions for neural network input.
-        - fttype_in:    FeatureType type; Type of feature to extract from each image.
-        - dims:         list type; list of int types (two-positive-integer list). Dimensions to reduce input images to (height x width).
-        - use_tqdm:     bool type {default: False}; whether or not to display extraction/loading statuses using tqdm
-        Returns:
-            np.ndarray type (or list of np.ndarray); flattened features from image
-
-        '''
-        # Get features from img, using VPRDatasetProcessor's set image dimensions.
-        # Specify type via fttype_in= (from FeatureType enum; list of FeatureType elements is also handled)
-        # Specify dimensions with dims= (two-element positive integer tuple)
-        # Returns feature array, as a flattened array
-
-        if not (dims[0] > 0 and dims[1] > 0):
-            raise Exception("[getFeat] image dimensions are invalid")
-        if not isinstance(fttype_in, list):
-            fttypes = [fttype_in]
-        else:
-            fttypes = fttype_in
-        if not all([isinstance(fttype, FeatureType) for fttype in fttypes]):
-            raise Exception("[getFeat] fttype_in provided contains elements that are not of type FeatureType")
-        if any([fttype == FeatureType.HYBRIDNET for fttype in fttypes]):
-            if self.init_hybridnet:
-                if not self.hybridnet_rdy:
-                    self.check_hybridnet(fttypes)
-            else:
-                raise Exception("[getFeat] FeatureType.HYBRIDNET provided but VPRDatasetProcessor not initialised with init_hybridnet=True")
-        if any([fttype == FeatureType.NETVLAD for fttype in fttypes]):
-            if self.init_netvlad:
-                if not self.netvlad_rdy:
-                    self.check_netvlad(fttypes)
-            else:
-                raise Exception("[getFeat] FeatureType.NETVLAD provided but VPRDatasetProcessor not initialised with init_netvlad=True")
-        try:
-            feats = getFeat(img, fttypes, dims, use_tqdm=use_tqdm, nn_hybrid=self.hybridnet, nn_netvlad=self.netvlad)
-            if isinstance(feats, list):
-                return [np.array(i, dtype=np.float32) for i in feats]
-            return np.array(feats, dtype=np.float32)
-        except Exception as e:
-            raise Exception("[getFeat] Feature vector could not be constructed.\nCode: %s" % (e))
-    
     def destroy(self) -> None:
         '''
         Class destructor
@@ -613,8 +668,6 @@ class VPRDatasetProcessor:
         except:
             pass
 
-        del self.netvlad_rdy
-        del self.hybridnet_rdy
         del self.init_netvlad
         del self.init_hybridnet
         del self.npz_dbp
