@@ -80,7 +80,18 @@ class HybridNet_Container:
         else:
             caffe.set_mode_cpu()
 
+        self.loaded = False
+
         if load:
+            self.load()
+
+    def is_ready(self):
+        return self.loaded
+    
+    def ready_up(self):
+        if self.is_ready(): return
+
+        if not self.loaded:
             self.load()
 
     def load(self):
@@ -101,6 +112,8 @@ class HybridNet_Container:
         self.net.blobs['data'].reshape(1,3,227,227)
 
         self.logger('HybridNet loaded')
+
+        self.loaded = True
 
     def destroy(self):
         del self.logger

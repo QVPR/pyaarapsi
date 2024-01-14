@@ -72,9 +72,23 @@ class NetVLAD_Container:
         self.resumepath     = resumepath
         self.transform      = self.input_transform()
 
+        self.loaded         = False
+        self.prepped        = False
+
         if load:
             self.load()
         if prep:
+            self.prep()
+
+    def is_ready(self):
+        return self.prepped
+    
+    def ready_up(self):
+        if self.is_ready(): return
+
+        if not self.loaded:
+            self.load()
+        if not self.prepped:
             self.prep()
 
     def load(self):
@@ -122,6 +136,8 @@ class NetVLAD_Container:
             raise FileNotFoundError("=> no checkpoint found at '{}'".format(file_path))
         self.model.eval()
 
+        self.loaded = True
+
     def destroy(self):
         del self.cuda
         del self.ngpus
@@ -137,6 +153,8 @@ class NetVLAD_Container:
         del self.config
         del self.model
         del self.device
+        del self.loaded
+        del self.prepped
 
     def prep(self):
     # Somehow, running this much code 'accelerates' the feature_query_extract
@@ -152,6 +170,8 @@ class NetVLAD_Container:
             vlad_global_pca = get_pca_encoding(self.model, vlad_global)
         del input_data, image_encoding, vlad_global, vlad_global_pca
         torch.cuda.empty_cache()
+
+        self.prepped = True
 
     def input_transform(self):
         return transforms.Compose([
