@@ -7,6 +7,7 @@ import json
 from ..pathing.basic import calc_path_stats
 from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
+from ..core.helper_tools import perforate, formatException
 from typing import Union, List, Optional
 
 # For image processing type
@@ -40,21 +41,67 @@ class SVM_Tolerance_Mode(Enum):
     DISTANCE            = 0
     FRAME               = 1
 
-def filter_dataset(dataset_in):
+def filter_dataset(dataset_in, _filters: Optional[dict] = None, _printer=lambda *args, **kwargs: None):
+    if _filters is None:
+        _filt_str = str(dataset_in['params']['filters']).replace("'", '"')
+        try:
+            if not _filt_str:
+                return dataset_in
+            _filters = json.loads(_filt_str)
+            if not _filters:
+                return dataset_in
+            _printer('[filter_dataset] Filters: %s' % str(_filters))
+        except:
+            raise Exception('[filter_dataset] Failed to load filter parameters, string: <%s>. Code: %s' % (_filt_str, formatException()))
+
     try:
-        filters = json.loads(str(dataset_in['params']['filters']).replace('\'', '"'))
-        if 'distance' in filters.keys():
-            distance_threshold      = filters['distance']
-            xy                      = np.transpose(np.stack([dataset_in['dataset']['px'].flatten(), dataset_in['dataset']['py'].flatten()]))
+        if 'distance' in _filters.keys():
+            _printer('[filter_dataset] Filtering by distance: %s' % str(_filters['distance']))
+            distance_threshold      = _filters['distance']
+            try:
+                xy                  = np.transpose(np.stack([dataset_in['dataset']['px'][:,0], dataset_in['dataset']['py'][:,0]]))
+                _printer('[filter_dataset] Using first column of px, py for xy array to perform distance filtering.')
+            except IndexError:
+                xy                  = np.transpose(np.stack([dataset_in['dataset']['px'], dataset_in['dataset']['py']]))
+            if not ((xy.shape[1] == 2) and (xy.shape[0] > 1)):
+                raise Exception('Could not build xy array with two columns with more than one entry in each; please check odometry.')
             xy_sum, xy_len          = calc_path_stats(xy)
             filt_indices            = [np.argmin(np.abs(xy_sum-(distance_threshold*i))) for i in np.arange(int((1/distance_threshold) * xy_len))]
             dataset_out             = {'params': dataset_in['params']}
             dataset_out['dataset']  = {key: dataset_in['dataset'][key][filt_indices] for key in dataset_in['dataset'].keys()}
-            return dataset_out
+            
+            _filters.pop('distance')
+            return filter_dataset(dataset_out, _filters=_filters)
+        elif 'perforate' in _filters.keys():
+            _printer('[filter_dataset] Filtering by perforation: %s' % str(_filters['perforate']))
+            randomness  = _filters['perforate']['randomness']   if 'randomness'     in _filters['perforate']    else None
+            num_holes   = _filters['perforate']['num_holes']    if 'num_holes'      in _filters['perforate']    else None
+            hole_damage = _filters['perforate']['hole_damage']  if 'hole_damage'    in _filters['perforate']    else None
+            offset      = _filters['perforate']['offset']       if 'offset'         in _filters['perforate']    else None
+            filt_indices = perforate(_len=dataset_in['dataset']['time'].shape[0], randomness=randomness, \
+                                     num_holes=num_holes, hole_damage=hole_damage, offset=offset)
+            dataset_out             = {'params': dataset_in['params']}
+            dataset_out['dataset']  = {key: dataset_in['dataset'][key][filt_indices] for key in dataset_in['dataset'].keys()}
+            
+            _filters.pop('perforate')
+            return filter_dataset(dataset_out, _filters=_filters)
+        elif 'forward-only' in _filters.keys():
+            if _filters['forward-only']:
+                try:
+                    filt_indices        = [True if i >= 0 else False for i in dataset_in['dataset']['vx'][:,0]]
+                    _printer('[filter_dataset] Using first column of vx array to perform direction filtering.')
+                except IndexError:
+                    filt_indices        = [True if i >= 0 else False for i in dataset_in['dataset']['vx']]
+                dataset_out             = {'params': dataset_in['params']}
+                dataset_out['dataset']  = {key: dataset_in['dataset'][key][filt_indices] for key in dataset_in['dataset'].keys()}
+            else:
+                dataset_out             = dataset_in    
+            _filters.pop('forward-only')
+            return filter_dataset(dataset_out, _filters=_filters)
         else:
             return dataset_in
     except:
-        return dataset_in
+        raise Exception('[filter_dataset] Failed. Code: %s' % formatException())
 
 def discretise(dict_in, metrics=None, mode=None, keep='first'):
     if not len(dict_in):
