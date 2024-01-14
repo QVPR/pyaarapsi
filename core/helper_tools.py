@@ -10,6 +10,7 @@ import matplotlib
 from matplotlib.backend_bases import FigureCanvasBase
 import matplotlib.pyplot as plt
 from typing import Optional, Callable, TypeVar, Protocol
+from numpy.typing import NDArray
 
 class Bool(Enum):
     UNSET = -1
@@ -18,6 +19,44 @@ class Bool(Enum):
 
 class SupportsCanvas(Protocol):
     canvas: FigureCanvasBase
+
+def perforate(  _len: np.uint16, \
+                num_holes: Optional[int] = 3, \
+                randomness: Optional[float] = 0.2, \
+                hole_damage: Optional[float] = 0.5, \
+                offset: Optional[float] = 0.0) -> NDArray[np.uint16]:
+    '''
+    Generate perforated indices
+    Generate indices from 0 up to _len, with randomness% removed and num_hole regions with hole_damage% cut out.
+    '''
+    assert _len > 10 and _len < 65536, 'Length must be an integer in range uint16 greater than 10 (10 < _len < 65536).'
+    if num_holes is None: num_holes = 3
+    else: assert num_holes < int(_len / 4), 'Too many holes for given length (must be less than length / 4).'
+    if randomness is None: randomness = 0.2
+    else: assert randomness <= 0.5 and randomness >= 0, 'Random hole percentage should not exceed 0.5.'
+    if hole_damage is None: hole_damage = 0.5
+    else: assert hole_damage <= 0.5, 'Hole damage percentage should not exceed 0.5.'
+    if offset is None: offset = 0.0
+    else: assert abs(offset) <= 1.0, 'Offset percentage cannot exceed -1 or 1 (-100% to 100%)'
+
+    # mark random removal:
+    out = np.arange(_len)
+    _random_len = int(_len * randomness)
+    random_damage = np.argpartition(np.random.rand(int(_len)), _random_len)[0:_random_len]
+    out[random_damage] = -1
+
+    # mark holes:
+    partition_length = int((_len / num_holes))
+    for i in range(num_holes):
+        out[(i+1)*partition_length-1 : int((i+1)*(partition_length)-partition_length*hole_damage)-1 : -1] = -1
+
+    # apply perforation:
+    out = out[out != -1]
+
+    # roll by offset:
+    out = np.sort(((out + (offset*_len)).astype(int)) % _len)
+
+    return out
 
 def plt_pause(interval: float, fig: SupportsCanvas):
     '''
@@ -31,7 +70,7 @@ def plt_pause(interval: float, fig: SupportsCanvas):
         fig.canvas.start_event_loop(interval) #type: ignore
         return
 
-def roll(img: np.ndarray, i: int, fill=0) -> np.ndarray:
+def roll(img: NDArray, i: int, fill=0) -> NDArray:
     if abs(i) > img.shape[1]:
             return np.ones(img.shape) * fill
     if i == 0:
@@ -110,7 +149,7 @@ def d2r(angle_in: float) -> float:
     '''
     return angle_in * np.pi / 180
 
-def np_ndarray_to_uint8_list(ndarray: np.ndarray) -> list:
+def np_ndarray_to_uint8_list(ndarray: NDArray) -> list:
     '''
     Convert any numpy ndarray into a list of uint8 representing byte information
     For use with transferring numpy ndarray data agnostic of dtype, shape
@@ -119,7 +158,7 @@ def np_ndarray_to_uint8_list(ndarray: np.ndarray) -> list:
     uint8_list  = list(byte_string)
     return uint8_list
 
-def uint8_list_to_np_ndarray(uint8_list: list) -> np.ndarray:
+def uint8_list_to_np_ndarray(uint8_list: list) -> NDArray:
     '''
     Convert any list of uint8 representing byte information back into a numpy ndarray
     For use with transferring numpy ndarray data agnostic of dtype, shape
@@ -193,7 +232,7 @@ def formatException(dump: bool = False) -> str:
     return "Exception Caught.\n\tDetails: %s %s\n\tFile %s [Line %s]\n\tTrace: %s" \
         % (str(exception_type), str(e), str(filename), str(line_number), traceback_string)
 
-def getArrayDetails(arr: np.ndarray) -> str:
+def getArrayDetails(arr: NDArray) -> str:
     _shape  = str(np.shape(arr))
     _type   = str(type((arr.flatten())[0]))
     _min    = str(np.min(arr))
