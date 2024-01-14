@@ -116,26 +116,6 @@ def find_peak_factors(S):
         
     return factor_1, factor_2
 
-def find_posi_factors(rXY, mXY, init_pos=np.array([0,0])):
-    if mXY.ndim == 1:
-        mXY  = mXY[np.newaxis, :]
-    
-    x_range  = np.max(rXY[:,0]) - np.min(rXY[:,0])
-    y_range  = np.max(rXY[:,1]) - np.min(rXY[:,1])
-    xy_range = np.array([x_range, y_range])
-    
-    _len     = len(mXY[:,0])
-    _starts  = np.max(np.stack([np.arange(_len)-5, np.zeros(_len)],1),1).astype(int)
-    _ends    = np.arange(_len).astype(int) + 1
-    
-    old_pos  = np.roll(mXY, 1, 0)
-    old_pos[0, :] = init_pos
-    
-    factor_1 = np.sqrt(np.sum(((mXY - old_pos) / xy_range) ** 2, 1))
-    factor_2 = np.array([np.mean(factor_1[_starts[i]:_ends[i]]) for i in np.arange(_len)])
-    
-    return factor_1, factor_2
-
 def find_linear_factors(S, rXY, mXY, cutoff=10):
     if S.ndim == 1:
         S    = S[:, np.newaxis]
@@ -168,34 +148,96 @@ def find_linear_factors(S, rXY, mXY, cutoff=10):
         factor_2[q] = corr_coef
     return factor_1, factor_2
 
-def find_factors(factors_in, _S, rXY, mInd, cutoff=2, init_pos=np.array([0,0]), all=False):
-    seq      = (_S - np.min(_S, 0)) / (np.max(_S, 0) - np.min(_S, 0))
-    mXY      = rXY[mInd, :]
-    va       = None
-    grad     = None
-    lgrad    = None
-    lcoef    = None
-    area     = None
-    dlows    = None
-    mlows    = None
-    dposi    = None
-    dvari    = None
+def find_sort_factor(S, mInd, dists):
+    if S.ndim == 1:
+        S       = S[:, np.newaxis]
+    qry_list    = np.arange(S.shape[1])
+    factor_1    = np.zeros(qry_list[-1] + 1)
+    for i,q in zip(mInd, qry_list):
+        dvc         = S[:,q]
+        _sorted     = np.argsort(dvc)
+        _range      = np.argsort(dists[i])
+        _diff       = np.sum(np.abs(_sorted-_range))
+        _normed     = _diff / np.sum(_range)
+        factor_1[q] = _normed
+    return factor_1
+
+def find_stat_factors(S):
+    if S.ndim == 1:
+        S       = S[:, np.newaxis]
+    qry_list    = np.arange(S.shape[1])
+    factor_1    = np.zeros(qry_list[-1] + 1)
+    factor_2    = np.zeros(qry_list[-1] + 1)
+    for q in qry_list:
+        dvc         = S[:,q]
+        _range      = np.max(dvc) - np.min(dvc)
+        factor_1[q] = np.mean(dvc) / _range
+        factor_2[q] = np.std(dvc) / _range
+    return factor_1, factor_2
+
+def find_posi_factors(rXY, mXY, init_pos=np.array([0,0])):
+    # rXY: reference set ground truth xy array
+    # mXY: history of matched points, in chronological order
+    if mXY.ndim == 1:
+        mXY  = mXY[np.newaxis, :]
     
+    x_range  = np.max(rXY[:,0]) - np.min(rXY[:,0])
+    y_range  = np.max(rXY[:,1]) - np.min(rXY[:,1])
+    xy_range = np.array([x_range, y_range])
+    
+    _len     = len(mXY[:,0])
+    _starts  = np.max(np.stack([np.arange(_len)-5, np.zeros(_len)],1),1).astype(int)
+    _ends    = np.arange(_len).astype(int) + 1
+    
+    mXY_roll = np.roll(mXY, 1, 0) # roll mXY to align previous match to current match
+    mXY_roll[0, :] = init_pos # overwrite the first row with an initial position
+    
+    factor_1 = np.sqrt(np.sum(((mXY - mXY_roll) / xy_range) ** 2, 1))
+    factor_2 = np.array([np.mean(factor_1[_starts[i]:_ends[i]]) for i in np.arange(_len)])
+    
+    return factor_1, factor_2
+
+
+def find_factors(factors_in, _S, rXY=None, mInd=None, cutoff=2, init_pos=np.array([0,0]), all=False, dists=None, norm=False):
+    if norm:
+        seq  = (_S - np.min(_S, 0)) / (np.max(_S, 0) - np.min(_S, 0))
+    else:
+        seq  = _S
+    # Initialise:        
+    va, grad, lgrad, lcoef, area, dlows, mlows, dposi, dvari, dsort, smean, sstd = (None,)*12
     if "va" in factors_in or all:
-        va           = find_va_factor(seq)
+        va                          = find_va_factor(seq)
     if "grad" in factors_in or all:
-        grad         = find_grad_factor(seq)
+        grad                        = find_grad_factor(seq)
     if ("lgrad" in factors_in) or ("lcoef" in factors_in) or all:
-        lgrad, lcoef = find_linear_factors(seq, rXY, mXY, cutoff=cutoff)
+        assert not rXY is None
+        assert not mInd is None
+        lgrad, lcoef                = find_linear_factors(seq, rXY, rXY[mInd, :], cutoff=cutoff)
     if "area" in factors_in or all:
-        area = find_area_factors(seq, mInd) 
+        assert not mInd is None
+        area                        = find_area_factors(seq, mInd) 
     if ("dlows" in factors_in) or ("mlows" in factors_in) or all:
-        dlows, mlows = find_peak_factors(seq) 
+        dlows, mlows                = find_peak_factors(seq) 
     if ("dposi" in factors_in) or ("dvari" in factors_in) or all:
-        dposi, dvari = find_posi_factors(rXY, mXY, init_pos=init_pos)
+        assert not rXY is None
+        assert not mInd is None
+        _dposi, _dvari                = find_posi_factors(rXY, rXY[mInd, :], init_pos=init_pos)
+        if _S.ndim == 1:
+            dposi, dvari = _dposi[-2:-1], _dvari[-2:-1]
+        else:
+            _len =_S.shape[1]
+            assert _dposi.shape[0] >= _len
+            dposi, dvari = _dposi[-_len:], _dvari[-_len:]
+    if ("dsort" in factors_in) or all:
+        assert not dists is None
+        assert not mInd is None
+        dsort                       = find_sort_factor(seq, mInd, dists)
+    if ("smean" in factors_in) or ("sstd" in factors_in) or all:
+        smean, sstd                 = find_stat_factors(seq)
     factors_ = {"va": va,       "grad": grad,   "lgrad": lgrad, "lcoef": lcoef, \
                 "area": area,                   "dlows": dlows, "mlows": mlows, \
-                "dposi": dposi, "dvari": dvari}
+                "dposi": dposi, "dvari": dvari, \
+                "dsort": dsort,                 "smean": smean, "sstd": sstd}
     if all:
         return factors_
-    return factors_[factors_in[0]], factors_[factors_in[1]]
+    return [factors_[i] for i in factors_in]
