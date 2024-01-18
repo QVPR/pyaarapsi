@@ -14,7 +14,7 @@ from aarapsi_robot_pack.msg     import Debug
 
 from ..core.ros_tools           import LogType, ROS_Param_Server, Heartbeat, NodeState, SubscribeListener, set_rospy_log_lvl, ROS_Publisher, q_from_yaw
 from ..core.enum_tools          import enum_get
-from ..core.argparse_tools      import check_bool, check_enum, check_int, check_positive_float, check_string, check_positive_two_int_list, check_string_list, check_positive_int
+from ..core.argparse_tools      import check_bool, check_enum, check_int, check_positive_float, check_string, check_positive_two_int_list, check_string_list
 from ..core.roslogger           import roslogger, LogType
 from ..vpr_simple.vpr_helpers   import FeatureType, SVM_Tolerance_Mode
 
@@ -32,7 +32,7 @@ def base_optional_args(parser: ap.ArgumentParser, node_name: str = 'node_name', 
 
     return parser
 
-class Base_ROS_Class:
+class Super_ROS_Class:
     '''
     Super-wrapper class container for rospy
 
@@ -106,58 +106,23 @@ class Base_ROS_Class:
             self._print('\033[96mStarting %s node.\033[0m' % (self.node_name), log_level=log_level)
         else:
             self._print('Starting %s node.' % (self.node_name), log_level=log_level)
-    
-    def init_params(self, rate_num: float, log_level: float, reset: bool) -> None:
-        self.SIMULATION             = self.params.add(self.namespace + "/simulation",               False,                          check_bool,                                     force=False)
 
-        self.FEAT_TYPE              = self.params.add(self.namespace + "/feature_type",             FeatureType.RAW,                lambda x: check_enum(x, FeatureType),           force=False)
-        self.IMG_DIMS               = self.params.add(self.namespace + "/img_dims",                 [64,64],                        check_positive_two_int_list,                    force=False)
-        self.NPZ_DBP                = self.params.add(self.namespace + "/npz_dbp",                  "",                             check_string,                                   force=False)
-        self.BAG_DBP                = self.params.add(self.namespace + "/bag_dbp",                  "",                             check_string,                                   force=False)
-        self.SVM_DBP                = self.params.add(self.namespace + "/svm_dbp",                  "",                             check_string,                                   force=False)
-        self.IMG_TOPIC              = self.params.add(self.namespace + "/img_topic",                "",                             check_string,                                   force=False)
-        self.SLAM_ODOM_TOPIC        = self.params.add(self.namespace + "/slam_odom_topic",          "",                             check_string,                                   force=False)
-        self.ROBOT_ODOM_TOPIC       = self.params.add(self.namespace + "/robot_odom_topic",         "",                             check_string,                                   force=False)
-        
-        self.IMG_HFOV               = self.params.add(self.namespace + "/img_hfov",                 360,                            check_positive_float,                           force=False)
-        
-        self.REF_BAG_NAME           = self.params.add(self.namespace + "/ref/bag_name",             "",                             check_string,                                   force=False)
-        self.REF_FILTERS            = self.params.add(self.namespace + "/ref/filters",              "{}",                           check_string,                                   force=False)
-        self.REF_SAMPLE_RATE        = self.params.add(self.namespace + "/ref/sample_rate",          5.0,                            check_positive_float,                           force=False) # Hz
-
-        self.SVM_QRY_BAG_NAME       = self.params.add(self.namespace + "/svm/qry/bag_name",         "",                             check_string,                                   force=False)
-        self.SVM_QRY_FILTERS        = self.params.add(self.namespace + "/svm/qry/filters",          "{}",                           check_string,                                   force=False)
-        self.SVM_QRY_SAMPLE_RATE    = self.params.add(self.namespace + "/svm/qry/sample_rate",      5.0,                            check_positive_float,                           force=False)
-
-        self.SVM_REF_BAG_NAME       = self.params.add(self.namespace + "/svm/ref/bag_name",         "",                             check_string,                                   force=False)
-        self.SVM_REF_FILTERS        = self.params.add(self.namespace + "/svm/ref/filters",          "{}",                           check_string,                                   force=False)
-        self.SVM_REF_SAMPLE_RATE    = self.params.add(self.namespace + "/svm/ref/sample_rate",      5.0,                            check_positive_float,                           force=False)
-        
-        self.SVM_FACTORS            = self.params.add(self.namespace + "/svm/factors",              ['va','grad'],                  check_string_list,                              force=False)
-        self.SVM_TOL_MODE           = self.params.add(self.namespace + "/svm/tolerance/mode",       SVM_Tolerance_Mode.DISTANCE,    lambda x: check_enum(x, SVM_Tolerance_Mode),    force=False)
-        self.SVM_TOL_THRES          = self.params.add(self.namespace + "/svm/tolerance/threshold",  0.5,                            check_positive_float,                           force=False)
+    def init_params(self, rate_num: float, log_level: float, reset: bool, *args, **kwargs) -> None:
         
         self.RATE_NUM               = self.params.add(self.nodespace + "/rate",                     rate_num,                       check_positive_float,                           force=reset)
         self.LOG_LEVEL              = self.params.add(self.nodespace + "/log_level",                log_level,                      lambda x: check_enum(x, LogType),               force=reset)
 
-        self.REF_DATA_PARAMS        = [self.NPZ_DBP, self.BAG_DBP, self.REF_BAG_NAME, self.REF_FILTERS, self.REF_SAMPLE_RATE, self.IMG_TOPIC, self.SLAM_ODOM_TOPIC, self.FEAT_TYPE, self.IMG_DIMS]
-        self.REF_DATA_NAMES         = [i.name for i in self.REF_DATA_PARAMS]
+    def init_vars(self, *args, **kwargs) -> None:
 
-        self.SVM_DATA_PARAMS        = [self.FEAT_TYPE, self.IMG_DIMS, self.NPZ_DBP, self.BAG_DBP, self.SVM_DBP, self.IMG_TOPIC, self.SLAM_ODOM_TOPIC, \
-                                       self.SVM_QRY_BAG_NAME, self.SVM_QRY_FILTERS, self.SVM_QRY_SAMPLE_RATE, \
-                                       self.SVM_REF_BAG_NAME, self.SVM_REF_FILTERS, self.SVM_REF_SAMPLE_RATE, \
-                                       self.SVM_FACTORS, self.SVM_TOL_MODE, self.SVM_TOL_THRES]
-        self.SVM_DATA_NAMES         = [i.name for i in self.SVM_DATA_PARAMS]
-
-    def init_vars(self) -> None:
         self.parameters_ready = True
 
-    def init_rospy(self) -> None:
+    def init_rospy(self, *args, **kwargs) -> None:
+
         self.rate_obj        = rospy.Rate(self.RATE_NUM.get())
         self.params.add_sub(self.namespace + "/params_update", self.param_callback)
         self.sublis          = SubscribeListener(printer=self.print)
 
-    def node_ready(self, order_id: int) -> None:
+    def node_ready(self, order_id: Optional[int] = None) -> None:
         self.main_ready      = True
         if not order_id is None: 
             if rospy.get_param(self.namespace + '/launch_step') == order_id:
@@ -185,30 +150,10 @@ class Base_ROS_Class:
             self.print("Change to untracked parameter [%s]; ignored." % msg.data, LogType.DEBUG)
         self.parameters_ready = True
 
-    def make_dataset_dict(self) -> dict:
-        return dict(bag_name=self.REF_BAG_NAME.get(), npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), \
-                    odom_topic=self.SLAM_ODOM_TOPIC.get(), img_topics=[self.IMG_TOPIC.get()], sample_rate=self.REF_SAMPLE_RATE.get(), \
-                    ft_types=[self.FEAT_TYPE.get().name], img_dims=self.IMG_DIMS.get(), filters=self.REF_FILTERS.get())
-    
-    def make_svm_model_params(self) -> dict:
-        qry_dict = dict(bag_name=self.SVM_QRY_BAG_NAME.get(), npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), \
-                        odom_topic=self.SLAM_ODOM_TOPIC.get(), img_topics=[self.IMG_TOPIC.get()], sample_rate=self.SVM_QRY_SAMPLE_RATE.get(), \
-                        ft_types=[self.FEAT_TYPE.get().name], img_dims=self.IMG_DIMS.get(), filters=self.SVM_QRY_FILTERS.get())
-        ref_dict = dict(bag_name=self.SVM_REF_BAG_NAME.get(), npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), \
-                        odom_topic=self.SLAM_ODOM_TOPIC.get(), img_topics=[self.IMG_TOPIC.get()], sample_rate=self.SVM_REF_SAMPLE_RATE.get(), \
-                        ft_types=[self.FEAT_TYPE.get().name], img_dims=self.IMG_DIMS.get(), filters=self.SVM_REF_FILTERS.get())
-        svm_dict = dict(factors=self.SVM_FACTORS.get(), tol_thres=self.SVM_TOL_THRES.get(), tol_mode=self.SVM_TOL_MODE.get().name)
-        return dict(ref=ref_dict, qry=qry_dict, svm=svm_dict, npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), svm_dbp=self.SVM_DBP.get())
-    
     def debug_cb(self, msg: Debug) -> None:
         if msg.node_name == self.node_name:
             try:
-                if msg.instruction == 0:
-                    self.print(self.make_svm_model_params(), LogType.DEBUG)
-                elif msg.instruction == 1:
-                    self.print(self.make_dataset_dict(), LogType.DEBUG)
-                else:
-                    self.print(msg.instruction, LogType.DEBUG)
+                pass
             except:
                 self.print("Debug operation failed.", LogType.DEBUG)
 
@@ -240,25 +185,6 @@ class Base_ROS_Class:
         None
         '''
         self.hb.set_state(state)
-
-    def generate_path(self, dataset: dict, _every: int = 3) -> Path:
-        
-        px      = dataset['dataset']['px']
-        py      = dataset['dataset']['py']
-        pw      = dataset['dataset']['pw']
-        time    = dataset['dataset']['time']
-        new_path = Path(header=Header(stamp=rospy.Time.now(), frame_id="map"))
-        new_path.poses = []
-        for (c, (x, y, w, t)) in enumerate(zip(px, py, pw, time)):
-            if not c % _every == 0:
-                continue
-            new_pose = PoseStamped(header=Header(stamp=rospy.Time.from_sec(t), frame_id="map", seq=c))
-            new_pose.pose.position = Point(x=x, y=y, z=0)
-            new_pose.pose.orientation = q_from_yaw(w)
-            new_path.poses.append(new_pose)
-            del new_pose
-
-        return new_path
     
     def _print(self, text: Any, logtype: LogType = LogType.INFO, throttle: float = 0, 
               ros: Optional[bool] = None, name: Optional[str] = None, no_stamp: Optional[bool] = None, log_level: Optional[LogType] = None) -> bool:
@@ -279,3 +205,105 @@ class Base_ROS_Class:
     def exit(self) -> None:
         self.print("Quit received")
         sys.exit()
+
+class Base_ROS_Class(Super_ROS_Class):
+    '''
+    VPR-wrapper class container for rospy
+
+    Bundles:
+    - Super_ROS_Class functionality
+    - VPR Helper Functions
+    '''
+    
+    def init_params(self, *args, **kwargs) -> None:
+        super().init_params(*args, **kwargs)
+
+        self.SIMULATION             = self.params.add(self.namespace + "/simulation",               False,                          check_bool,                                     force=False)
+
+        self.FEAT_TYPE              = self.params.add(self.namespace + "/feature_type",             FeatureType.RAW,                lambda x: check_enum(x, FeatureType),           force=False)
+        self.IMG_DIMS               = self.params.add(self.namespace + "/img_dims",                 [64,64],                        check_positive_two_int_list,                    force=False)
+        self.NPZ_DBP                = self.params.add(self.namespace + "/npz_dbp",                  "",                             check_string,                                   force=False)
+        self.BAG_DBP                = self.params.add(self.namespace + "/bag_dbp",                  "",                             check_string,                                   force=False)
+        self.SVM_DBP                = self.params.add(self.namespace + "/svm_dbp",                  "",                             check_string,                                   force=False)
+        self.IMG_TOPIC              = self.params.add(self.namespace + "/img_topic",                "",                             check_string,                                   force=False)
+        self.SLAM_ODOM_TOPIC        = self.params.add(self.namespace + "/slam_odom_topic",          "",                             check_string,                                   force=False)
+        self.ROBOT_ODOM_TOPIC       = self.params.add(self.namespace + "/robot_odom_topic",         "",                             check_string,                                   force=False)
+        
+        self.IMG_HFOV               = self.params.add(self.namespace + "/img_hfov",                 360,                            check_positive_float,                           force=False)
+        
+        self.REF_BAG_NAME           = self.params.add(self.namespace + "/ref/bag_name",             "",                             check_string,                                   force=False)
+        self.REF_FILTERS            = self.params.add(self.namespace + "/ref/filters",              "{}",                           check_string,                                   force=False)
+        self.REF_SAMPLE_RATE        = self.params.add(self.namespace + "/ref/sample_rate",          5.0,                            check_positive_float,                           force=False) # Hz
+
+        self.SVM_QRY_BAG_NAME       = self.params.add(self.namespace + "/svm/qry/bag_name",         "",                             check_string,                                   force=False)
+        self.SVM_QRY_FILTERS        = self.params.add(self.namespace + "/svm/qry/filters",          "{}",                           check_string,                                   force=False)
+        self.SVM_QRY_SAMPLE_RATE    = self.params.add(self.namespace + "/svm/qry/sample_rate",      5.0,                            check_positive_float,                           force=False)
+
+        self.SVM_REF_BAG_NAME       = self.params.add(self.namespace + "/svm/ref/bag_name",         "",                             check_string,                                   force=False)
+        self.SVM_REF_FILTERS        = self.params.add(self.namespace + "/svm/ref/filters",          "{}",                           check_string,                                   force=False)
+        self.SVM_REF_SAMPLE_RATE    = self.params.add(self.namespace + "/svm/ref/sample_rate",      5.0,                            check_positive_float,                           force=False)
+        
+        self.SVM_FACTORS            = self.params.add(self.namespace + "/svm/factors",              ['va','grad'],                  check_string_list,                              force=False)
+        self.SVM_TOL_MODE           = self.params.add(self.namespace + "/svm/tolerance/mode",       SVM_Tolerance_Mode.DISTANCE,    lambda x: check_enum(x, SVM_Tolerance_Mode),    force=False)
+        self.SVM_TOL_THRES          = self.params.add(self.namespace + "/svm/tolerance/threshold",  0.5,                            check_positive_float,                           force=False)
+        
+        self.REF_DATA_PARAMS        = [self.NPZ_DBP, self.BAG_DBP, self.REF_BAG_NAME, self.REF_FILTERS, self.REF_SAMPLE_RATE, self.IMG_TOPIC, self.SLAM_ODOM_TOPIC, self.FEAT_TYPE, self.IMG_DIMS]
+        self.REF_DATA_NAMES         = [i.name for i in self.REF_DATA_PARAMS]
+
+        self.SVM_DATA_PARAMS        = [self.FEAT_TYPE, self.IMG_DIMS, self.NPZ_DBP, self.BAG_DBP, self.SVM_DBP, self.IMG_TOPIC, self.SLAM_ODOM_TOPIC, \
+                                       self.SVM_QRY_BAG_NAME, self.SVM_QRY_FILTERS, self.SVM_QRY_SAMPLE_RATE, \
+                                       self.SVM_REF_BAG_NAME, self.SVM_REF_FILTERS, self.SVM_REF_SAMPLE_RATE, \
+                                       self.SVM_FACTORS, self.SVM_TOL_MODE, self.SVM_TOL_THRES]
+        self.SVM_DATA_NAMES         = [i.name for i in self.SVM_DATA_PARAMS]
+
+    def init_vars(self, *args, **kwargs) -> None:
+        super().init_vars(*args, **kwargs)
+
+    def init_rospy(self, *args, **kwargs) -> None:
+        super().init_rospy(*args, **kwargs)
+
+    def debug_cb(self, msg: Debug) -> None:
+        if msg.node_name == self.node_name:
+            try:
+                if msg.instruction == 0:
+                    self.print(self.make_svm_model_params(), LogType.DEBUG)
+                elif msg.instruction == 1:
+                    self.print(self.make_dataset_dict(), LogType.DEBUG)
+                else:
+                    self.print(msg.instruction, LogType.DEBUG)
+            except:
+                self.print("Debug operation failed.", LogType.DEBUG)
+
+    def make_dataset_dict(self) -> dict:
+        return dict(bag_name=self.REF_BAG_NAME.get(), npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), \
+                    odom_topic=self.SLAM_ODOM_TOPIC.get(), img_topics=[self.IMG_TOPIC.get()], sample_rate=self.REF_SAMPLE_RATE.get(), \
+                    ft_types=[self.FEAT_TYPE.get().name], img_dims=self.IMG_DIMS.get(), filters=self.REF_FILTERS.get())
+    
+    def make_svm_model_params(self) -> dict:
+        qry_dict = dict(bag_name=self.SVM_QRY_BAG_NAME.get(), npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), \
+                        odom_topic=self.SLAM_ODOM_TOPIC.get(), img_topics=[self.IMG_TOPIC.get()], sample_rate=self.SVM_QRY_SAMPLE_RATE.get(), \
+                        ft_types=[self.FEAT_TYPE.get().name], img_dims=self.IMG_DIMS.get(), filters=self.SVM_QRY_FILTERS.get())
+        ref_dict = dict(bag_name=self.SVM_REF_BAG_NAME.get(), npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), \
+                        odom_topic=self.SLAM_ODOM_TOPIC.get(), img_topics=[self.IMG_TOPIC.get()], sample_rate=self.SVM_REF_SAMPLE_RATE.get(), \
+                        ft_types=[self.FEAT_TYPE.get().name], img_dims=self.IMG_DIMS.get(), filters=self.SVM_REF_FILTERS.get())
+        svm_dict = dict(factors=self.SVM_FACTORS.get(), tol_thres=self.SVM_TOL_THRES.get(), tol_mode=self.SVM_TOL_MODE.get().name)
+        return dict(ref=ref_dict, qry=qry_dict, svm=svm_dict, npz_dbp=self.NPZ_DBP.get(), bag_dbp=self.BAG_DBP.get(), svm_dbp=self.SVM_DBP.get())
+    
+    def generate_path(self, dataset: dict, _every: int = 3) -> Path:
+        
+        px      = dataset['dataset']['px']
+        py      = dataset['dataset']['py']
+        pw      = dataset['dataset']['pw']
+        time    = dataset['dataset']['time']
+        new_path = Path(header=Header(stamp=rospy.Time.now(), frame_id="map"))
+        new_path.poses = []
+        for (c, (x, y, w, t)) in enumerate(zip(px, py, pw, time)):
+            if not c % _every == 0:
+                continue
+            new_pose = PoseStamped(header=Header(stamp=rospy.Time.from_sec(t), frame_id="map", seq=c))
+            new_pose.pose.position = Point(x=x, y=y, z=0)
+            new_pose.pose.orientation = q_from_yaw(w)
+            new_path.poses.append(new_pose)
+            del new_pose
+
+        return new_path

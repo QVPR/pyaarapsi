@@ -9,8 +9,6 @@ import copy
 import matplotlib.pyplot as plt
 from typing import Tuple
 
-from rospy_message_converter import message_converter
-
 from nav_msgs.msg           import Path, Odometry
 from std_msgs.msg           import String
 from geometry_msgs.msg      import Twist, PoseStamped, PoseWithCovarianceStamped
@@ -25,12 +23,12 @@ from pyaarapsi.core.vars                    import C_I_RED, C_I_GREEN, C_I_YELLO
 from pyaarapsi.vpr_simple.vpr_dataset_tool  import VPRDatasetProcessor
 from pyaarapsi.vpr_simple.vpr_helpers       import FeatureType
 
-from pyaarapsi.vpr_classes.base             import Base_ROS_Class
-from pyaarapsi.core.argparse_tools          import check_positive_float, check_bool, check_string, check_enum, check_positive_int, check_float
-from pyaarapsi.pathing.enums                import *
-from pyaarapsi.pathing.basic                import *
+from pyaarapsi.vpr_classes.dataset_loader_base  import Dataset_Loader
+from pyaarapsi.core.argparse_tools              import check_positive_float, check_bool, check_string, check_enum, check_positive_int, check_float
+from pyaarapsi.pathing.enums                    import *
+from pyaarapsi.pathing.basic                    import *
 
-class Simple_Follower_Class(Base_ROS_Class):
+class Simple_Follower_Class(Dataset_Loader):
     def __init__(self, **kwargs):
         '''
 
@@ -99,9 +97,6 @@ class Simple_Follower_Class(Base_ROS_Class):
         # Inter-loop variables for velocity control:
         self.old_lin            = 0.0                       # Last-made-command's linear velocity
         self.old_ang            = 0.0                       # Last-made-command's angular velocity
-
-        # Inter-loop variables for dataset loading control:
-        self.dataset_queue      = []                        # List of dataset parameters pending construction
 
         # Initialise dataset processors:
         self.ref_ip             = VPRDatasetProcessor(None, try_gen=False, ros=True, printer=self.print) 
@@ -195,12 +190,10 @@ class Simple_Follower_Class(Base_ROS_Class):
     def init_rospy(self):
         super().init_rospy()
         
-        ds_requ                 = self.namespace + "/requests/dataset/"
         self.ref_pub            = self.add_pub(      self.namespace + '/ref',                  Path,                                       queue_size=1, latch=True, subscriber_listener=self.sublis)
         self.path_pub           = self.add_pub(      self.namespace + '/path',                 Path,                                       queue_size=1, latch=True, subscriber_listener=self.sublis)
         self.speed_pub          = self.add_pub(      self.namespace + '/speeds',               MarkerArray,                                queue_size=1, latch=True, subscriber_listener=self.sublis)
         self.zones_pub          = self.add_pub(      self.namespace + '/zones',                MarkerArray,                                queue_size=1, latch=True, subscriber_listener=self.sublis)
-        self.ds_requ_pub        = self.add_pub(      ds_requ + "request",                      RequestDataset,                             queue_size=1)
         self.COR_pub            = self.add_pub(      self.namespace + '/cor',                  PoseStamped,                                queue_size=1)
         self.goal_pub           = self.add_pub(      self.namespace + '/path_goal',            PoseStamped,                                queue_size=1)
         self.slam_pub           = self.add_pub(      self.namespace + '/slam_pose',            PoseStamped,                                queue_size=1)
@@ -209,7 +202,6 @@ class Simple_Follower_Class(Base_ROS_Class):
         self.rollmatch_pub      = self.add_pub(      self.nodespace + '/rollmatch/compressed', CompressedImage,                            queue_size=1)
         self.init_pose_pub      = self.add_pub(      '/initialpose',                           PoseWithCovarianceStamped,                  queue_size=1)
         
-        self.ds_requ_sub        = rospy.Subscriber(  ds_requ + "ready",                        ResponseDataset,           self.ds_requ_cb, queue_size=1)
         if self.simple:
             self.odom_sub       = rospy.Subscriber(  self.SLAM_ODOM_TOPIC.get(),               Odometry,                  self.odom_cb,    queue_size=1)
         else:
@@ -306,19 +298,6 @@ class Simple_Follower_Class(Base_ROS_Class):
         if not self.ready:
             return
         self.robot_velocities = twist2xyw(msg.twist.twist)
-        
-    def ds_requ_cb(self, msg: ResponseDataset):
-        '''
-        Dataset request callback; handle confirmation of dataset readiness
-        '''
-        if msg.success == False:
-            self.print('Dataset request processed, error. Parameters: %s' % str(msg.params), LogType.ERROR)
-        try:
-            index = self.dataset_queue.index(msg.params) # on separate line to try trigger ValueError failure
-            self.print('Dataset request processed, success. Removing from dataset queue.')
-            self.dataset_queue.pop(index)
-        except ValueError:
-            pass
 
     def odom_cb(self, msg: Odometry):
         '''
@@ -433,52 +412,6 @@ class Simple_Follower_Class(Base_ROS_Class):
                 self.set_safety_mode(Safety_Mode.STOP)
 
         # TODO: path parameters, probably.
-
-    def try_load_dataset(self, _ip: VPRDatasetProcessor, _dict: dict, dataset_loaded: bool) -> bool:
-        '''
-        Try-except wrapper for load_dataset
-        '''
-        if not dataset_loaded:
-            try:
-                dataset_loaded = bool(_ip.load_dataset(_dict))
-            except:
-                dataset_loaded = False
-        return dataset_loaded
-
-    def load_dataset(self, _ip: VPRDatasetProcessor, _dict: dict):
-        '''
-        Load in dataset to generate path and to utilise VPR index information
-        '''
-
-        # Try load in dataset:
-        dataset_loaded = self.try_load_dataset(_ip, _dict, False)
-
-        if not dataset_loaded: # if the model failed to generate, the dataset is not ready, therefore...
-            # Request dataset generation:
-            dataset_msg = message_converter.convert_dictionary_to_ros_message('aarapsi_robot_pack/RequestDataset', _dict)
-            self.dataset_queue.append(dataset_msg)
-            self.ds_requ_pub.publish(self.dataset_queue[0])
-
-            # Wait for news of dataset generation:
-            wait_intervals = 0
-            while len(self.dataset_queue): # while there is a dataset we are waiting on:
-                if rospy.is_shutdown():
-                    sys.exit()
-                self.print('Waiting for dataset construction...', throttle=5)
-                self.rate_obj.sleep()
-                wait_intervals += 1
-                if wait_intervals > 10 / (1/self.RATE_NUM.get()):
-                    # Resend the oldest queue'd element every 10 seconds
-                    try:
-                        self.ds_requ_pub.publish(self.dataset_queue[0])
-                    except:
-                        pass
-                    wait_intervals = 0
-
-            # Try load in the dataset again now that it is ready
-            dataset_loaded = self.try_load_dataset(_ip, _dict, dataset_loaded)
-            if not dataset_loaded:
-                raise Exception('Dataset was constructed, but could not be loaded!')
 
     def publish_controller_info(self):
         '''
