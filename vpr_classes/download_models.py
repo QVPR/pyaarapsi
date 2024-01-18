@@ -6,27 +6,7 @@ import sys
 import os
 import imp # TODO: deprecated :-(
 MODELS_DIR = imp.find_module("pyaarapsi")[1] + '/vpr_classes/downloads/'
-
-def ask_yesnoexit(question):
-    """
-    Helper to get yes / no / exit answer from user.
-    """
-    _yes = {'yes', 'y'}
-    _no = {'no', 'n'}
-    _exit = {'q', 'quit', 'e', 'exit'}
-
-    done = False
-    print(question)
-    while not done:
-        choice = input().lower()
-        if choice in _yes:
-            return True
-        elif choice in _no:
-            return False
-        elif choice in _exit:
-            sys.exit()
-        else:
-            print("Please respond '(y)es', '(n)o', or '(q)uit'.")
+from ..core.helper_tools import ask_yesnoexit
 
 def download_netvlad_models(force=False):
     global MODELS_DIR

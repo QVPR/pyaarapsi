@@ -20,7 +20,29 @@ class Bool(Enum):
 class SupportsCanvas(Protocol):
     canvas: FigureCanvasBase
 
-def perforate(  _len: np.uint16, \
+def ask_yesnoexit(question: str):
+    """
+    Helper to get yes / no / exit answer from user.
+    """
+    _yes = {'yes', 'y'}
+    _no = {'no', 'n'}
+    _exit = {'q', 'quit', 'e', 'exit'}
+
+    done = False
+    print(question)
+    while not done:
+        choice = input().lower()
+        if choice in _yes:
+            return True
+        elif choice in _no:
+            return False
+        elif choice in _exit:
+            sys.exit()
+        else:
+            print("Please respond '(y)es', '(n)o', or '(q)uit'.")
+
+
+def perforate(  _len: int, \
                 num_holes: Optional[int] = 3, \
                 randomness: Optional[float] = 0.2, \
                 hole_damage: Optional[float] = 0.5, \
