@@ -210,7 +210,7 @@ def roslogger(text, logtype: LogType = LogType.INFO, throttle: Optional[float] =
     _currentframe = inspect.currentframe()
     assert _currentframe != None
     assert _currentframe.f_back != None
-    caller_id = _frame_to_caller_id(_currentframe.f_back.f_back)
+    caller_id = _frame_to_caller_id(_currentframe.f_back)
 
     if once:
         if _logging_once(caller_id):
