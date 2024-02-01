@@ -37,12 +37,12 @@ class PlaceDataset(Dataset):
                 raise Exception("Input of type list but contains elements of unknown type. Type: %s" % (str(type(self.images[0]))))
         elif isinstance(self.images, np.ndarray): # type np.ndarray of np.ndarray flattened images
             self.len = lambda: self.images.shape[0]
-            self.getitem = lambda index: Image.fromarray(np.dstack((np.reshape(self.images[index], self.dims),)*3).astype(np.uint8))
+            self.getitem = lambda index: Image.fromarray(np.dstack((np.reshape(self.images[index], self.dims),)*3).astype(np.uint8)) #type: ignore
         else:
             raise Exception("Input not of type list or np.ndarray. Type: %s" % (str(type(self.images))))
     
     def __getitem__(self, index):
-        return self.transform(self.getitem(index)), index
+        return self.transform(self.getitem(index)), index #type: ignore
     
     def __len__(self):
         return self.len()
@@ -93,9 +93,9 @@ class NetVLAD_Container:
 
     def load(self):
         self.config = configparser.ConfigParser()
-        self.config['feature_extract'] = {'batchsize': self.batchsize, 'cachebatchsize': self.cachebatchsize, 
+        self.config['feature_extract'] = {'batchsize': self.batchsize, 'cachebatchsize': self.cachebatchsize, #type: ignore
                                     'imageresizew': self.imw, 'imageresizeh': self.imh}
-        self.config['global_params'] = {'pooling': 'netvlad', 'resumepath': self.resumepath, 
+        self.config['global_params'] = {'pooling': 'netvlad', 'resumepath': self.resumepath, #type: ignore
                                 'threads': self.threads, 'num_pcs': self.num_pcs, 'ngpu': self.ngpus}
 
         if self.cuda and not torch.cuda.is_available():
@@ -127,8 +127,8 @@ class NetVLAD_Container:
             del checkpoint
             
             if int(self.config['global_params']['ngpu']) > 1 and torch.cuda.device_count() > 1:
-                self.model.encoder = torch.nn.DataParallel(self.model.encoder)
-                self.model.pool = torch.nn.DataParallel(self.model.pool)
+                self.model.encoder = torch.nn.DataParallel(self.model.encoder) #type: ignore
+                self.model.pool = torch.nn.DataParallel(self.model.pool) #type: ignore
         
             self.model = self.model.to(self.device)
             self.logger("=> Successfully loaded checkpoint '{}'".format(file_path))
@@ -165,8 +165,8 @@ class NetVLAD_Container:
         input_data = self.transform(Image.fromarray(np.zeros((1,1,3), dtype=np.uint8)))
         with torch.no_grad():
             input_data      = input_data.unsqueeze(dim=0).to(self.device)
-            image_encoding  = self.model.encoder(input_data)
-            vlad_global     = self.model.pool(image_encoding)
+            image_encoding  = self.model.encoder(input_data) #type: ignore
+            vlad_global     = self.model.pool(image_encoding) #type: ignore
             vlad_global_pca = get_pca_encoding(self.model, vlad_global)
         del input_data, image_encoding, vlad_global, vlad_global_pca
         torch.cuda.empty_cache()
@@ -242,8 +242,8 @@ class NetVLAD_Container:
             for (input_data, indices) in iteration_obj: # manage batches and threads
                 indices_np              = indices.detach().numpy()
                 input_data              = input_data.to(self.device)
-                image_encoding          = self.model.encoder(input_data)
-                vlad_global             = self.model.pool(image_encoding)
+                image_encoding          = self.model.encoder(input_data) #type: ignore
+                vlad_global             = self.model.pool(image_encoding) #type: ignore
                 vlad_global_pca         = get_pca_encoding(self.model, vlad_global)
                 db_feat[indices_np, :]  = vlad_global_pca.detach().cpu().numpy()
                 torch.cuda.empty_cache()
