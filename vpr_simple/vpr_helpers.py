@@ -7,6 +7,7 @@ import json
 from ..pathing.basic import calc_path_stats
 from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
+from ..vpr_classes.salad import SALAD_Container
 from ..core.helper_tools import perforate, formatException
 from typing import Union, List, Optional
 
@@ -18,6 +19,7 @@ class FeatureType(Enum):
     HYBRIDNET           = 4
     ROLLNORM            = 5
     NORM                = 6
+    SALAD               = 7
 
 class ViewMode(Enum):
     FORWARD  	        = 0
@@ -40,6 +42,22 @@ class VPR_Tolerance_Mode(Enum):
 class SVM_Tolerance_Mode(Enum):
     DISTANCE            = 0
     FRAME               = 1
+
+def make_dataset_dictionary(bag_name: str, 
+                            npz_dbp: str = "/data/compressed_sets", 
+                            bag_dbp: str = "/data/rosbags", 
+                            odom_topic: Union[str, List[str]] = "/odom/true", 
+                            img_topics: List[str] = ["/ros_indigosdk_occam/image0/compressed"], 
+                            sample_rate: Union[int, float] = 5.0, 
+                            ft_types: List[str] = [FeatureType.RAW.name], 
+                            img_dims: List[int] = [64,64], 
+                            filters: str = ''):
+
+    '''
+    Function to help remember the contents of a VPRDatasetProcessor dataset_params dictionary
+    '''
+    return dict(bag_name=bag_name, npz_dbp=npz_dbp, bag_dbp=bag_dbp, odom_topic=odom_topic, 
+                img_topics=img_topics, sample_rate=sample_rate, ft_types=ft_types, img_dims=img_dims, filters=filters)
 
 def filter_dataset(dataset_in, _filters: Optional[dict] = None, _printer=lambda *args, **kwargs: None):
     if _filters is None:
@@ -197,9 +215,12 @@ def keep_operation(d_in, groupings, mode='first'):
                         d_in[bigkey][midkey][i[2]] = np.stack(cropped_reorder[:,c],axis=0)
     return d_in
 
-def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType, List[FeatureType]], dims: list, 
-            use_tqdm: bool = False, nn_hybrid: Optional[HybridNet_Container] = None, 
-            nn_netvlad: Optional[NetVLAD_Container] = None) -> Union[np.ndarray, List[np.ndarray]]:
+def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType, List[FeatureType]], 
+            dims: list, use_tqdm: bool = False, 
+            nn_hybrid: Optional[HybridNet_Container] = None, 
+            nn_netvlad: Optional[NetVLAD_Container] = None,
+            nn_salad: Optional[SALAD_Container] = None) -> Union[np.ndarray, List[np.ndarray]]:
+    
     ft_list     = []
     if not isinstance(im, list):
         _im = [im]
@@ -234,6 +255,8 @@ def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType,
             ft_ready = nn_hybrid.getFeat(_im, use_tqdm=use_tqdm)
         elif fttype == FeatureType.NETVLAD and not nn_netvlad is None:
             ft_ready = nn_netvlad.getFeat(_im, use_tqdm=use_tqdm)
+        elif fttype == FeatureType.SALAD and not nn_salad is None:
+            ft_ready = nn_salad.getFeat(_im, use_tqdm=use_tqdm)
         else:
             raise Exception("[getFeat] fttype could not be handled.")
         ft_list.append(ft_ready)
