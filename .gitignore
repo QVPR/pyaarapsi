@@ -6,6 +6,7 @@ __pycache__
 src/CMakeLists.txt
 *:Zone.Identifier
 *.caffemodel
+*.ckpt
 *.avi
 *.pcd
 *.pyc
