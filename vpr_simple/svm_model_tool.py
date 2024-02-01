@@ -51,9 +51,9 @@ class SVMModelProcessor:
 
         self.print("[SVMModelProcessor] Processor Ready.")
 
-    def pass_nns(self, processor, netvlad=True, hybridnet=True):
-        self.cal_qry_ip.pass_nns(processor, netvlad, hybridnet)
-        self.cal_ref_ip.pass_nns(processor, netvlad, hybridnet)
+    def pass_nns(self, processor, netvlad=True, hybridnet=True, salad=True):
+        self.cal_qry_ip.pass_nns(processor, netvlad=netvlad, hybridnet=hybridnet, salad=salad)
+        self.cal_ref_ip.pass_nns(processor, netvlad=netvlad, hybridnet=hybridnet, salad=salad)
 
     def print(self, text: str, logtype: LogType = LogType.INFO, throttle: float = 0) -> None:
         text = '[SVMModelProcessor] ' + text

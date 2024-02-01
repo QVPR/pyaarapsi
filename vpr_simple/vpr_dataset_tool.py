@@ -34,7 +34,7 @@ class VPRProcessorBase:
                  init_netvlad: bool = False, init_hybridnet: bool = False, init_salad: bool = False):
         
         self.dataset: dict                  = {}
-        self.printer: Optional[Callable]    = None
+        self.printer: Optional[Callable]    = printer
         self.ros                            = ros
         self.cuda                           = cuda
 
