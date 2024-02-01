@@ -152,7 +152,7 @@ class RobotVPR:
         Note the match_found vector can be used where true negatives exist in the data.
         Here, match_found=None is not referring to no matches found, but simply not specifying matches found
         '''
-        self.set_tolerance(tolerance,units)            
+        self.set_tolerance(tolerance,units,verbose=verbose)
         self.find_y()
         if match_found is None:
             match_found=self.ALL_TRUE
