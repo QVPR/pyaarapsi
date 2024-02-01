@@ -25,20 +25,26 @@ from ..core.file_system_tools import scan_directory
 from .vpr_helpers import *
 from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
+from ..vpr_classes.salad import SALAD_Container
 
-from typing import Optional, Union, overload
+from typing import Optional, Union, overload, Callable
 
 class VPRProcessorBase:
-    def __init__(self):
-        self.dataset        = {}
-        self.printer        = None
-        self.ros            = False
-        self.cuda           = False
-        self.borrowed_nns   = [False, False]
-        self.netvlad        = None
-        self.hybridnet      = None
-        self.init_netvlad   = False
-        self.init_hybridnet = False
+    def __init__(self, cuda: bool = False, ros: bool = False, printer: Optional[Callable] = None,
+                 init_netvlad: bool = False, init_hybridnet: bool = False, init_salad: bool = False):
+        
+        self.dataset: dict                  = {}
+        self.printer: Optional[Callable]    = None
+        self.ros                            = ros
+        self.cuda                           = cuda
+
+        self.borrowed_nns                               = {'netvlad': False, 'hybridnet': False, 'salad': False}
+        self.netvlad: Optional[NetVLAD_Container]       = None
+        self.hybridnet: Optional[HybridNet_Container]   = None
+        self.salad: Optional[SALAD_Container]           = None
+        self.init_netvlad                               = init_netvlad
+        self.init_hybridnet                             = init_hybridnet
+        self.init_salad                                 = init_salad
 
     def get(self) -> dict:
         '''
@@ -143,15 +149,36 @@ class VPRProcessorBase:
             self.hybridnet.ready_up()
         return True
 
-    def pass_nns(self, processor: VPRDatasetProcessor, netvlad: bool = True, hybridnet: bool = True, try_load_if_missing: bool = True) -> bool:
+    def prep_salad(self, cuda: Optional[bool] = None, ready_up: bool = True) -> bool:
         '''
-        Overwrite this VPRDatasetProcessor's instances of netvlad and hybridnet with another's instantiations
-        Will check and, if initialised, destroy existing netvlad/hybridnet
+        Prepare salad for use
 
         Inputs:
-            processor:  object with .netvlad (type: NetVLAD_Container) and .hybridnet (type: HybridNet_Container) attributes
-            netvlad:    bool type {default: True}; whether or not to overwrite netvlad instance
-            hybridnet:  bool type {default: True}; whether or not to overwrite hybridnet instance
+        - cuda:     bool type {default: None}; if not None, overrides initialisation cuda variable for salad loading
+        - ready_up: bool type {default: True}; whether or not to automatically ready the model
+        Returns:
+            bool type; True (on success, else Exception)
+        '''
+        if not isinstance(self.salad, SALAD_Container):
+            if cuda is None:
+                cuda = self.cuda
+            self.salad      = SALAD_Container(cuda=cuda, logger=self.print)
+            self.init_salad = True
+        if ready_up:
+            self.salad.ready_up()
+        return True
+
+    def pass_nns(self, processor: VPRDatasetProcessor, try_load_if_missing: bool = True, netvlad: bool = True, hybridnet: bool = True, salad: bool = True) -> bool:
+        '''
+        Overwrite this VPRDatasetProcessor's instances of each container with another's instantiations
+        Will check and, if initialised, destroy existing container
+
+        Inputs:
+            processor:              VPRDatasetProcessor type
+            try_load_if_missing:    bool type {default: True}; whether or not to trigger a prep if detects uninitialised container instance
+            netvlad:                bool type {default: True}; whether or not to overwrite netvlad instance
+            hybridnet:              bool type {default: True}; whether or not to overwrite hybridnet instance
+            salad:                  bool type {default: True}; whether or not to overwrite salad instance
         Returns:
             bool type; True (on success, else Exception)
         '''
@@ -166,7 +193,7 @@ class VPRProcessorBase:
                 self.netvlad.destroy()
             self.netvlad = processor.netvlad
             self.init_netvlad = True
-            self.borrowed_nns[0] = True
+            self.borrowed_nns['netvlad'] = True
             self.print('Passed NetVLAD.', LogType.DEBUG)
         if hybridnet:
             if processor.hybridnet is None:
@@ -178,8 +205,20 @@ class VPRProcessorBase:
                 self.hybridnet.destroy()
             self.hybridnet = processor.hybridnet
             self.init_hybridnet = True
-            self.borrowed_nns[1] = True
+            self.borrowed_nns['hybridnet'] = True
             self.print('Passed HybridNet.', LogType.DEBUG)
+        if salad:
+            if processor.salad is None:
+                if try_load_if_missing:
+                    processor.prep_salad()
+                else:
+                    raise Exception('Passing requires a SALAD_Container, or pass argument try_load_if_missing=True.')
+            if isinstance(self.salad, SALAD_Container):
+                self.salad.destroy()
+            self.salad = processor.salad
+            self.init_salad = True
+            self.borrowed_nns['salad'] = True
+            self.print('Passed SALAD.', LogType.DEBUG)
         return True
 
     def check_netvlad(self, ft_types: list) -> bool:
@@ -217,6 +256,26 @@ class VPRProcessorBase:
                 self.prep_hybridnet(self.cuda, True)
             elif not self.hybridnet.is_ready(): # if it exists but isn't ready,
                 self.hybridnet.ready_up()
+            else:
+                return False
+            return True
+        return False
+    
+    def check_salad(self, ft_types: list) -> bool:
+        '''
+        Check if SALAD is initialised: if not initialised but needed (ft_types contains FeatureType.SALAD) will attempt to initialise.
+        Delays loading of SALAD model until required by system.
+
+        Inputs:
+            ft_types:  list type; list of FeatureType enumerations. If it contains FeatureType.SALAD and SALAD is not loaded, this method will attempt to initialise SALAD
+        Returns:
+            bool type; True on successful update, False if no change
+        '''
+        if (FeatureType.SALAD in ft_types) and self.init_salad: # If needed and we've been asked to initialise SALAD:
+            if self.salad is None: # if it currently doesn't exist,
+                self.prep_salad(self.cuda, True)
+            elif not self.salad.is_ready(): # if it exists but isn't ready,
+                self.salad.ready_up()
             else:
                 return False
             return True
@@ -264,8 +323,13 @@ class VPRProcessorBase:
                 self.check_netvlad(fttypes)
             else:
                 raise Exception("[getFeat] FeatureType.NETVLAD provided but VPRDatasetProcessor not initialised with init_netvlad=True")
+        if any([fttype == FeatureType.SALAD for fttype in fttypes]):
+            if self.init_salad:
+                self.check_salad(fttypes)
+            else:
+                raise Exception("[getFeat] FeatureType.SALAD provided but VPRDatasetProcessor not initialised with init_salad=True")
         try:
-            feats = getFeat(img, fttypes, dims, use_tqdm=use_tqdm, nn_hybrid=self.hybridnet, nn_netvlad=self.netvlad)
+            feats = getFeat(img, fttypes, dims, use_tqdm=use_tqdm, nn_hybrid=self.hybridnet, nn_netvlad=self.netvlad, nn_salad=self.salad)
             if isinstance(feats, list):
                 return [np.array(i, dtype=np.float32) for i in feats]
             return np.array(feats, dtype=np.float32)
@@ -274,8 +338,9 @@ class VPRProcessorBase:
 
 
 class VPRDatasetProcessor(VPRProcessorBase):
-    def __init__(self, dataset_params: Optional[dict] = None, try_gen: bool = True, init_netvlad: bool = False, 
-                 init_hybridnet: bool = False, cuda: bool = False, use_tqdm: bool = False, 
+    def __init__(self, dataset_params: Optional[dict] = None, try_gen: bool = True, 
+                 init_netvlad: bool = False, init_hybridnet: bool = False, init_salad: bool = False,
+                 cuda: bool = False, use_tqdm: bool = False, 
                  autosave: bool = False, ros: bool = True, root: Optional[str] = None, printer=None):
         '''
         Initialisation
@@ -303,23 +368,19 @@ class VPRDatasetProcessor(VPRProcessorBase):
         Returns:
             self
         '''
-        self.cuda           = cuda
-        self.ros            = ros
+        
+        super().__init__(cuda = cuda, ros = ros, printer = printer,
+                         init_netvlad = init_netvlad, init_hybridnet = init_hybridnet, init_salad = init_salad)    
+
         self.use_tqdm       = use_tqdm
         self.autosave       = autosave
-        self.init_netvlad   = init_netvlad
-        self.init_hybridnet = init_hybridnet
-        self.printer        = printer
+
         if root is None:
             self.root       = ROSPKG_ROOT
         else:
             self.root       = root
-        self.borrowed_nns   = [False, False]
 
         # Declare attributes:
-        self.dataset: dict                              = {}
-        self.netvlad: Optional[NetVLAD_Container]       = None
-        self.hybridnet: Optional[HybridNet_Container]   = None
         self.npz_dbp: str                               = ''
         self.bag_dbp: str                               = ''
 
@@ -649,18 +710,25 @@ class VPRDatasetProcessor(VPRProcessorBase):
         Returns:
             None
         '''
-        if self.init_hybridnet and (not self.borrowed_nns[1]):
+        if self.init_hybridnet and (not self.borrowed_nns['hybridnet']):
             try:
                 if not self.hybridnet is None:
                     self.hybridnet.destroy()
                 del self.hybridnet
             except:
                 pass
-        if self.init_netvlad and (not self.borrowed_nns[0]):
+        if self.init_netvlad and (not self.borrowed_nns['netvlad']):
             try:
                 if not self.netvlad is None:
                     self.netvlad.destroy()
                 del self.netvlad
+            except:
+                pass
+        if self.init_salad and (not self.borrowed_nns['salad']):
+            try:
+                if not self.salad is None:
+                    self.salad.destroy()
+                del self.salad
             except:
                 pass
         try:
