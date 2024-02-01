@@ -180,7 +180,7 @@ class RobotRun:
         if self.npz_setup==False:
             self.imlist=self.imlist[start:end+1]     # update filenames
             self.imgnum = len(self.imlist)
-        print('truncate: run is now {0} images long'.format(self.imgnum))
+        print('[RobotRun: truncate] Reduced from {0} to {1} images.'.format(len(self.xy), self.imgnum))
         self.find_along_path_distances();
         
     def subsample(self):
