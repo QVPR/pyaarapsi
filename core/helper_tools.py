@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import time
+import select
 import sys
 import traceback
 import numpy as np
@@ -11,6 +12,7 @@ from matplotlib.backend_bases import FigureCanvasBase
 import matplotlib.pyplot as plt
 from typing import Optional, Callable, TypeVar, Protocol
 from numpy.typing import NDArray
+from threading import Timer as threadingTimer
 
 class Bool(Enum):
     UNSET = -1
@@ -20,7 +22,15 @@ class Bool(Enum):
 class SupportsCanvas(Protocol):
     canvas: FigureCanvasBase
 
-def ask_yesnoexit(question: str):
+def input_with_timeout(prompt, timeout):
+    'https://stackoverflow.com/questions/15528939/time-limited-input'
+    ready, _, _ = select.select([sys.stdin], [],[], timeout)
+    if ready:
+        return sys.stdin.readline().rstrip('\n') # expect stdin to be line-buffered
+    print(prompt)
+    return 'y'
+
+def ask_yesnoexit(question: str, auto: Optional[float] = None):
     """
     Helper to get yes / no / exit answer from user.
     """
@@ -31,7 +41,12 @@ def ask_yesnoexit(question: str):
     done = False
     print(question)
     while not done:
-        choice = input().lower()
+        if auto is None:
+            choice = input().lower()
+        else:
+            print('Download will proceed if no response within wait period (%ss).' % str(auto))
+            choice = input_with_timeout('Wait period elapsed, proceeding with download(s) ...', auto).lower()
+        
         if choice in _yes:
             return True
         elif choice in _no:
