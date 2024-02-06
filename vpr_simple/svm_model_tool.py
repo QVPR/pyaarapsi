@@ -12,7 +12,7 @@ import rospkg
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from fastdist import fastdist
+
 #from sklearnex import patch_sklearn # Package for speeding up sklearn (must be run on GPU; TODO)
 #patch_sklearn()
 from sklearn import svm
@@ -21,14 +21,17 @@ from sklearn.preprocessing import StandardScaler
 from ..core.file_system_tools   import scan_directory
 from ..core.ros_tools           import roslogger, LogType
 from ..core.enum_tools          import enum_get
-from ..core.helper_tools        import formatException
+from ..core.helper_tools        import formatException, m2m_dist
 from .vpr_dataset_tool          import VPRDatasetProcessor
 from .vpr_helpers               import SVM_Tolerance_Mode
 from ..vpred.vpred_tools        import find_prediction_performance_metrics
 from ..vpred.vpred_factors      import find_factors
 
+from typing import Optional
+
 class SVMModelProcessor:
-    def __init__(self, ros=False, root=None, load_field=False, printer=None, use_tqdm: bool = False, cuda: bool = False):
+    def __init__(self, ros=False, root=None, load_field=False, printer=None, use_tqdm: bool = False, cuda: bool = False, 
+                 qry_ip: Optional[VPRDatasetProcessor] = None, ref_ip: Optional[VPRDatasetProcessor] = None):
 
         self.model_ready    = False
         self.do_field       = load_field
@@ -41,11 +44,19 @@ class SVMModelProcessor:
             self.root       = root
 
         # for making new models (prep but don't load anything yet)
-        self.cal_qry_ip     = VPRDatasetProcessor(None, ros=self.ros, root=root, printer=self.printer, use_tqdm=use_tqdm, cuda=cuda)
-        self.cal_ref_ip     = VPRDatasetProcessor(None, ros=self.ros, root=root, printer=self.printer, use_tqdm=use_tqdm, cuda=cuda)
+        if qry_ip is None:
+            self.cal_qry_ip = VPRDatasetProcessor(None, ros=self.ros, root=root, printer=self.printer, use_tqdm=use_tqdm, cuda=cuda)
+            self.qry_loaded = bool(self.cal_qry_ip.dataset)
+        else:
+            self.cal_qry_ip = qry_ip
+            self.qry_loaded = False
 
-        self.qry_loaded     = False
-        self.ref_loaded     = False
+        if ref_ip is None:
+            self.cal_ref_ip = VPRDatasetProcessor(None, ros=self.ros, root=root, printer=self.printer, use_tqdm=use_tqdm, cuda=cuda)
+            self.ref_loaded = bool(self.cal_ref_ip.dataset)
+        else:
+            self.cal_ref_ip = ref_ip
+            self.ref_loaded = False
 
         self._vars_ready    = False
 
@@ -195,6 +206,46 @@ class SVMModelProcessor:
         prob       = self.model['model']['svm'].predict_proba(X_scaled)[:,1]      # get probability of prediction
         return (pred, zvalues, X, prob)
     
+    def predict_from_datasets(self, ref, qry, do_print=False):
+        # Generate similarity matrix for reference to query:
+        S_test = m2m_dist(ref[self.feat_type], qry[self.feat_type])
+
+        # Extract factors:
+        factors_test = find_factors(self.svm_params['factors'], S_test, np.stack([ref['px'], ref['py']], 1), np.argmin(S_test, axis=0))
+
+        # Form input vector
+        X_test = np.transpose(np.array(factors_test))
+
+        # Generate data transforming scaler:
+        X_test_scaled = self.scaler.transform(X_test)
+
+        # Make predictions on calibration set to assess performance
+        pred_test = self.svm_model.predict(X_test_scaled)
+        
+        # Generate reference and query numpy array; columns are x,y:
+        test_ref_xy = np.stack([ref['px'], ref['py']], 1)
+        test_qry_xy = np.stack([qry['px'], qry['py']], 1)
+
+        # Generate similarity matrix for reference to query **Positions**:
+        euc_dists_test = self._calc_euc_dists(test_ref_xy, test_qry_xy)
+        
+        # Generate minima indices:
+        true_inds_test, match_inds_test = self._calc_inds(euc_dists_test, S_test)
+
+        error_dist_test, error_inds_test, minimum_in_tol = self._calc_errors(
+            test_ref_xy, match_inds_test, true_inds_test, euc_dists_test)
+        
+        y_test, _ = self._calc_y(error_dist_test, error_inds_test, minimum_in_tol)
+
+        [precision, recall, num_tp, num_fp, num_tn, num_fn] = \
+            find_prediction_performance_metrics(pred_test, y_test, verbose=False)
+        if do_print:
+            self.print('Performance of prediction on calibration set:\nTP={0}, TN={1}, FP={2}, FN={3}\nprecision={4:3.1f}% recall={5:3.1f}%\n' \
+                    .format(num_tp,num_tn,num_fp,num_fn,precision*100,recall*100))
+        performance_metrics = {'precision': precision, 'recall': recall, 'num_tp': num_tp, 'num_fp': num_fp, 'num_tn': num_tn, 'num_fn': num_fn}
+        
+        return pred_test, performance_metrics
+    
     def generate_svm_mat(self, array_dim=500):
         # Generate decision function matrix:
         x_lim       = [0, self.model['model']['factors'][0].max()]
@@ -282,13 +333,10 @@ class SVMModelProcessor:
     
     def _generate_helper_variables(self):
 
-        # Generate similarity matrix for reference to query **Features**::
-        self.S_train = fastdist.matrix_to_matrix_distance(  
-            self.cal_ref_ip.dataset['dataset'][self.feat_type], \
-            self.cal_qry_ip.dataset['dataset'][self.feat_type], \
-            fastdist.euclidean, "euclidean")
+        # Generate similarity matrix for reference to query **Features**:
+        self.S_train = m2m_dist(self.cal_ref_ip.dataset['dataset'][self.feat_type], self.cal_qry_ip.dataset['dataset'][self.feat_type])
         
-        # Generate reference and query numpy array; columns are x,y
+        # Generate reference and query numpy array; columns are x,y:
         self.cal_ref_xy       = np.stack([self.cal_ref_ip.dataset['dataset']['px'], self.cal_ref_ip.dataset['dataset']['py']], 1)
         self.cal_qry_xy       = np.stack([self.cal_qry_ip.dataset['dataset']['px'], self.cal_qry_ip.dataset['dataset']['py']], 1)
 
@@ -299,35 +347,48 @@ class SVMModelProcessor:
         self.X_train        = np.transpose(np.array(self.factors_train))
 
         # Generate similarity matrix for reference to query **Positions**:
-        self.euc_dists_train = fastdist.matrix_to_matrix_distance(
-            self.cal_ref_xy,
-            self.cal_qry_xy,
-            fastdist.euclidean, "euclidean")
+        self.euc_dists_train = self._calc_euc_dists(self.cal_ref_xy, self.cal_qry_xy)
         
         # Generate minima indices:
-        self.true_inds_train     = np.argmin(self.euc_dists_train,  axis=0) # From position we find true matches
-        self.match_inds_train    = np.argmin(self.S_train,          axis=0) # From features we find VPR matches
+        self.true_inds_train, self.match_inds_train = self._calc_inds(self.euc_dists_train, self.S_train)
+
+    def _calc_euc_dists(self, ref_xy, qry_xy):
+        return m2m_dist(ref_xy, qry_xy)
+
+    def _calc_inds(self, _euc_dists, _s):
+        true_inds     = np.argmin(_euc_dists,  axis=0) # From position we find true matches
+        match_inds    = np.argmin(_s,          axis=0) # From features we find VPR matches
+        return true_inds, match_inds
     
-    def _classify(self):
-        # Classify input data:
-        tol_mode = enum_get(self.svm_params['tol_mode'], SVM_Tolerance_Mode)
+    def _calc_errors(self, ref_xy, match_inds, true_inds, euc_dists):
+        error_dist    = np.sqrt( \
+                                    np.square(ref_xy[match_inds,0] - ref_xy[true_inds,0]) + \
+                                    np.square(ref_xy[match_inds,1] - ref_xy[true_inds,1]) \
+                                    )
+        error_inds   = np.min(np.array([-1 * abs(match_inds - true_inds) + len(match_inds), 
+                                                abs(match_inds - true_inds)]), axis=0)
+        minimum_in_tol      = euc_dists[match_inds,np.arange(match_inds.shape[0])]
+        return error_dist, error_inds, minimum_in_tol
+
+
+    def _calc_y(self, error_dist, error_inds, minimum_in_tol):
+        tol_mode     = enum_get(self.svm_params['tol_mode'], SVM_Tolerance_Mode)
         if tol_mode == SVM_Tolerance_Mode.DISTANCE:
-            error_dist_train    = np.sqrt( \
-                                        np.square(self.cal_ref_xy[self.match_inds_train,0] - self.cal_ref_xy[self.true_inds_train,0]) + \
-                                        np.square(self.cal_ref_xy[self.match_inds_train,1] - self.cal_ref_xy[self.true_inds_train,1]) \
-                                        )
-            minimum_in_tol      = self.euc_dists_train[self.match_inds_train,np.arange(self.match_inds_train.shape[0])]
-            self.y_train        = ((error_dist_train <= self.svm_params['tol_thres']).astype(int) + \
+            _y        = ((error_dist <= self.svm_params['tol_thres']).astype(int) + \
                                    (minimum_in_tol <= self.svm_params['tol_thres']).astype(int)) == 2
 
         elif tol_mode == SVM_Tolerance_Mode.FRAME:
             self.print('[_train] Frame mode has been selected; no accounting for off-path training.', LogType.WARN)
-            error_inds_train    = np.min(np.array([-1 * abs(self.match_inds_train - self.true_inds_train) + len(self.match_inds_train), 
-                                                abs(self.match_inds_train - self.true_inds_train)]), axis=0)
-        
-            self.y_train        = error_inds_train <= self.svm_params['tol_thres']
+            _y        = error_inds <= self.svm_params['tol_thres']
         else:
             raise Exception("Unknown tolerance mode (%s, %s)" % (str(tol_mode), str(self.svm_params['tol_mode'])))
+        return _y, tol_mode
+    
+    def _classify(self):
+        # Classify input data:
+        error_dist_train, error_inds_train, minimum_in_tol = self._calc_errors(
+            self.cal_ref_xy, self.match_inds_train, self.true_inds_train, self.euc_dists_train)
+        self.y_train, tol_mode = self._calc_y(error_dist_train, error_inds_train, minimum_in_tol)
         
         # Check input data is appropriately classed:
         _classes, _class_counts = np.unique(self.y_train, return_counts=True)
@@ -355,7 +416,10 @@ class SVMModelProcessor:
         
         # Define and train the Support Vector Machine
         self.svm_model      = svm.SVC(kernel='rbf', C=1, gamma='scale', class_weight='balanced', probability=True)
-        self.svm_model.fit(self.X_train_scaled, self.y_train)
+        if 'weights' in self.svm_params.keys():
+            self.svm_model.fit(self.X_train_scaled, self.y_train, self.svm_params['weights'])
+        else:
+            self.svm_model.fit(self.X_train_scaled, self.y_train)
 
         # Make predictions on calibration set to assess performance
         self.pred_train     = self.svm_model.predict(self.X_train_scaled)
