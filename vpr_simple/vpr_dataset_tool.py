@@ -167,6 +167,25 @@ class VPRProcessorBase:
         if ready_up:
             self.salad.ready_up()
         return True
+    
+    def init_nns(self, netvlad: bool = True, hybridnet: bool = True, salad: bool = True) -> None:
+        '''
+        Flag VPRDatasetProcessor to initialize specific feature extraction containers
+
+        Inputs:
+            processor:              VPRDatasetProcessor type
+            netvlad:                bool type {default: True}; whether or not to initialize netvlad container
+            hybridnet:              bool type {default: True}; whether or not to initialize hybridnet container
+            salad:                  bool type {default: True}; whether or not to initialize salad container
+        Returns:
+            None
+        '''
+        if netvlad:
+            self.init_netvlad = True
+        if hybridnet:
+            self.init_hybridnet = True
+        if salad:
+            self.init_salad = True
 
     def pass_nns(self, processor: VPRDatasetProcessor, try_load_if_missing: bool = True, netvlad: bool = True, hybridnet: bool = True, salad: bool = True) -> bool:
         '''
@@ -190,7 +209,10 @@ class VPRProcessorBase:
                 else:
                     raise Exception('Passing requires a NetVLAD_Container, or pass argument try_load_if_missing=True.')
             if isinstance(self.netvlad, NetVLAD_Container):
-                self.netvlad.destroy()
+                try:
+                    self.netvlad.destroy()
+                except:
+                    self.print('Failed to destroy existing netvlad instance, with error: ' + str(formatException()))
             self.netvlad = processor.netvlad
             self.init_netvlad = True
             self.borrowed_nns['netvlad'] = True
@@ -202,7 +224,10 @@ class VPRProcessorBase:
                 else:
                     raise Exception('Passing requires a HybridNet_Container, or pass argument try_load_if_missing=True.')
             if isinstance(self.hybridnet, HybridNet_Container):
-                self.hybridnet.destroy()
+                try:
+                    self.hybridnet.destroy()
+                except:
+                    self.print('Failed to destroy existing hybridnet instance, with error: ' + str(formatException()))
             self.hybridnet = processor.hybridnet
             self.init_hybridnet = True
             self.borrowed_nns['hybridnet'] = True
@@ -214,7 +239,10 @@ class VPRProcessorBase:
                 else:
                     raise Exception('Passing requires a SALAD_Container, or pass argument try_load_if_missing=True.')
             if isinstance(self.salad, SALAD_Container):
-                self.salad.destroy()
+                try:
+                    self.salad.destroy()
+                except:
+                    self.print('Failed to destroy existing salad instance, with error: ' + str(formatException()))
             self.salad = processor.salad
             self.init_salad = True
             self.borrowed_nns['salad'] = True
