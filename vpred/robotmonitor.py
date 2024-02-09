@@ -26,10 +26,11 @@ class RobotMonitor(object):
     def decision_values(self,vpr):
         return self.model.decision_function(self.formX(vpr))      
 
-    def assess_prediction(self,vpr):
+    def assess_prediction(self,vpr, verbose=False):
         y_pred=self.predict_quality(vpr)
-        find_prediction_performance_metrics(y_pred,vpr.y,verbose=True);
-        return
+        [precision, recall, num_tp, num_fp, num_tn, num_fn] = \
+            find_prediction_performance_metrics(y_pred,vpr.y,verbose=verbose)
+        return {'precision': precision, 'recall': recall, 'num_tp': num_tp, 'num_fp': num_fp, 'num_tn': num_tn, 'num_fn': num_fn}
 
     def generate_pred_prob_z(self,vpr):
         X_scaled = self.formX(vpr)
@@ -62,21 +63,21 @@ class RobotMonitor(object):
     def plotZ(self,vpr=None,show_points=True,ax=None,fig=None,basic=False):
         
         if len(self.factors) > 2:
-            print('Error: robotmonitor.py plotZ: Cannot plot Z with >2 factors (yet)');
+            print('Error: robotmonitor.py plotZ: Cannot plot Z with >2 factors (yet)')
             return
 
         # Plot decision function and boundary:
         Z,F1,F2,extent,factor1,factor2=self.generate_Z(vpr)
         if ax == None:
-            fig,ax=plt.subplots();
+            fig,ax=plt.subplots()
         if basic == True:
-            ax.imshow(Z>=0,origin='lower',extent=extent,aspect='auto',cmap='gray');
+            ax.imshow(Z>=0,origin='lower',extent=extent,aspect='auto',cmap='gray')
         else:
-            ax.imshow(Z,origin='lower',extent=extent,aspect='auto');
+            ax.imshow(Z,origin='lower',extent=extent,aspect='auto')
             ax.contour(F1,F2,Z,levels=[0])
         ax.set_xlabel(self.factors[0])
-        ax.set_ylabel(self.factors[1]);
-        ax.set_title('Z');
+        ax.set_ylabel(self.factors[1])
+        ax.set_title('Z')
 
         # Plot points:
         if show_points:
@@ -84,9 +85,9 @@ class RobotMonitor(object):
                 y=self.training_y
             else:
                 y=vpr.y
-            ax.scatter(factor1[ y],factor2[ y],color='g',marker='.',label='good');
-            ax.scatter(factor1[~y],factor2[~y],color='r',marker='.',label='bad');
-            ax.legend();
+            ax.scatter(factor1[ y],factor2[ y],color='g',marker='.',label='good')
+            ax.scatter(factor1[~y],factor2[~y],color='r',marker='.',label='bad')
+            ax.legend()
         return fig,ax
 
     def plotP(self,vpr=None,show_points=True,ax=None,fig=None,basic=False,levels=[0.9]):
@@ -106,15 +107,15 @@ class RobotMonitor(object):
         extent=[f1[0],f1[-1],f2[0],f2[-1]]
         
         if ax == None:
-            fig,ax=plt.subplots();
+            fig,ax=plt.subplots()
         if basic == True:
-            ax.imshow(P>=0,origin='lower',extent=extent,aspect='auto',cmap='gray');
+            ax.imshow(P>=0,origin='lower',extent=extent,aspect='auto',cmap='gray')
         else:
-            ax.imshow(P,origin='lower',extent=extent,aspect='auto');
+            ax.imshow(P,origin='lower',extent=extent,aspect='auto')
             ax.contour(F1,F2,P,levels=levels)
         ax.set_xlabel(self.factors[0])
-        ax.set_ylabel(self.factors[1]);
-        ax.set_title('P');
+        ax.set_ylabel(self.factors[1])
+        ax.set_title('P')
 
         # Plot points:
         if show_points:
@@ -122,9 +123,9 @@ class RobotMonitor(object):
                 y=self.training_y
             else:
                 y=vpr.y
-            ax.scatter(factor1[ y],factor2[ y],color='g',marker='.',label='good');
-            ax.scatter(factor1[~y],factor2[~y],color='r',marker='.',label='bad');
-            ax.legend();
+            ax.scatter(factor1[ y],factor2[ y],color='g',marker='.',label='good')
+            ax.scatter(factor1[~y],factor2[~y],color='r',marker='.',label='bad')
+            ax.legend()
         return fig,ax
         
 
@@ -132,33 +133,59 @@ class RobotMonitor2D(RobotMonitor):
     '''
     Robot Monitor using a single SVM with two factors
     '''
-    def __init__(self,vpr):
-        self.factor1 = find_va_factor(vpr.S)
-        self.factor2 = find_grad_factor(vpr.S)
-        self.factors = ['VA ratio','Average Gradient']
-        self.Xcal = np.c_[self.factor1,self.factor2]
-        self.scaler = StandardScaler()
-        self.Xcal_scaled = self.scaler.fit_transform(self.Xcal)
+    def __init__(self, vpr: RobotVPR, _factors_in=None):
+        
+        if _factors_in is None:
+            _factors_in = ["grad", "va"]
+        _factors_in = list(np.sort(_factors_in)) # alphabetize order
+        assert len(np.unique(_factors_in)) == 2, "If _factors_in is specified (not None), user must provide two unique factors."
+        _factors_calc = find_factors(factors_in=_factors_in, _S=vpr.S, rXY=vpr.ref.xy, mInd=vpr.best_match, 
+                                        cutoff=2, init_pos=([0,0]), _all=False, dists=None, norm=False, # use defaults for these
+                                        return_as_dict=True) # to make assignment safer
+        self.factor1        = _factors_calc[_factors_in[0]]
+        self.factor2        = _factors_calc[_factors_in[1]]
+        self.factor_names   = _factors_in
+
+        self.Xcal           = np.c_[self.factor1,self.factor2]
+        self.scaler         = StandardScaler()
+        self.Xcal_scaled    = self.scaler.fit_transform(self.Xcal, vpr.y)
+
         self.model = svm.SVC(kernel='rbf',
                              C=1,gamma='scale',
                              class_weight='balanced',
                              probability=True)
 
-        self.model.fit(self.Xcal_scaled,vpr.y);
+        self.model.fit(self.Xcal_scaled, vpr.y)
 
         # Save the training inputs in case they are needed later:
-        self.training_y=vpr.y;
-        self.training_tolerance=vpr.tolerance;
-        self.training_S=vpr.S;
+        self.training_y=vpr.y
+        self.training_tolerance=vpr.tolerance
+        self.training_S=vpr.S
+        self.vpr = vpr
         return
     
-    def formX(self,vpr):
-        X = np.c_[find_va_factor(vpr.S),find_grad_factor(vpr.S)]
+    def set_factor_names(self, factor1: str, factor2: str) -> None:
+        '''
+        Change factor names from the default (VA ratio, and, Average Gradient)
+        '''
+        self.factor_names = [factor1, factor2]
+    
+    def formX_realtime(self, vector, rXY, mInd):
+        '''
+        vector: S
+        rXY: for the set you are predicting on, the ground truth reference set XY array
+        mInd: for the set you are predicting on, the best match indices
+        '''
+        _factors_calc = find_factors(factors_in=self.factor_names, _S=vector, rXY=rXY, mInd=mInd, 
+                                        cutoff=2, init_pos=([0,0]), _all=False, dists=None, norm=False, # use defaults for these
+                                        return_as_dict=True) # to make assignment safer
+        factor1        = _factors_calc[self.factor_names[0]]
+        factor2        = _factors_calc[self.factor_names[1]]
+        X  = np.c_[factor1,factor2]
         return self.scaler.transform(X)
     
-    def formX_realtime(self,vector):
-        X = np.c_[find_va_factor(vector),find_grad_factor(vector)]
-        return self.scaler.transform(X)
+    def formX(self, vpr: RobotVPR):
+        return self.formX_realtime(vector=vpr.S, rXY=vpr.ref.xy, mInd=vpr.best_match)
         
 
 class RobotMonitor3D(RobotMonitor):
@@ -179,12 +206,12 @@ class RobotMonitor3D(RobotMonitor):
                              class_weight='balanced',
                              probability=True)
         
-        self.model.fit(self.Xcal_scaled,vpr.y);
+        self.model.fit(self.Xcal_scaled,vpr.y)
         
         # Save the training inputs in case they are needed later:
-        self.training_y=vpr.y;
-        self.training_tolerance=vpr.tolerance;
-        self.training_S=vpr.S;
+        self.training_y=vpr.y
+        self.training_tolerance=vpr.tolerance
+        self.training_S=vpr.S
         return
     
     def formX(self,vpr):
@@ -209,12 +236,12 @@ class DoubleRobotMonitor(RobotMonitor):
                         C=1,gamma='scale', 
                         class_weight='balanced', 
                         probability=True)
-        self.model.fit(Xcal_scaled,self.y);
+        self.model.fit(Xcal_scaled,self.y)
         
         # Save the training inputs in case they are needed later:
-        self.training_y=vpr.y;
-        self.training_tolerance=vpr.tolerance;
-        self.training_S=vpr.S;
+        self.training_y=vpr.y
+        self.training_tolerance=vpr.tolerance
+        self.training_S=vpr.S
     
     def formX(self,vpr):
         zvals=self.first_SVM.decision_values(vpr)
@@ -224,5 +251,5 @@ class DoubleRobotMonitor(RobotMonitor):
     
     def plotZ(self,vpr=None,show_points=True,ax=None,fig=None,basic=False):
         fig,ax=super().plotZ(vpr,show_points,ax,fig,basic)
-        ax.axvline(0,ls='dashed',color='blue');
+        ax.axvline(0,ls='dashed',color='blue')
         return fig,ax
