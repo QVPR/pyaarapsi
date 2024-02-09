@@ -1,24 +1,24 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.spatial.distance import cdist
+from pyaarapsi.core.helper_tools import m2m_dist
 
 def create_similarity_vector(reference_feature_vector,query_features):
     # query features must be a 2-D vector: np.array([[X,X...]])
     # reference features must be a 2D array
-    similarity_vector = cdist(reference_feature_vector,query_features,'euclidean')
+    similarity_vector = m2m_dist(reference_feature_vector,query_features)
     return similarity_vector
 
 def create_similarity_matrix(reference_feature_vector,query_feature_vector):
     # query features must be a 2D array of feature vectors: np.array([[X,X...],[X,X...]])
     # reference features must be a 2D array of feature vectors
-    similarity_matrix = cdist(reference_feature_vector,query_feature_vector,'euclidean')
+    similarity_matrix = m2m_dist(reference_feature_vector,query_feature_vector)
     return similarity_matrix
 
 def create_normalised_similarity_matrix(reference_feature_vector,query_feature_vector):
     # query features must be a 2D array of feature vectors: np.array([[X,X...],[X,X...]])
     # reference features must be a 2D array of feature vectors
-    Sref = cdist(reference_feature_vector,reference_feature_vector,'euclidean')
-    S = cdist(reference_feature_vector,query_feature_vector,'euclidean')
+    Sref = m2m_dist(reference_feature_vector,reference_feature_vector)
+    S = m2m_dist(reference_feature_vector,query_feature_vector)
     Snorm = (S - Sref.mean())/Sref.std()
     return Snorm, Sref.mean(), Sref.std()
 
