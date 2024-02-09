@@ -34,6 +34,7 @@ class VPRProcessorBase:
                  init_netvlad: bool = False, init_hybridnet: bool = False, init_salad: bool = False):
         
         self.dataset: dict                  = {}
+        self.dataset_params                 = {}
         self.printer: Optional[Callable]    = printer
         self.ros                            = ros
         self.cuda                           = cuda
@@ -451,7 +452,9 @@ class VPRDatasetProcessor(VPRProcessorBase):
         Returns:
             dict type; Generated dataset dictionary
         '''
-
+        self.dataset_params = make_dataset_dictionary(bag_name=bag_name, npz_dbp=npz_dbp, bag_dbp=bag_dbp, 
+                                                      odom_topic=odom_topic, img_topics=img_topics, sample_rate=sample_rate,
+                                                      ft_types=ft_types, img_dims=img_dims, filters=filters)
         self.check_netvlad(ft_types)
         self.check_hybridnet(ft_types)
 
@@ -637,6 +640,14 @@ class VPRDatasetProcessor(VPRProcessorBase):
         
         self.print("[open_dataset] Load, generation failed.", LogType.DEBUG)
         return None
+    
+    def get_bag_path(self):
+        assert not (self.dataset_params is None)
+        return self.root +  '/' + self.dataset_params['bag_dbp'] + '/' + self.dataset_params['bag_name']
+    
+    def get_dataset_params(self):
+        assert not (self.dataset_params is None)
+        return copy.deepcopy(self.dataset_params)
 
     def load_dataset(self, dataset_params: dict, try_gen: bool = False) -> str:
         '''
@@ -657,6 +668,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
         Returns:
             str type; loaded dataset dictionary file name if successful, 'NEW GENERATION' if a file is generated, else ''.
         '''
+        self.dataset_params = copy.deepcopy(dataset_params)
         self.npz_dbp = dataset_params['npz_dbp']
         self.bag_dbp = dataset_params['bag_dbp']
 
@@ -761,6 +773,10 @@ class VPRDatasetProcessor(VPRProcessorBase):
                 pass
         try:
             del self.dataset
+        except:
+            pass
+        try:
+            del self.dataset_params
         except:
             pass
 
