@@ -94,10 +94,12 @@ def find_all_grad_factors(s):
             g[i]=temp_g
     return g
 
-def find_area_factors(S, mInd):
+def find_area_factors(S, mInd: None):
     if S.ndim == 1:
         S    = S[:, np.newaxis]
-    if not hasattr(mInd, '__iter__'):
+    if mInd is None:
+        mInd = np.argmin(S, axis=0)
+    elif not hasattr(mInd, '__iter__'):
         mInd = np.array([mInd])
     
     _shape   = S.shape
@@ -179,6 +181,7 @@ def find_linear_factors(S, rXY, mXY, cutoff=10):
     return factor_1, factor_2
 
 def find_sort_factor(S, mInd, dists):
+    raise Exception("This is broken, don't use it")
     if S.ndim == 1:
         S       = S[:, np.newaxis]
     qry_list    = np.arange(S.shape[1])
@@ -193,6 +196,7 @@ def find_sort_factor(S, mInd, dists):
     return factor_1
 
 def find_posi_factors(rXY, mXY, init_pos=np.array([0,0])):
+    raise Exception("This is broken, don't use it")
     # rXY: reference set ground truth xy array
     # mXY: history of matched points, in chronological order
     if mXY.ndim == 1:
@@ -280,6 +284,8 @@ def find_relative_match_distance(S, mInd: None):
         S = S[:, np.newaxis]
     if mInd is None:
         mInd = np.argmin(S, axis=0)
+    elif not hasattr(mInd, '__iter__'):
+        mInd = np.array([mInd])
     
     _percentiles = np.percentile(S, [0,100], axis=0)
     _ranges = (_percentiles[1] - _percentiles[0])
@@ -371,11 +377,16 @@ def getFactors(__factors_in, __factors_out, _factors_required, function, _all=Fa
         __factors_in = try_pop(__factors_in, _factors_required)
     return __factors_in, __factors_out
 
-def find_factors(factors_in, _S, rXY=None, mInd=None, cutoff=2, init_pos=np.array([0,0]), _all=False, dists=None, norm=False):
+def find_factors(factors_in, _S, rXY=None, mInd=None, cutoff=2, init_pos=np.array([0,0]), _all=False, dists=None, norm=False, return_as_dict=False):
     
     _S = _S[:, np.newaxis] if _S.ndim == 1 else _S
     seq  = (_S - np.min(_S, 0)) / (np.max(_S, 0) - np.min(_S, 0)) if norm else _S
-    mInd = np.argmin(seq, axis=0) if mInd is None else mInd
+    
+    if mInd is None:
+        mInd = np.argmin(seq, axis=0)
+    elif not hasattr(mInd, '__iter__'):
+        mInd = np.array([mInd])
+        
     # if (all or "dsort" in factors_in) and (dists is None):
         # dists = idk... can't remember. Probably a euclidean distance matrix, extracting out each row matching S
     
@@ -388,7 +399,7 @@ def find_factors(factors_in, _S, rXY=None, mInd=None, cutoff=2, init_pos=np.arra
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["lgrad", "lcoef"],                                           find_linear_factors,            S=seq, rXY=rXY, mXY=rXY[mInd, :], cutoff=cutoff,      _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["area"],                                                     find_area_factors,              S=seq, mInd=mInd,                                     _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["dlows", "mlows"],                                           find_peak_factors,              S=seq,                                                _all=_all)
-    _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["dposi", "dvari"],                                           find_posi_factors,                     rXY=rXY, mXY=rXY[mInd, :], init_pos=init_pos,  _all=_all)
+    # _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["dposi", "dvari"],                                           find_posi_factors,                     rXY=rXY, mXY=rXY[mInd, :], init_pos=init_pos,  _all=_all)
     # _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["dsort"],                                                    find_sort_factor,               S=seq, mInd=mInd, dists=dists,                        _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["smean", "sstd"],                                            find_relative_mean_std,         S=seq,                                                _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["s25th", "smedi", "s75th"],                                  find_relative_percentiles,      S=seq,                                                _all=_all)
@@ -404,7 +415,7 @@ def find_factors(factors_in, _S, rXY=None, mInd=None, cutoff=2, init_pos=np.arra
     if len(_factors_in) > 0:
         print("[find_factors] failed to process: " + str(_factors_in) + ", continuing ...")
 
-    if _all:
-        return _factors_out
-    return [_factors_out[i] for i in factors_in]
+    if not return_as_dict:
+        return [_factors_out[i] for i in _factors_out.keys()]
+    return {i: _factors_out[i] for i in _factors_out.keys()}
     
