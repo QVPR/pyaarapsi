@@ -32,7 +32,7 @@ class RobotVPR:
     A query can be added after initialisation.
     '''
     
-    def __init__(self,reference,query=None,norm=True):
+    def __init__(self,reference: RobotRun, query=None,norm=True):
         """Constructs the attributes of a RobotVPR object.
         
         Parameters
@@ -50,7 +50,7 @@ class RobotVPR:
         self.tolerance = 1 # default tolerance is one frame
         self.units = 'frames'
     
-    def set_query(self,query):
+    def set_query(self,query: RobotRun):
         '''
         Add a query run as a RobotRun object
         Once added, the VPR parameters will be computed, including distance matrix and best match
