@@ -8,6 +8,7 @@ from ..pathing.basic import calc_path_stats
 from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
 from ..vpr_classes.salad import SALAD_Container
+from ..vpr_classes.apgem import APGEM_Container
 from ..core.helper_tools import perforate, formatException
 from typing import Union, List, Optional
 
@@ -20,6 +21,7 @@ class FeatureType(Enum):
     ROLLNORM            = 5
     NORM                = 6
     SALAD               = 7
+    APGEM               = 8
 
 class ViewMode(Enum):
     FORWARD  	        = 0
@@ -228,7 +230,8 @@ def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType,
             dims: list, use_tqdm: bool = False, 
             nn_hybrid: Optional[HybridNet_Container] = None, 
             nn_netvlad: Optional[NetVLAD_Container] = None,
-            nn_salad: Optional[SALAD_Container] = None) -> Union[np.ndarray, List[np.ndarray]]:
+            nn_salad: Optional[SALAD_Container] = None,
+            nn_apgem: Optional[APGEM_Container] = None) -> Union[np.ndarray, List[np.ndarray]]:
     
     ft_list     = []
     if not isinstance(im, list):
@@ -266,6 +269,8 @@ def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType,
             ft_ready = nn_netvlad.getFeat(_im, use_tqdm=use_tqdm)
         elif fttype == FeatureType.SALAD and not nn_salad is None:
             ft_ready = nn_salad.getFeat(_im, use_tqdm=use_tqdm)
+        elif fttype == FeatureType.APGEM and not nn_apgem is None:
+            ft_ready = nn_apgem.getFeat(_im, use_tqdm=use_tqdm)
         else:
             raise Exception("[getFeat] fttype could not be handled.")
         ft_list.append(ft_ready)

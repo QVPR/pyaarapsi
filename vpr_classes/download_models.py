@@ -101,11 +101,27 @@ def download_salad_models(force=False):
             print('Downloading dino_salad.ckpt')
             download_file("1MH7vvvXmbjwMlU_bNx4CR4iFpu_fRYcY", "dino_salad.ckpt")
 
+def download_apgem_models(force=False):
+    global MODELS_DIR
+    dest_dir = os.path.join(MODELS_DIR)
+    print("Path to apgem model/s:\n\t<%s>" % dest_dir)
+    if ask_yesnoexit("Auto-download pretrained apgem model/s (takes around 590MB of space)? (y)es/(n)o/(q)uit.", auto=5):
+        
+        if force:
+            try:
+                os.remove(os.path.join(dest_dir, "Resnet-101-AP-GeM.pt"))
+            except:
+                pass
+        if not os.path.isfile(os.path.join(dest_dir, "Resnet-101-AP-GeM.pt")):
+            print('Downloading Resnet-101-AP-GeM.pt')
+            download_file("16V8ShtsbDHdBmbGWjfdWyVkNn36kkztB", "Resnet-101-AP-GeM.pt")
+
 def download_all_models(force=False):
     
     download_netvlad_models(force)
     download_hybridnet_models(force)
     download_salad_models(force)
+    download_apgem_models(force)
 
 if __name__ == "__main__":
     download_all_models()

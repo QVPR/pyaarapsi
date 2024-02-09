@@ -26,12 +26,14 @@ from .vpr_helpers import *
 from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
 from ..vpr_classes.salad import SALAD_Container
+from ..vpr_classes.apgem import APGEM_Container
 
 from typing import Optional, Union, overload, Callable
 
 class VPRProcessorBase:
     def __init__(self, cuda: bool = False, ros: bool = False, printer: Optional[Callable] = None,
-                 init_netvlad: bool = False, init_hybridnet: bool = False, init_salad: bool = False):
+                 init_netvlad: bool = False, init_hybridnet: bool = False, init_salad: bool = False,
+                 init_apgem: bool = False):
         
         self.dataset: dict                  = {}
         self.dataset_params                 = {}
@@ -39,13 +41,15 @@ class VPRProcessorBase:
         self.ros                            = ros
         self.cuda                           = cuda
 
-        self.borrowed_nns                               = {'netvlad': False, 'hybridnet': False, 'salad': False}
+        self.borrowed_nns                               = {'netvlad': False, 'hybridnet': False, 'salad': False, 'apgem': False}
         self.netvlad: Optional[NetVLAD_Container]       = None
         self.hybridnet: Optional[HybridNet_Container]   = None
         self.salad: Optional[SALAD_Container]           = None
+        self.apgem: Optional[APGEM_Container]           = None
         self.init_netvlad                               = init_netvlad
         self.init_hybridnet                             = init_hybridnet
         self.init_salad                                 = init_salad
+        self.init_apgem                                 = init_apgem
 
     def get(self) -> dict:
         '''
@@ -168,8 +172,27 @@ class VPRProcessorBase:
         if ready_up:
             self.salad.ready_up()
         return True
+
+    def prep_apgem(self, cuda: Optional[bool] = None, ready_up: bool = True) -> bool:
+        '''
+        Prepare apgem for use
+
+        Inputs:
+        - cuda:     bool type {default: None}; if not None, overrides initialisation cuda variable for apgem loading
+        - ready_up: bool type {default: True}; whether or not to automatically ready the model
+        Returns:
+            bool type; True (on success, else Exception)
+        '''
+        if not isinstance(self.apgem, SALAD_Container):
+            if cuda is None:
+                cuda = self.cuda
+            self.apgem      = APGEM_Container(cuda=cuda, logger=self.print)
+            self.init_apgem = True
+        if ready_up:
+            self.apgem.ready_up()
+        return True
     
-    def init_nns(self, netvlad: bool = True, hybridnet: bool = True, salad: bool = True) -> None:
+    def init_nns(self, netvlad: bool = True, hybridnet: bool = True, salad: bool = True, apgem: bool = True) -> None:
         '''
         Flag VPRDatasetProcessor to initialize specific feature extraction containers
 
@@ -178,6 +201,7 @@ class VPRProcessorBase:
             netvlad:                bool type {default: True}; whether or not to initialize netvlad container
             hybridnet:              bool type {default: True}; whether or not to initialize hybridnet container
             salad:                  bool type {default: True}; whether or not to initialize salad container
+            apgem:                  bool type {default: True}; whether or not to initialize apgem container
         Returns:
             None
         '''
@@ -187,8 +211,12 @@ class VPRProcessorBase:
             self.init_hybridnet = True
         if salad:
             self.init_salad = True
+        if apgem:
+            self.init_apgem = True
 
-    def pass_nns(self, processor: VPRDatasetProcessor, try_load_if_missing: bool = True, netvlad: bool = True, hybridnet: bool = True, salad: bool = True) -> bool:
+    def pass_nns(self, processor: VPRDatasetProcessor, try_load_if_missing: bool = True, 
+                 netvlad: bool = True, hybridnet: bool = True, salad: bool = True,
+                 apgem: bool = True) -> bool:
         '''
         Overwrite this VPRDatasetProcessor's instances of each container with another's instantiations
         Will check and, if initialised, destroy existing container
@@ -199,6 +227,7 @@ class VPRProcessorBase:
             netvlad:                bool type {default: True}; whether or not to overwrite netvlad instance
             hybridnet:              bool type {default: True}; whether or not to overwrite hybridnet instance
             salad:                  bool type {default: True}; whether or not to overwrite salad instance
+            apgem:                  bool type {default: True}; whether or not to overwrite apgem instance
         Returns:
             bool type; True (on success, else Exception)
         '''
@@ -248,6 +277,21 @@ class VPRProcessorBase:
             self.init_salad = True
             self.borrowed_nns['salad'] = True
             self.print('Passed SALAD.', LogType.DEBUG)
+        if apgem:
+            if processor.apgem is None:
+                if try_load_if_missing:
+                    processor.prep_apgem()
+                else:
+                    raise Exception('Passing requires a APGEM_Container, or pass argument try_load_if_missing=True.')
+            if isinstance(self.apgem, APGEM_Container):
+                try:
+                    self.apgem.destroy()
+                except:
+                    self.print('Failed to destroy existing apgem instance, with error: ' + str(formatException()))
+            self.apgem = processor.apgem
+            self.init_apgem = True
+            self.borrowed_nns['apgem'] = True
+            self.print('Passed APGEM.', LogType.DEBUG)
         return True
 
     def check_netvlad(self, ft_types: list) -> bool:
@@ -310,6 +354,26 @@ class VPRProcessorBase:
             return True
         return False
     
+    def check_apgem(self, ft_types: list) -> bool:
+        '''
+        Check if APGEM is initialised: if not initialised but needed (ft_types contains FeatureType.APGEM) will attempt to initialise.
+        Delays loading of APGEM model until required by system.
+
+        Inputs:
+            ft_types:  list type; list of FeatureType enumerations. If it contains FeatureType.APGEM and APGEM is not loaded, this method will attempt to initialise APGEM
+        Returns:
+            bool type; True on successful update, False if no change
+        '''
+        if (FeatureType.APGEM in ft_types) and self.init_apgem: # If needed and we've been asked to initialise APGEM:
+            if self.apgem is None: # if it currently doesn't exist,
+                self.prep_apgem(self.cuda, True)
+            elif not self.apgem.is_ready(): # if it exists but isn't ready,
+                self.apgem.ready_up()
+            else:
+                return False
+            return True
+        return False
+    
     @overload
     def getFeat(self, img: np.ndarray, fttype_in: FeatureType, dims: list, use_tqdm: bool = False) -> np.ndarray: ...
     
@@ -357,8 +421,13 @@ class VPRProcessorBase:
                 self.check_salad(fttypes)
             else:
                 raise Exception("[getFeat] FeatureType.SALAD provided but VPRDatasetProcessor not initialised with init_salad=True")
+        if any([fttype == FeatureType.APGEM for fttype in fttypes]):
+            if self.init_apgem:
+                self.check_apgem(fttypes)
+            else:
+                raise Exception("[getFeat] FeatureType.APGEM provided but VPRDatasetProcessor not initialised with init_apgem=True")
         try:
-            feats = getFeat(img, fttypes, dims, use_tqdm=use_tqdm, nn_hybrid=self.hybridnet, nn_netvlad=self.netvlad, nn_salad=self.salad)
+            feats = getFeat(img, fttypes, dims, use_tqdm=use_tqdm, nn_hybrid=self.hybridnet, nn_netvlad=self.netvlad, nn_salad=self.salad, nn_apgem=self.apgem)
             if isinstance(feats, list):
                 return [np.array(i, dtype=np.float32) for i in feats]
             return np.array(feats, dtype=np.float32)
@@ -369,6 +438,7 @@ class VPRProcessorBase:
 class VPRDatasetProcessor(VPRProcessorBase):
     def __init__(self, dataset_params: Optional[dict] = None, try_gen: bool = True, 
                  init_netvlad: bool = False, init_hybridnet: bool = False, init_salad: bool = False,
+                 init_apgem: bool = False,
                  cuda: bool = False, use_tqdm: bool = False, 
                  autosave: bool = False, ros: bool = True, root: Optional[str] = None, printer=None):
         '''
@@ -388,6 +458,8 @@ class VPRDatasetProcessor(VPRProcessorBase):
         - try_gen:          bool type {default: True}; whether or not to attempt generation if load fails
         - init_netvlad:     bool type {default: False}; whether or not to initialise netvlad (loads model)
         - init_hybridnet:   bool type {default: False}; whether or not to initialise hybridnet (loads model)
+        - init_salad:       bool type {default: False}; whether or not to initialise salad (loads model)
+        - init_apgem:       bool type {default: False}; whether or not to initialise apgem (loads model)
         - cuda:             bool type {default: False}; whether or not to use CUDA for feature type/GPU acceleration
         - use_tqdm:         bool type {default: False}; whether or not to display extraction/loading statuses using tqdm
         - autosave:         bool type {default: False}; whether or not to automatically save any generated datasets
@@ -398,8 +470,8 @@ class VPRDatasetProcessor(VPRProcessorBase):
             self
         '''
         
-        super().__init__(cuda = cuda, ros = ros, printer = printer,
-                         init_netvlad = init_netvlad, init_hybridnet = init_hybridnet, init_salad = init_salad)    
+        super().__init__(cuda=cuda, ros=ros, printer=printer,
+                         init_netvlad=init_netvlad, init_hybridnet=init_hybridnet, init_salad=init_salad, init_apgem=init_apgem)
 
         self.use_tqdm       = use_tqdm
         self.autosave       = autosave
@@ -771,6 +843,13 @@ class VPRDatasetProcessor(VPRProcessorBase):
                 del self.salad
             except:
                 pass
+        if self.init_apgem and (not self.borrowed_nns['apgem']):
+            try:
+                if not self.apgem is None:
+                    self.apgem.destroy()
+                del self.apgem
+            except:
+                pass
         try:
             del self.dataset
         except:
@@ -782,6 +861,8 @@ class VPRDatasetProcessor(VPRProcessorBase):
 
         del self.init_netvlad
         del self.init_hybridnet
+        del self.init_salad
+        del self.init_apgem
         del self.npz_dbp
         del self.bag_dbp
         del self.root
