@@ -2,9 +2,11 @@
 
 import numpy as np
 import os
+import copy
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 from .visual_preproc import *
+from ..vpr_simple.vpr_dataset_tool import VPRDatasetProcessor
 
 def extract_imagenames(folder_name):
     imgList = np.sort(os.listdir(folder_name))
@@ -69,6 +71,27 @@ class RobotRun:
         self.vpr_technique = ""
         self.timestamp = None
         self.along_path_distance = None
+        self.npz_dictionary = None
+
+    def from_dataset_processor(self, vprdp: VPRDatasetProcessor):
+        ip_dict = vprdp.get_dataset_params()
+        assert len(ip_dict['ft_types']) == 1
+        self.folder     = ""
+        self.npz_setup  = True
+        self.set_features(vprdp.dataset['dataset'][ip_dict['ft_types'][0]], size=64)
+        self.set_xy(np.c_[vprdp.dataset['dataset']['px'], vprdp.dataset['dataset']['py']])
+        self.set_yaw(np.degrees(vprdp.dataset['dataset']['pw']))
+        self.set_sample_rate=ip_dict['sample_rate']
+        self.set_description(vprdp.get_bag_path())
+        self.set_npz_dictionary(ip_dict)
+        return self
+
+    def set_npz_dictionary(self, _npz_dict: dict):
+        self.npz_dictionary = copy.deepcopy(_npz_dict)
+
+    def get_npz_dictionary(self):
+        if self.npz_dictionary is None: raise Exception("Dictionary has not been assigned.")
+        return copy.deepcopy(self.npz_dictionary)
     
     def set_features(self,features,size):
         '''Manually assign feature matrix'''
@@ -122,7 +145,7 @@ class RobotRun:
             self.x[num]=xy[0]
             self.y[num]=xy[1]
         self.GEO_TAGGED = True
-        self.find_along_path_distances();
+        self.find_along_path_distances()
         
     def set_yaw(self, yaw, num=None):
         '''
@@ -161,13 +184,14 @@ class RobotRun:
         self.x=self.xy[:,0]
         self.y=self.xy[:,1]
         self.GEO_TAGGED = True
-        self.find_along_path_distances();
+        self.find_along_path_distances()
         
     def truncate(self, start, end):
         '''
         Remove the section that is prior to the "start" index, and after the "end" index given
         '''
         if self.GEO_TAGGED:                      # update geotags if they are defined
+            _len = len(self.xy)
             self.xy=self.xy[np.r_[start:end+1]]  # (note cannot use slices here, need to use indexing)
             self.x=self.xy[:,0]
             self.y=self.xy[:,1]
@@ -180,8 +204,11 @@ class RobotRun:
         if self.npz_setup==False:
             self.imlist=self.imlist[start:end+1]     # update filenames
             self.imgnum = len(self.imlist)
-        print('[RobotRun: truncate] Reduced from {0} to {1} images.'.format(len(self.xy), self.imgnum))
-        self.find_along_path_distances();
+        if self.GEO_TAGGED:
+            print('[RobotRun: truncate] Reduced from {0} to {1} images.'.format(_len, self.imgnum))
+        else:
+            print('[RobotRun: truncate] Reduced to {0} images.'.format(self.imgnum))
+        self.find_along_path_distances()
         
     def subsample(self):
         #TODO
@@ -208,8 +235,8 @@ class RobotRun:
         Return a vector containing along-path distance travelled along the run
         '''
         if self.GEO_TAGGED == False:
-            print('Error: RobotRun.find_path_distances: run is not geotagged');
-            return;
+            print('Error: RobotRun.find_path_distances: run is not geotagged')
+            return
         gaps=np.zeros(self.imgnum-1)
         distance_travelled=0
         along_path_distance=np.zeros(self.imgnum)
