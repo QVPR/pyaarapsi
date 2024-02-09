@@ -36,12 +36,13 @@ class DINOv2(nn.Module):
             model_name='dinov2_vitb14',
             num_trainable_blocks=2,
             norm_layer=False,
-            return_token=False
+            return_token=False,
+            verbose=False
         ):
         super().__init__()
 
         assert model_name in DINOV2_ARCHS.keys(), f'Unknown model name {model_name}'
-        self.model = torch.hub.load('facebookresearch/dinov2', model_name, verbose=False)
+        self.model = torch.hub.load('facebookresearch/dinov2', model_name, verbose=verbose)
         self.num_channels = DINOV2_ARCHS[model_name]
         self.num_trainable_blocks = num_trainable_blocks
         self.norm_layer = norm_layer
@@ -211,7 +212,8 @@ class SALAD(nn.Module):
 
 def get_backbone(
         backbone_arch='dinov2',
-        backbone_config={}
+        backbone_config={},
+        verbose=False
     ):
     """Helper function that returns the backbone given its name
 
@@ -226,7 +228,7 @@ def get_backbone(
     #     return backbones.ResNet(backbone_arch, **backbone_config)
 
     # elif 'dinov2' in backbone_arch.lower():
-    return DINOv2(model_name=backbone_arch, **backbone_config)
+    return DINOv2(model_name=backbone_arch, verbose=verbose, **backbone_config)
 
 
 def get_aggregator(agg_arch='ConvAP', agg_config={}):
@@ -310,7 +312,8 @@ class VPRModel(pl.LightningModule):
         loss_name='MultiSimilarityLoss', 
         miner_name='MultiSimilarityMiner', 
         miner_margin=0.1,
-        faiss_gpu=False
+        faiss_gpu=False,
+        verbose=False
     ):
         super().__init__()
 
@@ -345,7 +348,7 @@ class VPRModel(pl.LightningModule):
         
         # ----------------------------------
         # get the backbone and the aggregator
-        self.backbone = get_backbone(backbone_arch, backbone_config)
+        self.backbone = get_backbone(backbone_arch, backbone_config, verbose=verbose)
         self.aggregator = get_aggregator(agg_arch, agg_config)
 
         # For validation in Lightning v2.0.0

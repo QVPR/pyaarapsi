@@ -54,7 +54,7 @@ class PlaceDataset(Dataset):
         self.transform = None # comes from SALAD_Container
         del self.dims
 
-def load_model(ckpt_path):
+def load_model(ckpt_path, verbose=False):
     model = VPRModel(
         backbone_arch='dinov2_vitb14',
         backbone_config={
@@ -69,19 +69,21 @@ def load_model(ckpt_path):
             'cluster_dim': 128,
             'token_dim': 256,
         },
+        verbose=verbose
     )
 
     model.load_state_dict(torch.load(ckpt_path))
     # model = model.eval()
     # model = model.to('cuda')
-    print(f"Loaded model from {ckpt_path} Successfully!")
+    if verbose:
+        print(f"Loaded model from {ckpt_path} Successfully!")
     return model
 
 class SALAD_Container:
     def __init__(self, logger=print, cuda=False, ngpus=0, 
                  imw=630, imh=476, batchsize=5, cachebatchsize=5,
                  threads=0, resumepath='/dino_salad.ckpt', 
-                 load=True, prep=True):
+                 load=True, prep=True, verbose=False):
         
         self.cuda           = cuda
         self.ngpus          = ngpus
@@ -97,6 +99,7 @@ class SALAD_Container:
 
         self.loaded         = False
         self.prepped        = False
+        self.verbose        = verbose
 
         if load:
             self.load()
@@ -129,7 +132,7 @@ class SALAD_Container:
         if os.path.isfile(file_path):
             self.logger("=> Trying to load checkpoint '{}'".format(file_path))
            
-            self.model = load_model(file_path)
+            self.model = load_model(file_path, self.verbose)
         
             self.model = self.model.to(self.device)
             self.logger("=> Successfully loaded checkpoint '{}'".format(file_path))
