@@ -42,6 +42,7 @@ class VPR_Tolerance_Mode(Enum):
 class SVM_Tolerance_Mode(Enum):
     DISTANCE            = 0
     FRAME               = 1
+    TRACK_DISTANCE      = 2
 
 def make_dataset_dictionary(bag_name: str, 
                             npz_dbp: str = "/data/compressed_sets", 
@@ -58,6 +59,14 @@ def make_dataset_dictionary(bag_name: str,
     '''
     return dict(bag_name=bag_name, npz_dbp=npz_dbp, bag_dbp=bag_dbp, odom_topic=odom_topic, 
                 img_topics=img_topics, sample_rate=sample_rate, ft_types=ft_types, img_dims=img_dims, filters=filters)
+
+def make_svm_dictionary(ref: dict, qry: dict, factors: List[str], tol_thres: float = 0.5, 
+                        tol_mode: SVM_Tolerance_Mode = SVM_Tolerance_Mode.DISTANCE, 
+                        svm_dbp='/cfg/svm_models'):
+    assert ref['npz_dbp'] == qry['npz_dbp']
+    assert ref['bag_dbp'] == qry['bag_dbp']
+    svm_svm_dict    = dict(factors=factors, tol_thres=tol_thres, tol_mode=tol_mode)
+    return            dict(ref=ref, qry=qry, svm=svm_svm_dict, npz_dbp=ref['npz_dbp'], bag_dbp=ref['bag_dbp'], svm_dbp=svm_dbp)
 
 def filter_dataset(dataset_in, _filters: Optional[dict] = None, _printer=lambda *args, **kwargs: None):
     if _filters is None:
