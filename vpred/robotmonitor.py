@@ -133,7 +133,7 @@ class RobotMonitor2D(RobotMonitor):
     '''
     Robot Monitor using a single SVM with two factors
     '''
-    def __init__(self, vpr: RobotVPR, _factors_in=None):
+    def __init__(self, vpr: RobotVPR, _factors_in=None, _sample_weight=None):
         
         if _factors_in is None:
             _factors_in = ["grad", "va"]
@@ -155,14 +155,15 @@ class RobotMonitor2D(RobotMonitor):
                              class_weight='balanced',
                              probability=True)
 
-        self.model.fit(self.Xcal_scaled, vpr.y)
+        self.model.fit(X=self.Xcal_scaled, y=vpr.y, sample_weight=_sample_weight)
 
         # Save the training inputs in case they are needed later:
         self.training_y=vpr.y
         self.training_tolerance=vpr.tolerance
         self.training_S=vpr.S
         self.vpr = vpr
-        return
+
+        self.performance    = self.assess_prediction(vpr)
     
     def set_factor_names(self, factor1: str, factor2: str) -> None:
         '''
