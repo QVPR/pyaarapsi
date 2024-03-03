@@ -2,18 +2,16 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from .vpred_tools import *
-from .gradseq_tools import *
-from .robotrun import *
-from scipy.spatial.distance import cdist
-from pyaarapsi.core.helper_tools import angle_wrap, normalize_angle
-from matplotlib.markers import MarkerStyle
+from .vpred_tools import find_each_prediction_metric, create_normalised_similarity_matrix, create_similarity_matrix, find_best_match, find_best_match_distances, find_frame_error, find_vpr_performance_metrics
+from .gradseq_tools import create_gradient_matrix, find_best_match_G, find_best_match_distances_G, find_consensus
+from .robotrun import RobotRun
+from pyaarapsi.core.helper_tools import angle_wrap, m2m_dist
 
 def compute_distance_in_m(a,b):
     '''
     Compute distance in m between two sets of [x,y] coordinates
     '''
-    return np.diag(cdist(a,b))
+    return np.diag(m2m_dist(a,b))
 
 def plot_PR(r,p,ax=None,fig=None):
     if ax == None:
@@ -66,17 +64,16 @@ class RobotVPR:
         self.ALL_TRUE = np.full(self.num_qrys,True,dtype='bool')
         
         if self.ref.GEO_TAGGED and self.qry.GEO_TAGGED:
-            self.gt_distances = cdist(self.ref.xy, self.qry.xy)
+            self.gt_distances = m2m_dist(self.ref.xy, self.qry.xy)
             self.gt_match = self.gt_distances.argmin(axis=0)          # index of the closest reference for each query
             self.frame_error = abs(self.best_match-self.gt_match)     # number of frames between VPR match and actual match
             #self.abs_error = compute_distance_in_m(self.ref.xy[gt_match],self.qry.xy)              # distance in m between matching points
             self.min_error = self.gt_distances.min(axis=0)
             self.abs_error = self.gt_distances[self.best_match, np.arange(self.num_qrys)]
-            self.ref_error = np.diag(cdist(self.ref.xy[self.gt_match],self.ref.xy[self.best_match])) # distance in m along reference route only
+            self.ref_error = np.diag(m2m_dist(self.ref.xy[self.gt_match],self.ref.xy[self.best_match])) # distance in m along reference route only
         
         # TODO: rework when matches do not exist for each query
         self.match_exists = self.ALL_TRUE
-        
             
     def set_actual_frame_match(self, ref_frames=None):
         if ref_frames == None:
