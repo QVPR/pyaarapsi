@@ -1,8 +1,6 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.spatial.distance import cdist
 from scipy.signal import convolve2d
-from .vpred_tools import *
+from .vpred_tools import extract_similarity_vector, find_best_match
 from .vpred_factors import find_all_grad_factors
 
 def corner_mean_pad(A):
