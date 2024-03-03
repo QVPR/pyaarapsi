@@ -5,8 +5,9 @@ import matplotlib.pyplot as plt
 from sklearn import svm
 from sklearn.preprocessing import StandardScaler
 from copy import copy
-from .vpred_factors import *
-from .robotvpr import *
+from .vpred_factors import find_factors, find_va_factor, find_grad_factor
+from .vpred_tools import find_prediction_performance_metrics 
+from .robotvpr import RobotVPR
 
 
 class RobotMonitor(object):
