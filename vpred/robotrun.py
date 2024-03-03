@@ -5,7 +5,7 @@ import os
 import copy
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
-from .visual_preproc import *
+from .visual_preproc import processImageDatasetFiltered
 from ..vpr_simple.vpr_dataset_tool import VPRDatasetProcessor
 
 def extract_imagenames(folder_name):
@@ -73,17 +73,22 @@ class RobotRun:
         self.along_path_distance = None
         self.npz_dictionary = None
 
-    def from_dataset_processor(self, vprdp: VPRDatasetProcessor):
-        ip_dict = vprdp.get_dataset_params()
+    def from_dataset_dictionaries(self, dataset_in: dict, ip_dict: dict, bag_path: str):
         assert len(ip_dict['ft_types']) == 1
         self.folder     = ""
         self.npz_setup  = True
-        self.set_features(vprdp.dataset['dataset'][ip_dict['ft_types'][0]], size=64)
-        self.set_xy(np.c_[vprdp.dataset['dataset']['px'], vprdp.dataset['dataset']['py']])
-        self.set_yaw(np.degrees(vprdp.dataset['dataset']['pw']))
+        self.set_features(dataset_in[ip_dict['ft_types'][0]], size=64)
+        self.set_xy(np.c_[dataset_in['px'], dataset_in['py']])
+        self.set_yaw(np.degrees(dataset_in['pw']))
         self.set_sample_rate=ip_dict['sample_rate']
-        self.set_description(vprdp.get_bag_path())
+        self.set_description(bag_path)
         self.set_npz_dictionary(ip_dict)
+        return self
+
+    def from_dataset_processor(self, vprdp: VPRDatasetProcessor):
+        dataset_in = vprdp.dataset['dataset']
+        ip_dict = vprdp.get_dataset_params()
+        self.from_dataset_dictionaries(dataset_in=dataset_in, ip_dict=ip_dict, bag_path=vprdp.get_bag_path())
         return self
 
     def set_npz_dictionary(self, _npz_dict: dict):
@@ -186,29 +191,30 @@ class RobotRun:
         self.GEO_TAGGED = True
         self.find_along_path_distances()
         
-    def truncate(self, start, end):
+    def truncate(self, start, end, verbose=True):
         '''
         Remove the section that is prior to the "start" index, and after the "end" index given
         '''
         if self.GEO_TAGGED:                      # update geotags if they are defined
             _len = len(self.xy)
-            self.xy=self.xy[np.r_[start:end+1]]  # (note cannot use slices here, need to use indexing)
+            self.xy=self.xy[start:end+1]  # (note cannot use slices here, need to use indexing)
             self.x=self.xy[:,0]
             self.y=self.xy[:,1]
-            self.yaw=self.yaw[np.r_[start:end+1]]
+            self.yaw=self.yaw[start:end+1]
         if len(self.odo_list) > 0:               # update odometry filenames if they exist
             self.odo_list=self.odo_list[start:end+1]
         if self.features.size > 0:               # update feature matrix (also use indices not slicing)
-            self.features=self.features[np.r_[start:end+1]]
+            self.features=self.features[start:end+1]
             self.imgnum=self.features.shape[0]
         if self.npz_setup==False:
             self.imlist=self.imlist[start:end+1]     # update filenames
             self.imgnum = len(self.imlist)
+        self.find_along_path_distances()
+        if not verbose: return
         if self.GEO_TAGGED:
             print('[RobotRun: truncate] Reduced from {0} to {1} images.'.format(_len, self.imgnum))
         else:
             print('[RobotRun: truncate] Reduced to {0} images.'.format(self.imgnum))
-        self.find_along_path_distances()
         
     def subsample(self):
         #TODO
