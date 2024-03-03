@@ -59,6 +59,11 @@ def find_grad_factor(S):
             factors[q] = g1+g2
     return factors
 
+def find_va_grad_fusion(S):
+    _va = find_va_factor(S)
+    _grad = find_grad_factor(S)
+    return _va * _grad, _va + _grad
+
 def find_adj_grad_factor(S):
     if S.ndim == 1:
         S = S[:, np.newaxis]
@@ -106,14 +111,51 @@ def find_area_factors(S, mInd: None):
     _len     = int(np.round(np.min([_shape[0] * 0.01, 10])))
     qry_list = np.arange(_shape[1])
     factor_1 = np.zeros(qry_list[-1] + 1)
+    factor_2 = np.zeros(qry_list[-1] + 1)
+    factor_3 = np.zeros(qry_list[-1] + 1)
+    factor_4 = np.zeros(qry_list[-1] + 1)
     
     for q in qry_list:
         dvc         = S[:,q]
+        _max_ind    = len(dvc) - 1
         _start      = np.max([0,         mInd[q] - _len])
         _end        = np.min([_shape[0], mInd[q] + _len])
         _max        = np.max(dvc)
+        _min        = np.min(dvc)
         factor_1[q] = np.sum(_max - dvc[_start:_end]) / np.sum(_max - dvc)
-    return factor_1
+        factor_2[q] = np.sum(dvc[_start:_end]) / (len(dvc)* (_max - _min))
+        factor_3[q] = np.sum(_max - dvc[np.max([mInd[q]-1, 0]):np.min([mInd[q]-1, _max_ind])]) / np.sum(_max - dvc)
+        factor_4[q] = np.sum(_max - dvc[np.max([mInd[q]-1, 0]):np.min([mInd[q]-1, _max_ind])]) / (len(dvc)* (_max - _min))
+    return factor_1, factor_2, factor_3, factor_4
+
+def find_under_area_factors(S, mInd: None):
+    if S.ndim == 1:
+        S    = S[:, np.newaxis]
+    if mInd is None:
+        mInd = np.argmin(S, axis=0)
+    elif not hasattr(mInd, '__iter__'):
+        mInd = np.array([mInd])
+    
+    _shape   = S.shape
+    _len     = int(np.round(np.min([_shape[0] * 0.01, 10])))
+    qry_list = np.arange(_shape[1])
+    factor_1 = np.zeros(qry_list[-1] + 1)
+    factor_2 = np.zeros(qry_list[-1] + 1)
+    factor_3 = np.zeros(qry_list[-1] + 1)
+    factor_4 = np.zeros(qry_list[-1] + 1)
+    
+    for q in qry_list:
+        dvc         = S[:,q]
+        _max_ind    = len(dvc) - 1
+        _start      = np.max([0,         mInd[q] - _len])
+        _end        = np.min([_shape[0], mInd[q] + _len])
+        _max        = np.max(dvc)
+        _min        = np.min(dvc)
+        factor_1[q] = np.sum(dvc[_start:_end]) / np.sum(dvc)
+        factor_2[q] = np.sum(dvc[_start:_end]) / (len(dvc)* (_max - _min))
+        factor_3[q] = np.sum(dvc[np.max([mInd[q]-1, 0]):np.min([mInd[q]-1, _max_ind])]) / np.sum(_max - dvc)
+        factor_4[q] = np.sum(dvc[np.max([mInd[q]-1, 0]):np.min([mInd[q]-1, _max_ind])]) / (len(dvc)* (_max - _min))
+    return factor_1, factor_2, factor_3, factor_4
 
 def find_sum_factor(S):
     if S.ndim == 1:
@@ -122,8 +164,9 @@ def find_sum_factor(S):
     ref_len = S.shape[0]
     _percentiles = np.percentile(S, [0,100], axis=0)
     _ranges = (_percentiles[1] - _percentiles[0])
+    _sum    = np.sum(S, axis=0)
 
-    return np.sum(S, axis=0) / (_ranges * ref_len)
+    return _sum / (_ranges * ref_len), np.min(S, axis=0) / _sum, np.mean(S, axis=0) / _sum
 
 def find_peak_factors(S):
     if S.ndim == 1:
@@ -144,7 +187,7 @@ def find_peak_factors(S):
         lows_bool   = ((dvc + dvc_l > dvc) + (dvc + dvc_r > dvc)) == False
         #lows_inds   = np.arange(len(dvc))[lows_bool]
         factor_1[q] = (np.sum(lows_bool))/ len(dvc)
-        factor_2[q] = np.mean(dvc[lows_bool] ** 2)
+        factor_2[q] = np.mean(dvc[lows_bool])
         
     return factor_1, factor_2
 
@@ -226,6 +269,8 @@ def find_sensitivity(S):
     qry_list = np.arange(S.shape[1])
     factors1 = np.zeros(qry_list[-1] + 1)
     factors2 = np.zeros(qry_list[-1] + 1)
+    factors3 = np.zeros(qry_list[-1] + 1)
+    factors4 = np.zeros(qry_list[-1] + 1)
     for q in qry_list:
         Sv = S[:,q]
         _min = Sv.min()
@@ -238,7 +283,9 @@ def find_sensitivity(S):
         _range = (Sv.max() - Sv.min())
         factors1[q] = np.abs(_median_over_range - _min) / _range
         factors2[q] = np.sum(Sv < _median_over_range) / ref_len
-    return factors1, factors2
+        factors3[q] = np.abs(np.median(Sv) - _min) / _range
+        factors4[q] = np.sum(Sv < np.median(Sv)) / ref_len
+    return factors1, factors2, factors3, factors4
 
 def find_minima_variation(S):
     if S.ndim == 1:
@@ -278,7 +325,7 @@ def find_minima_separation(S):
         factors4[q] = np.std(_euc)
     return factors1, factors2, factors3, factors4
 
-def find_relative_match_distance(S, mInd: None):
+def find_match_distance(S, mInd: None):
 
     if S.ndim == 1:
         S = S[:, np.newaxis]
@@ -290,9 +337,12 @@ def find_relative_match_distance(S, mInd: None):
     _percentiles = np.percentile(S, [0,100], axis=0)
     _ranges = (_percentiles[1] - _percentiles[0])
     _arange = np.arange(S.shape[1])
+    _means  = np.mean(S, axis=0)
+    _medis  = np.median(S, axis=0)
         
     _match_distances = S[mInd[_arange], _arange]
-    return _match_distances / _ranges
+    return _match_distances, _match_distances / _ranges, _match_distances / _means, _match_distances / _medis
+    # ['md_plain', 'rmdist', 'md_mean', 'md_medi']
 
 def find_relative_mean_std(S):
     if S.ndim == 1:
@@ -397,20 +447,22 @@ def find_factors(factors_in, _S, rXY=None, mInd=None, cutoff=2, init_pos=np.arra
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["grad"],                                                     find_grad_factor,               S=seq,                                                _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["agrad"],                                                    find_adj_grad_factor,           S=seq,                                                _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["lgrad", "lcoef"],                                           find_linear_factors,            S=seq, rXY=rXY, mXY=rXY[mInd, :], cutoff=cutoff,      _all=_all)
-    _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["area"],                                                     find_area_factors,              S=seq, mInd=mInd,                                     _all=_all)
+    _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ['area', 'area_norm', 'area_small', 'area_small_norm'],       find_area_factors,              S=seq, mInd=mInd,                                     _all=_all)
+    _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ['uarea', 'uarea_norm', 'uarea_small', 'uarea_small_norm'],   find_under_area_factors,        S=seq, mInd=mInd,                                     _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["dlows", "mlows"],                                           find_peak_factors,              S=seq,                                                _all=_all)
     # _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["dposi", "dvari"],                                           find_posi_factors,                     rXY=rXY, mXY=rXY[mInd, :], init_pos=init_pos,  _all=_all)
     # _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["dsort"],                                                    find_sort_factor,               S=seq, mInd=mInd, dists=dists,                        _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["smean", "sstd"],                                            find_relative_mean_std,         S=seq,                                                _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["s25th", "smedi", "s75th"],                                  find_relative_percentiles,      S=seq,                                                _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["IQRskew", "rIQR"],                                          find_iqr_factors,               S=seq,                                                _all=_all)
-    _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["rmdist"],                                                   find_relative_match_distance,   S=seq, mInd=mInd,                                     _all=_all)
+    _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ['md_plain', 'rmdist', 'md_mean', 'md_medi'],                 find_match_distance,            S=seq, mInd=mInd,                                     _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["minima_tmat", "minima_vmat", "minima_teuc", "minima_veuc"], find_minima_separation,         S=seq,                                                _all=_all)
-    _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["sensrange", "senssum"],                                     find_sensitivity,               S=seq,                                                _all=_all)
-    _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["dvcsum"],                                                   find_sum_factor,                S=seq,                                                _all=_all)
+    _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["sensrange", "senssum", "sensrange_all", "senssum_all"],     find_sensitivity,               S=seq,                                                _all=_all)
+    _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["dvcsum", "dvcminsum", "dvcmeansum"],                        find_sum_factor,                S=seq,                                                _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["minima_valvar", "minima_indvar"],                           find_minima_variation,          S=seq,                                                _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["minchange", "rngchange"],                                   find_removed_factors,           S=seq,                                                _all=_all)
     _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["mmperc", "mmdiff"],                                         find_mean_median_diff,          S=seq,                                                _all=_all)
+    _factors_in, _factors_out = getFactors(_factors_in, _factors_out, ["vagradmult", "vagradplus"],                                 find_va_grad_fusion,            S=seq,                                                _all=_all)
     
     if len(_factors_in) > 0:
         print("[find_factors] failed to process: " + str(_factors_in) + ", continuing ...")
