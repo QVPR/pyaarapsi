@@ -144,6 +144,21 @@ class SVMModelProcessor:
         self.print("[save_model] Parameters: \n%s" % str(self.model['params']), LogType.DEBUG)
         return self
     
+    def param_compare(self, params_A, params_B) -> bool:
+        def try_order(_input) -> list:
+            if not isinstance(_input, list):
+                _input = [_input]
+            return list(np.sort(_input))
+        
+        order_keys = ['ft_types', 'img_topics', 'odom_topic', 'factors']
+        for _level in ['ref', 'qry', 'svm']:
+            for _A, _B, _key in zip(params_A[_level].values(), params_B[_level].values(), params_A[_level].keys()):
+                if _key in order_keys:
+                    if not (try_order(_A) == try_order(_B)): return False
+                else:
+                    if not (_A == _B): return False
+        return True
+    
     def load_model(self, model_params: dict, try_gen: bool = False, gen_datasets: bool = False, save_datasets: bool = False) -> str:
     # load via search for param match
         self.svm_dbp = model_params['svm_dbp']
@@ -153,7 +168,7 @@ class SVMModelProcessor:
         self.model = {}
         self.field = None
         for name in models:
-            if models[name]['params'] == model_params:
+            if self.param_compare(models[name]['params'], model_params):
                 try:
                     self._load(model_name=name)
                     return name
@@ -169,7 +184,7 @@ class SVMModelProcessor:
     def swap(self, model_params, generate=False, allow_false=True):
         models = self._get_models()
         for name in models:
-            if models[name]['params'] == model_params:
+            if self.param_compare(models[name]['params'], model_params):
                 try:
                     self._load(model_name=name)
                     return True
@@ -343,7 +358,7 @@ class SVMModelProcessor:
     def _check(self):
         models = self._get_models()
         for name in models:
-            if models[name]['params'] == self.model['params']:
+            if self.param_compare(models[name]['params'], self.model['params']):
                 return name
         return ""
 
@@ -595,7 +610,7 @@ class SVMFieldLoader(SVMModelProcessor):
         models              = self._get_models() # because we're looking at the model params
         self.field          = None
         for name in models:
-            if models[name]['params'] == model_params:
+            if self.param_compare(models[name]['params'], model_params):
                 try:
                     self._load_field(path=name)
                     return True
