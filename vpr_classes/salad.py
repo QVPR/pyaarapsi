@@ -256,8 +256,6 @@ class SALAD_Container:
                 db_feat[indices_np,:] = image_encoding.detach().cpu().numpy()
                 torch.cuda.empty_cache()
 
-        self.logger('Features shape: {}'.format(db_feat.shape))
-
         dataset_clean.destroy()
 
         if not (save_dir is None):
