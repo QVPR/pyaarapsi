@@ -715,7 +715,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
     
     def get_bag_path(self):
         assert not (self.dataset_params is None)
-        return self.root +  '/' + self.dataset_params['bag_dbp'] + '/' + self.dataset_params['bag_name']
+        return self.root +  '/' + str(self.dataset_params['bag_dbp']) + '/' + str(self.dataset_params['bag_name'])
     
     def get_dataset_params(self):
         assert not (self.dataset_params is None)
