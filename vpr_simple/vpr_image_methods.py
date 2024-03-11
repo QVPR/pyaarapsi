@@ -37,10 +37,18 @@ def convert_img_to_uint8(img_in, resize=None, dstack=True, make_copy=True):
         _max      = np.max(img)
         _img_norm = (img - _min) / (_max - _min)
         img       = np.array(_img_norm * 255, dtype=np.uint8)
+
     if not resize is None:
         if len(img.shape) == 1: # vector
-            img = np.reshape(img, (int(np.sqrt(img.shape[0])),)*2)
+            img = np.reshape(cv2.resize(img.astype('float32'), (1,4096), interpolation = cv2.INTER_AREA), (64,64))
         img = cv2.resize(img, resize, interpolation = cv2.INTER_AREA)
+
+        if not type(img_in.flatten()[0]) == np.uint8:
+            img = np.round(img)
+            img[img > 255] = 255
+            img[img < 0] = 0
+            img.astype(np.uint8)
+
     if dstack: return np.dstack((img,)*3)
     return img
 
