@@ -7,7 +7,7 @@ import genpy
 import rosbag
 import logging
 import numpy as np
-import gc
+import genpy
 from enum import Enum
 
 from tqdm.auto import tqdm
@@ -20,7 +20,23 @@ from .helper_tools              import formatException
 from .roslogger                 import LogType, roslogger
 from .image_transforms          import *
 
-from typing import List, Dict, Union, Optional, Callable, TypeVar, Generic, Generator, Tuple
+from typing import List, Dict, Union, Optional, Callable, TypeVar, Generic, Generator, Tuple, Type
+
+def import_rosmsg_from_string(msg_str: str) -> Type[genpy.Message]:
+    '''
+    Load a rosmsg class from a string
+
+    Inputs:
+    - msg_str: str type; import path to class i.e. nav_msgs.msg.Odometry
+    Returns:
+    base class of genpy.Message type; imported class
+    
+    '''
+    _module_components = msg_str.split('.')
+    _class_string  = _module_components[-1]
+    _module_string = '.'.join(_module_components[:-1])
+    _module = __import__(_module_string, fromlist=[_class_string])
+    return getattr(_module, _class_string)
 
 def open_rosbag(bag_path: str, topics: List[str]) -> Generator[Tuple[str, genpy.Message, rospy.rostime.Time], None, None]:
     '''
