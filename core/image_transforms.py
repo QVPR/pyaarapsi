@@ -1,4 +1,4 @@
-import cv2
+import cv2 # for some reason, CvBridge works more consistently if cv2 is imported (even if unused) beforehand
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CompressedImage
 import numpy as np
