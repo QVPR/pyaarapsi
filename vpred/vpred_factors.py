@@ -10,12 +10,11 @@ def find_minima(sequence: np.ndarray, check_ends=True):
             raise Exception("sequence must be either a np.ndarray or list object")
     if len(sequence) < 3:
         raise Exception("sequence is too short.")
-    
     seq_l       = sequence.copy()
     seq_r       = sequence.copy()
     seq_l[:-1] -= sequence[1:]
     seq_r[1:]  -= sequence[:-1]
-    minima_bool = ((sequence + seq_l > sequence) + (sequence + seq_r >= sequence)) == False
+    minima_bool = ((sequence + seq_l >= sequence) + (sequence + seq_r >= sequence)) == False
     if check_ends:
         if sequence[1] > sequence[0]:
             minima_bool[0] = True
@@ -23,7 +22,6 @@ def find_minima(sequence: np.ndarray, check_ends=True):
             minima_bool[-1] = True
     minima_inds = np.arange(len(sequence))[minima_bool]
     minima_vals = sequence[minima_bool]
-    
     return minima_vals, minima_inds
 
 def find_va_factor(S):
