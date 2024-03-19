@@ -1,6 +1,15 @@
 import numpy as np
+from numpy.typing import NDArray
 import copy
 from sklearn.linear_model import LinearRegression
+
+from typing import Optional, Union
+
+def check_right(bool_list, index, length):
+    if index + 1 < length:
+        if bool_list[index+1] == 1:
+            return check_right(bool_list, index+1, length)
+    return index
 
 def find_minima(sequence: np.ndarray, check_ends=True):
     if not isinstance(sequence, np.ndarray):
@@ -10,18 +19,43 @@ def find_minima(sequence: np.ndarray, check_ends=True):
             raise Exception("sequence must be either a np.ndarray or list object")
     if len(sequence) < 3:
         raise Exception("sequence is too short.")
+
     seq_l       = sequence.copy()
     seq_r       = sequence.copy()
     seq_l[:-1] -= sequence[1:]
     seq_r[1:]  -= sequence[:-1]
     minima_bool = ((sequence + seq_l >= sequence) + (sequence + seq_r >= sequence)) == False
+    flat_bool   = ((seq_l == 0) + (seq_r == 0))
+    i = 0
+    while i < (_len:=len(sequence)):
+        if flat_bool[i] == 1:
+            _left = i
+            _right = check_right(flat_bool, i, _len)
+            print(_left, _right)
+            points = 0
+            points_possible = 2
+            if _left > 0: points += 1 if sequence[_left-1] > sequence[_left] else 0
+            else: points_possible -= 1
+            if _right < _len - 1: points += 1 if sequence[_right+1] > sequence[_right] else 0
+            else: points_possible -= 1
+            print(points, points_possible)
+            if points >= points_possible:
+                minima_bool[_left] = True
+            i = _right + 1
+        else:
+            i += 1
+
+    minima_bool[0] = 0
+    minima_bool[-1] = 0
     if check_ends:
         if sequence[1] > sequence[0]:
             minima_bool[0] = True
         if sequence[-1] < sequence[-2]:
             minima_bool[-1] = True
-    minima_inds = np.arange(len(sequence))[minima_bool]
+
+    minima_inds = np.arange(_len)[minima_bool]
     minima_vals = sequence[minima_bool]
+
     return minima_vals, minima_inds
 
 def find_va_factor(S):
@@ -97,13 +131,14 @@ def find_all_grad_factors(s):
             g[i]=temp_g
     return g
 
-def find_area_factors(S, mInd: None):
+def find_area_factors(S, mInd: Optional[Union[float, NDArray]] = None):
     if S.ndim == 1:
         S    = S[:, np.newaxis]
     if mInd is None:
         mInd = np.argmin(S, axis=0)
     elif not hasattr(mInd, '__iter__'):
         mInd = np.array([mInd])
+    assert isinstance(mInd, np.ndarray)
     
     _shape   = S.shape
     _len     = int(np.round(np.min([_shape[0] * 0.01, 10])))
@@ -126,13 +161,14 @@ def find_area_factors(S, mInd: None):
         factor_4[q] = np.sum(_max - dvc[np.max([mInd[q]-1, 0]):np.min([mInd[q]-1, _max_ind])]) / (len(dvc)* (_max - _min))
     return factor_1, factor_2, factor_3, factor_4
 
-def find_under_area_factors(S, mInd: None):
+def find_under_area_factors(S, mInd: Optional[Union[float, NDArray]] = None):
     if S.ndim == 1:
         S    = S[:, np.newaxis]
     if mInd is None:
         mInd = np.argmin(S, axis=0)
     elif not hasattr(mInd, '__iter__'):
         mInd = np.array([mInd])
+    assert isinstance(mInd, np.ndarray)
     
     _shape   = S.shape
     _len     = int(np.round(np.min([_shape[0] * 0.01, 10])))
@@ -323,7 +359,7 @@ def find_minima_separation(S):
         factors4[q] = np.std(_euc)
     return factors1, factors2, factors3, factors4
 
-def find_match_distance(S, mInd: None):
+def find_match_distance(S, mInd: Optional[Union[float, NDArray]] = None):
 
     if S.ndim == 1:
         S = S[:, np.newaxis]
@@ -331,6 +367,7 @@ def find_match_distance(S, mInd: None):
         mInd = np.argmin(S, axis=0)
     elif not hasattr(mInd, '__iter__'):
         mInd = np.array([mInd])
+    assert isinstance(mInd, np.ndarray)
     
     _percentiles = np.percentile(S, [0,100], axis=0)
     _ranges = (_percentiles[1] - _percentiles[0])
@@ -425,7 +462,7 @@ def getFactors(__factors_in, __factors_out, _factors_required, function, _all=Fa
         __factors_in = try_pop(__factors_in, _factors_required)
     return __factors_in, __factors_out
 
-def find_factors(factors_in, _S, rXY=None, mInd=None, cutoff=2, init_pos=np.array([0,0]), _all=False, dists=None, norm=False, return_as_dict=False):
+def find_factors(factors_in, _S, rXY: NDArray, mInd: Optional[Union[float,NDArray]] = None, cutoff=2, init_pos=np.array([0,0]), _all=False, dists=None, norm=False, return_as_dict=False):
     
     _S = _S[:, np.newaxis] if _S.ndim == 1 else _S
     seq  = (_S - np.min(_S, 0)) / (np.max(_S, 0) - np.min(_S, 0)) if norm else _S
