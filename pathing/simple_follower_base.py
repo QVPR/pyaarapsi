@@ -24,7 +24,7 @@ from pyaarapsi.vpr_simple.vpr_dataset_tool  import VPRDatasetProcessor
 from pyaarapsi.vpr_simple.vpr_helpers       import FeatureType
 
 from pyaarapsi.vpr_classes.dataset_loader_base  import Dataset_Loader
-from pyaarapsi.core.argparse_tools              import check_positive_float, check_bool, check_string, check_enum, check_positive_int, check_float, check_bigger_than_zero_float
+from pyaarapsi.core.argparse_tools              import check_positive_float, check_bool, check_string, check_enum, check_positive_int, check_float, check_positive_or_zero_float
 from pyaarapsi.pathing.enums                    import *
 from pyaarapsi.pathing.basic                    import *
 
@@ -51,7 +51,7 @@ class Simple_Follower_Class(Dataset_Loader):
         self.ZONE_NUMBER            = self.params.add(self.namespace + "/path/zones/number",        0,                      check_positive_int,                         force=False)
         self.PATH_SAMPLE_RATE       = self.params.add(self.namespace + "/path/sample_rate",         5.0,                    check_positive_float,                       force=False) # Hz
         self.PATH_FILTERS           = self.params.add(self.namespace + "/path/filters",             "{}",                   check_string,                               force=False)
-        self.PATH_OFFSET            = self.params.add(self.namespace + "/path/offset",              0.0,                    check_bigger_than_zero_float,               force=False) # Hz
+        self.PATH_OFFSET            = self.params.add(self.namespace + "/path/offset",              0.0,                    check_positive_or_zero_float,               force=False) # Hz
         
         # Vehicle speed limits:
         self.SLOW_LIN_VEL_MAX       = self.params.add(self.namespace + "/limits/slow/linear",       0,                      check_positive_float,                       force=False)
