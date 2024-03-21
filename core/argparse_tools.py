@@ -63,7 +63,7 @@ def check_float(value: Any) -> float:
 
 def check_positive_float(value: Any) -> float:
     '''
-    Parse an input as a positive (>= 0) float.
+    Parse an input as a positive (> 0) float.
 
     Inputs:
     - any
@@ -77,6 +77,25 @@ def check_positive_float(value: Any) -> float:
         raise ap.ArgumentTypeError(error_text)
         
     if ivalue <= 0:
+        raise ap.ArgumentTypeError(error_text)
+    return ivalue
+
+def check_positive_or_zero_float (value: Any) -> float:
+    '''
+    Parse an input as a positive or zero (>= 0) float.
+
+    Inputs:
+    - any
+    Returns:
+    - float
+    '''
+    error_text = "%s is an invalid positive or zero float value." % (str(value))
+    try:
+        ivalue = float(value)
+    except:
+        raise ap.ArgumentTypeError(error_text)
+        
+    if ivalue < 0:
         raise ap.ArgumentTypeError(error_text)
     return ivalue
 
