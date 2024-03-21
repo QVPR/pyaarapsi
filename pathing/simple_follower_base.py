@@ -51,6 +51,7 @@ class Simple_Follower_Class(Dataset_Loader):
         self.ZONE_NUMBER            = self.params.add(self.namespace + "/path/zones/number",        0,                      check_positive_int,                         force=False)
         self.PATH_SAMPLE_RATE       = self.params.add(self.namespace + "/path/sample_rate",         5.0,                    check_positive_float,                       force=False) # Hz
         self.PATH_FILTERS           = self.params.add(self.namespace + "/path/filters",             "{}",                   check_string,                               force=False)
+        self.PATH_OFFSET            = self.params.add(self.namespace + "/path/offset",              0.0,                    check_positive_float,                       force=False) # Hz
         
         # Vehicle speed limits:
         self.SLOW_LIN_VEL_MAX       = self.params.add(self.namespace + "/limits/slow/linear",       0,                      check_positive_float,                       force=False)
@@ -373,6 +374,12 @@ class Simple_Follower_Class(Dataset_Loader):
                                                  self.path_ip.dataset['dataset']['py'].flatten(),
                                                  self.path_ip.dataset['dataset']['pw'].flatten(),
                                                  make_speed_array(self.path_ip.dataset['dataset']['pw'].flatten())]))
+        
+        if self.PATH_OFFSET.get() > 0.0:
+            self.path_xyws[:,0] += self.PATH_OFFSET.get() * np.cos(self.path_xyws[:,2] - (np.pi/2))
+            self.path_xyws[:,1] += self.PATH_OFFSET.get() * np.sin(self.path_xyws[:,2] - (np.pi/2))
+        
+
         self.ref_xyws  = np.transpose(np.stack([self.ref_ip.dataset['dataset']['px'].flatten(), 
                                                  self.ref_ip.dataset['dataset']['py'].flatten(),
                                                  self.ref_ip.dataset['dataset']['pw'].flatten(),
