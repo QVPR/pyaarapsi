@@ -31,14 +31,12 @@ def find_minima(sequence: np.ndarray, check_ends=True):
         if flat_bool[i] == 1:
             _left = i
             _right = check_right(flat_bool, i, _len)
-            print(_left, _right)
             points = 0
             points_possible = 2
             if _left > 0: points += 1 if sequence[_left-1] > sequence[_left] else 0
             else: points_possible -= 1
             if _right < _len - 1: points += 1 if sequence[_right+1] > sequence[_right] else 0
             else: points_possible -= 1
-            print(points, points_possible)
             if points >= points_possible:
                 minima_bool[_left] = True
             i = _right + 1
