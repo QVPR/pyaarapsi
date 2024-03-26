@@ -43,7 +43,7 @@ class PlaceDataset(Dataset):
                 else:
                     self.getitem = lambda index: self.images[index].astype(np.uint8)
             else: # type np.ndarray of np.ndarray flattened images
-                self.getitem = lambda index: np.dstack((np.reshape(self.images[index], self.dims),)*3).astype(np.uint8)
+                self.getitem = lambda index: np.dstack((np.reshape(self.images[index], self.dims),)*3).astype(np.uint8) #type: ignore
         else:
             raise Exception("Input not of type list or np.ndarray. Type: %s" % (str(type(self.images))))
     
@@ -174,7 +174,7 @@ class HybridNet_Container:
         feats = []
         iteration_obj = dataset_clean
         if use_tqdm: 
-            iteration_obj = tqdm(dataset_clean)
+            iteration_obj = tqdm(dataset_clean) #type: ignore
         
         for (input_data, _) in iteration_obj:
             self.net.blobs['data'].data[...] = self.transformer.preprocess('data', input_data)
