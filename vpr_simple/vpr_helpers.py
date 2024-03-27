@@ -23,6 +23,16 @@ class FeatureType(Enum):
     SALAD               = 7
     APGEM               = 8
 
+def getFeatureLength(feature_type: FeatureType, img_dims: list):
+    if feature_type in [FeatureType.SALAD]:
+        return 8192
+    elif feature_type in [FeatureType.NETVLAD, FeatureType.APGEM, FeatureType.HYBRIDNET]:
+        return 4096
+    elif feature_type in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.NORM, FeatureType.ROLLNORM]:
+        return img_dims[0] * img_dims[1]
+    else:
+        raise Exception("Unknown feature type (%s)." % str(feature_type))
+
 class ViewMode(Enum):
     FORWARD  	        = 0
     FORWARDRIGHT 	    = 1
