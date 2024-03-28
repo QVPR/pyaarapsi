@@ -22,6 +22,17 @@ class Bool(Enum):
 class SupportsCanvas(Protocol):
     canvas: FigureCanvasBase
 
+def brandn(*args):
+    '''
+    Bounded normal random with smooth probability distribution between 0 and 1.
+    '''
+    x = 0.5 + (np.random.randn(*args)/6.0)
+    out_of_bounds = (x<0) | (x>1)
+    while (_sum:=np.sum(out_of_bounds)) > 0:
+        x[out_of_bounds] = brandn(_sum)
+        out_of_bounds = (x<0) | (x>1)
+    return x
+
 def input_with_timeout(prompt, timeout):
     'https://stackoverflow.com/questions/15528939/time-limited-input'
     ready, _, _ = select.select([sys.stdin], [],[], timeout)
