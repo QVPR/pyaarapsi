@@ -32,6 +32,14 @@ def getFeatureLength(feature_type: FeatureType, img_dims: list):
         return img_dims[0] * img_dims[1]
     else:
         raise Exception("Unknown feature type (%s)." % str(feature_type))
+    
+def isFeatureSpatiallyRelated(feature_type: FeatureType):
+    if feature_type in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.ROLLNORM, FeatureType.NORM]:
+        return True
+    elif feature_type in [FeatureType.NETVLAD, FeatureType.HYBRIDNET, FeatureType.SALAD, FeatureType.APGEM]:
+        return False
+    else:
+        raise Exception("Unknown feature type (%s)." % str(feature_type))
 
 class ViewMode(Enum):
     FORWARD  	        = 0
