@@ -33,10 +33,18 @@ def getFeatureLength(feature_type: FeatureType, img_dims: list):
     else:
         raise Exception("Unknown feature type (%s)." % str(feature_type))
     
-def isFeatureSpatiallyRelated(feature_type: FeatureType):
+def overridesImgDims(feature_type: FeatureType):
     if feature_type in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.ROLLNORM, FeatureType.NORM]:
         return True
     elif feature_type in [FeatureType.NETVLAD, FeatureType.HYBRIDNET, FeatureType.SALAD, FeatureType.APGEM]:
+        return False
+    else:
+        raise Exception("Unknown feature type (%s)." % str(feature_type))
+    
+def isFeatureSpatiallyRelated(feature_type: FeatureType):
+    if feature_type in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.ROLLNORM, FeatureType.NORM, FeatureType.HYBRIDNET]:
+        return True
+    elif feature_type in [FeatureType.NETVLAD, FeatureType.SALAD, FeatureType.APGEM]:
         return False
     else:
         raise Exception("Unknown feature type (%s)." % str(feature_type))

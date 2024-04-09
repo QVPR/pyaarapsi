@@ -22,16 +22,23 @@ class Bool(Enum):
 class SupportsCanvas(Protocol):
     canvas: FigureCanvasBase
 
-def brandn(*args):
+def brandn(*args, fill_with_linear=True):
     '''
     Bounded normal random with smooth probability distribution between 0 and 1.
     '''
     x = 0.5 + (np.random.randn(*args)/6.0)
+    input_was_array = isinstance(x, np.ndarray) # flag so we return same type
+    if not input_was_array: x = np.array([x]) # convert scalar to array
     out_of_bounds = (x<0) | (x>1)
-    while (_sum:=np.sum(out_of_bounds)) > 0:
-        x[out_of_bounds] = brandn(_sum)
-        out_of_bounds = (x<0) | (x>1)
+    if not fill_with_linear:
+        while (_sum:=np.sum(out_of_bounds)) > 0:
+            x[out_of_bounds] = brandn(_sum)
+            out_of_bounds = (x<0) | (x>1)
+    else:
+        x[out_of_bounds] = np.random.rand(np.sum(out_of_bounds))
+    if not input_was_array: x = x[0] # convert array back to scalar
     return x
+    
 
 def input_with_timeout(prompt, timeout):
     'https://stackoverflow.com/questions/15528939/time-limited-input'
