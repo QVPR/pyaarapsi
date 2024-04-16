@@ -5,43 +5,58 @@ from sklearn.linear_model import LinearRegression
 
 from typing import Optional, Union
 
-def check_right(bool_list, index, length):
-    if index + 1 < length:
-        if bool_list[index+1] == 1:
-            return check_right(bool_list, index+1, length)
-    return index
+CHECK_RIGHT_HASH = {}
 
-def find_minima(sequence: np.ndarray, check_ends=True):
+def check_right(bool_list, index, length):
+    global CHECK_RIGHT_HASH
+    _key = (index, length)
+    try: 
+        return CHECK_RIGHT_HASH[_key]
+    except KeyError:
+        _ret = None
+        if index + 1 < length:
+            if bool_list[index+1] == 1:
+                _ret = check_right(bool_list, index+1, length)
+        if _ret is None:
+            _ret = index
+        CHECK_RIGHT_HASH[_key] = _ret
+        return _ret
+
+def find_minima(sequence: np.ndarray, check_ends=True, fast=False):
     if not isinstance(sequence, np.ndarray):
         if isinstance(sequence, list):
             sequence = np.array(sequence)
         else:
             raise Exception("sequence must be either a np.ndarray or list object")
-    if len(sequence) < 3:
+    if (_len:=len(sequence)) < 3:
         raise Exception("sequence is too short.")
+    
+    CHECK_RIGHT_HASH.clear()
 
     seq_l       = sequence.copy()
     seq_r       = sequence.copy()
     seq_l[:-1] -= sequence[1:]
     seq_r[1:]  -= sequence[:-1]
     minima_bool = ((sequence + seq_l >= sequence) + (sequence + seq_r >= sequence)) == False
-    flat_bool   = ((seq_l == 0) + (seq_r == 0))
-    i = 0
-    while i < (_len:=len(sequence)):
-        if flat_bool[i] == 1:
-            _left = i
-            _right = check_right(flat_bool, i, _len)
-            points = 0
-            points_possible = 2
-            if _left > 0: points += 1 if sequence[_left-1] > sequence[_left] else 0
-            else: points_possible -= 1
-            if _right < _len - 1: points += 1 if sequence[_right+1] > sequence[_right] else 0
-            else: points_possible -= 1
-            if points >= points_possible:
-                minima_bool[_left] = True
-            i = _right + 1
-        else:
-            i += 1
+    
+    if not fast:
+        flat_bool   = ((seq_l == 0) + (seq_r == 0))
+        i = 0
+        while i < _len:
+            if flat_bool[i] == 1:
+                _left = i
+                _right = check_right(flat_bool, i, _len)
+                points = 0
+                points_possible = 2
+                if _left > 0: points += 1 if sequence[_left-1] > sequence[_left] else 0
+                else: points_possible -= 1
+                if _right < _len - 1: points += 1 if sequence[_right+1] > sequence[_right] else 0
+                else: points_possible -= 1
+                if points >= points_possible:
+                    minima_bool[_left] = True
+                i = _right + 1
+            else:
+                i += 1
 
     minima_bool[0] = 0
     minima_bool[-1] = 0
@@ -63,8 +78,7 @@ def find_va_factor(S):
     factors = np.zeros(qry_list[-1] + 1)
     for q in qry_list:
         Sv = S[:,q]
-        minima_values,_ = find_minima(Sv)
-        minima_values.sort()
+        minima_values = np.sort(find_minima(Sv, fast=True)[0])
         d1 = minima_values[1] - minima_values[0]
         d2 = Sv.max() - Sv.min()
         factors[q] = (d1/d2)
@@ -319,6 +333,28 @@ def find_sensitivity(S):
         factors4[q] = np.sum(Sv < np.median(Sv)) / ref_len
     return factors1, factors2, factors3, factors4
 
+def find_adj_sensitivity(S):
+    if S.ndim == 1:
+        S = S[:, np.newaxis]
+    
+    ref_len = S.shape[0]
+    qry_list = np.arange(S.shape[1])
+    factors1 = np.zeros(qry_list[-1] + 1)
+    factors2 = np.zeros(qry_list[-1] + 1)
+    for q in qry_list:
+        Sv = S[:,q]
+        _min = Sv.min()
+        _min_ind = Sv.argmin()
+        _left = np.max([0, _min_ind - 10])
+        _right = np.min([ref_len, _min_ind + 10])
+        _min_bounded = Sv[_left:_right]
+        _median_over_range = np.median(_min_bounded)
+
+        _range = (Sv.max() - Sv.min())
+        factors1[q] = np.abs(_median_over_range - _min) / _range
+        factors2[q] = np.sum(Sv < _median_over_range) / ref_len
+    return factors1, factors2
+
 def find_minima_variation(S):
     if S.ndim == 1:
         S = S[:, np.newaxis]
@@ -329,7 +365,7 @@ def find_minima_variation(S):
     factors2 = np.zeros(qry_list[-1] + 1)
     for q in qry_list:
         Sv = S[:,q]
-        minima_values, minima_inds = find_minima(Sv)
+        minima_values, minima_inds = find_minima(Sv, fast=True)
         factors1[q] = np.std(minima_values) / (Sv.max() - Sv.min())
         factors2[q] = np.std(minima_inds) / ref_len
     return factors1, factors2
@@ -346,7 +382,7 @@ def find_minima_separation(S):
     factors4 = np.zeros(qry_list[-1] + 1)
     for q in qry_list:
         Sv = S[:,q]
-        minima_values, minima_inds = find_minima(Sv)
+        minima_values, minima_inds = find_minima(Sv, fast=True)
         minima_values_sep, minima_inds_sep = np.abs(minima_values - Sv.min()), np.abs(minima_inds - Sv.argmin())
         _range = (Sv.max() - Sv.min())
         _mat = np.multiply(minima_values_sep / _range, minima_inds_sep / ref_len)
@@ -356,6 +392,24 @@ def find_minima_separation(S):
         factors3[q] = np.sum(_euc)
         factors4[q] = np.std(_euc)
     return factors1, factors2, factors3, factors4
+
+def find_adj_minima_separation(S):
+    if S.ndim == 1:
+        S = S[:, np.newaxis]
+    
+    ref_len = S.shape[0]
+    qry_list = np.arange(S.shape[1])
+    factors1 = np.zeros(qry_list[-1] + 1)
+    factors2 = np.zeros(qry_list[-1] + 1)
+    for q in qry_list:
+        Sv = S[:,q]
+        minima_values, minima_inds = find_minima(Sv, fast=True)
+        minima_values_sep, minima_inds_sep = np.abs(minima_values - Sv.min()), np.abs(minima_inds - Sv.argmin())
+        _range = (Sv.max() - Sv.min())
+        _mat = np.multiply(minima_values_sep / _range, minima_inds_sep / ref_len)
+        factors1[q] = np.sum(_mat)
+        factors2[q] = np.std(_mat)
+    return factors1, factors2
 
 def find_match_distance(S, mInd: Optional[Union[float, NDArray]] = None):
 
@@ -503,4 +557,41 @@ def find_factors(factors_in, _S, rXY: NDArray, mInd: Optional[Union[float,NDArra
     if not return_as_dict:
         return [_factors_out[i] for i in _factors_out.keys()]
     return {i: _factors_out[i] for i in _factors_out.keys()}
-    
+
+NUM_GROUPS          = 4
+NUM_SUBCOMPONENTS   = 48
+NUM_COMPONENTS      = NUM_GROUPS * NUM_SUBCOMPONENTS
+
+def find_factor_components(_S, _R, _Q):
+    global NUM_COMPONENTS
+    _S = _S[:, np.newaxis] if _S.ndim == 1 else _S
+    _R = _R[:, np.newaxis] if _R.ndim == 1 else _R
+    _Q = _Q[:, np.newaxis] if _Q.ndim == 1 else _Q
+    _D = _R - _Q
+    #
+    def make_subcomponent(arr):
+        subcomponents = np.zeros((NUM_SUBCOMPONENTS, _S.shape[1]))
+        subcomponents[0, :]        = np.mean(_S, axis=0)                                                                        # Mean
+        subcomponents[1, :]        = np.std(_S, axis=0)                                                                         # Standard Deviation
+        subcomponents[2:23, :]     = np.percentile(_S, np.linspace(0,100,21).astype(int), axis=0)                               # Min, Max, and 5% Percentiles between
+        subcomponents[23:28, :]    = np.sort(np.partition(_S, 5, axis=0)[0:5,:],axis=0)                                         # Smallest 5 numbers
+        subcomponents[28:33, :]    = -np.sort(np.partition(-_S, 5, axis=0)[0:5,:],axis=0)                                       # Biggest 5 numbers
+        subcomponents[33, :]       = np.sum(_S,axis=0)                                                                          # Sum
+        subcomponents[34, :]       = subcomponents[22,:] - subcomponents[2,:]                                                   # Range
+        subcomponents[35, :]       = subcomponents[17,:] - subcomponents[7,:]                                                   # IQR
+        subcomponents[36, :]       = subcomponents[0, :] - subcomponents[12,:]                                                  # Mean/Median
+        subcomponents[37, :]       = (subcomponents[22, :] - subcomponents[12,:]) / (subcomponents[12, :] - subcomponents[7,:]) # IQR Skew
+        subcomponents[38:40, :]    = np.array(find_minima_variation(_S))
+        subcomponents[40:42, :]    = np.array(find_removed_factors(_S))
+        subcomponents[42:44, :]    = np.array(find_adj_minima_separation(_S))
+        subcomponents[44:46, :]    = np.array(find_adj_sensitivity(_S))
+        subcomponents[46, :]       = find_grad_factor(_S)
+        subcomponents[47, :]       = find_va_factor(_S)
+        return subcomponents
+    comp_S = make_subcomponent(_S)
+    comp_R = make_subcomponent(_R)
+    comp_Q = make_subcomponent(_Q)
+    comp_D = make_subcomponent(_D)
+    components = np.concatenate([comp_S, comp_R, comp_Q, comp_D], axis=0)
+    #
+    return np.transpose(components)
