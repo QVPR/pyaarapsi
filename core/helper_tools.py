@@ -223,10 +223,12 @@ def uint8_list_to_np_ndarray(uint8_list: list) -> NDArray:
     return np_ndarray
 
 class Timer:
-    def __init__(self, rospy_on: bool = False):
+    def __init__(self, rospy_on: bool = False, precision: int = 5):
         self.points = []
         self.rospy_on = rospy_on
         self.add_bounds = False
+        self.precision = precision
+        self.threshold = 10**(-1 * self.precision)
 
     def add(self) -> None:
         self.points.append(time.perf_counter())
@@ -234,20 +236,20 @@ class Timer:
     def addb(self) -> None:
         self.add_bounds = True
 
-    def calc(self, thresh: float = 0.001) -> list:
+    def calc(self) -> list:
         times = []
         for i in range(len(self.points) - 1):
             this_time = abs(self.points[i+1]-self.points[i])
-            if this_time < thresh:
+            if this_time < self.threshold:
                 this_time = 0.0
             times.append(this_time)
         if self.add_bounds and len(self.points) > 0:
             times.append(abs(self.points[-1] - self.points[0]))
         return times
 
-    def show(self, name: Optional[str] = None, thresh: float = 0.001) -> None:
-        times = self.calc(thresh)
-        string = str(["%8.4f" % i for i in times]).replace(' ','')
+    def show(self, name: Optional[str] = None) -> None:
+        times = self.calc()
+        string = str([("%" + str(int(4 + self.precision)) + "." + str(int(self.precision)) + "f") % i for i in times]).replace(' ','')
         if not (name is None):
             string = "[" + name + "] " + string
         self.print(string)
