@@ -230,7 +230,7 @@ class SVMModelProcessor:
 
         return self.predict_from_datasets(ref=ref_dict, qry=qry_dict, do_print=do_print)
     
-    def predict_from_datasets(self, ref, qry, do_print=False):
+    def predict_from_datasets(self, ref, qry, do_print=False, return_ytest: bool = False):
         if isinstance(ref, VPRDatasetProcessor):
             ref = ref.dataset['dataset']
         elif 'dataset' in ref.keys():
@@ -284,7 +284,8 @@ class SVMModelProcessor:
                     .format(num_tp,num_tn,num_fp,num_fn,precision*100,recall*100))
         performance_metrics = {'precision': precision, 'recall': recall, 'num_tp': num_tp, 'num_fp': num_fp, 'num_tn': num_tn, 'num_fn': num_fn}
         
-        return pred_test, performance_metrics
+        if not return_ytest: return pred_test, performance_metrics
+        return pred_test, performance_metrics, y_test
     
     def generate_svm_mat(self, array_dim=500):
         # Generate decision function matrix:
@@ -520,6 +521,7 @@ class SVMModelProcessor:
         self.scaler                 = self.model['model']['scaler']
         self.factors_train          = np.array(self.model['model']['factors'])
         self.performance_metrics    = self.model['perf']
+        self.feat_type              = self.model['params']['ref']['ft_types'][0]
     
     def _fix(self, model_name):
         if not model_name.endswith('.npz'):
