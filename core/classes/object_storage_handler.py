@@ -174,7 +174,7 @@ class Object_Storage_Handler():
             raise UnknownSaverError("Saver unknown (%s)." % str(saver))
         return self
 
-    def save(self) -> Object_Storage_Handler:
+    def save(self, overwrite: bool = False) -> Object_Storage_Handler:
         '''
         Save loaded stored object to file system
 
@@ -185,19 +185,24 @@ class Object_Storage_Handler():
         '''
         
         if (not self.loaded): raise ObjectNotLoadedError()
-        if self.params_exist(params=self.get_params()): 
+
+        file_name = self.params_exist(params=self.get_params())
+        if (file_name) and (not overwrite): # file exists, and we aren't allowed to overwrite it
             self.saved = True
             return self
-        
-        file_list, _, _, = scan_directory(self.param_path, short_files=True)
-        name = datetime.datetime.today().strftime(self.prefix + "_%Y%m%d")
+        else:
+            if not file_name: # file doesn't exist:
+                file_list, _, _, = scan_directory(path=self.param_path, short_files=True)
+                name = datetime.datetime.today().strftime(self.prefix + "_%Y%m%d")
 
-        # Generate unique name:
-        file_name = name
-        count = 0
-        while file_name in file_list:
-            file_name = name + "_%d" % count
-            count += 1
+                # Generate unique name:
+                file_name = name
+                count = 0
+                while file_name in file_list:
+                    file_name = name + "_%d" % count
+                    count += 1
+            else:
+                self._fix(stored_object_base_name=file_name)
         
         return self.saver(file_name=file_name)
 
@@ -221,7 +226,7 @@ class Object_Storage_Handler():
                     self._fix(stored_object_base_name=name)
         return ''
 
-    def params_exist(self, params: dict) -> bool:
+    def params_exist(self, params: dict) -> str:
         '''
         Helper function to check if params already exist in storage
 
@@ -233,8 +238,8 @@ class Object_Storage_Handler():
         stored_objects = self._get_possible_parameters()
         for name in stored_objects:
             if stored_objects[name]['params'] == params:
-                return True
-        return False
+                return name
+        return ''
     
     def _get_possible_parameters(self) -> dict:
         '''
