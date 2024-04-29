@@ -189,6 +189,7 @@ class RobotVPR:
         NUM_PTS = 2000                # number of points in PR-curve
             
         bm_distances = find_best_match_distances(self.S)
+        assert len(bm_distances) == len(y_pred)
         
         d_sweep = np.linspace(bm_distances.min(), bm_distances.max(), NUM_PTS)
         p=np.full_like(d_sweep,np.nan)
