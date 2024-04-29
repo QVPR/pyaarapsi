@@ -522,6 +522,8 @@ class SVMModelProcessor:
         self.factors_train          = np.array(self.model['model']['factors'])
         self.performance_metrics    = self.model['perf']
         self.feat_type              = self.model['params']['ref']['ft_types'][0]
+        self.qry_loaded             = False
+        self.ref_loaded             = False
     
     def _fix(self, model_name):
         if not model_name.endswith('.npz'):
