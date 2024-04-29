@@ -393,7 +393,7 @@ def find_minima_separation(S):
         factors4[q] = np.std(_euc)
     return factors1, factors2, factors3, factors4
 
-def find_adj_minima_separation(S):
+def find_adj_minima_separation(S, norm: bool = False):
     if S.ndim == 1:
         S = S[:, np.newaxis]
     
@@ -409,6 +409,9 @@ def find_adj_minima_separation(S):
         _mat = np.multiply(minima_values_sep / _range, minima_inds_sep / ref_len)
         factors1[q] = np.sum(_mat)
         factors2[q] = np.std(_mat)
+        if norm:
+            factors1[q] /= len(minima_values_sep)
+            factors2[q] /= (_mat.max() - _mat.min())
     return factors1, factors2
 
 def find_match_distance(S, mInd: Optional[Union[float, NDArray]] = None):
@@ -558,13 +561,30 @@ def find_factors(factors_in, _S, rXY: NDArray, mInd: Optional[Union[float,NDArra
         return [_factors_out[i] for i in _factors_out.keys()]
     return {i: _factors_out[i] for i in _factors_out.keys()}
 
-NUM_GROUPS          = 4
-NUM_SUBCOMPONENTS   = 48
-NUM_COMPONENTS      = NUM_GROUPS * NUM_SUBCOMPONENTS
+NUM_GROUPS                      = 4
+NUM_SIMPLE_SUBCOMPONENTS        = 48
+NUM_COMPLEX_SUBCOMPONENTS       = 42
+NUM_NORM_SIMPLE_SUBCOMPONENTS   = 48
+NUM_NORM_SIMPLE2_SUBCOMPONENTS  = 48
+NUM_SIMPLE_COMPONENTS           = NUM_GROUPS * NUM_SIMPLE_SUBCOMPONENTS
+NUM_COMPLEX_COMPONENTS          = NUM_GROUPS * NUM_COMPLEX_SUBCOMPONENTS
+NUM_NORM_SIMPLE_COMPONENTS      = NUM_GROUPS * NUM_NORM_SIMPLE_SUBCOMPONENTS
+NUM_NORM_SIMPLE2_COMPONENTS     = NUM_GROUPS * NUM_NORM_SIMPLE2_SUBCOMPONENTS
 
+def get_num_features(mode: str):
+    if mode == 'SIMPLE_COMPONENTS':
+        return NUM_SIMPLE_COMPONENTS
+    elif mode == 'COMPLEX_COMPONENTS':
+        return NUM_COMPLEX_COMPONENTS
+    elif mode == 'NORM_SIMPLE_COMPONENTS':
+        return NUM_NORM_SIMPLE_COMPONENTS
+    elif mode == 'NORM_SIMPLE2_COMPONENTS':
+        return NUM_NORM_SIMPLE2_COMPONENTS
+    else:
+        raise Exception()
 
-def make_subcomponent(arr):
-    subcomponents = np.zeros((NUM_SUBCOMPONENTS, arr.shape[1]))
+def make_simple_subcomponents(arr):
+    subcomponents = np.zeros((NUM_SIMPLE_SUBCOMPONENTS, arr.shape[1]))
     subcomponents[0, :]        = np.mean(arr, axis=0)                                                                        # Mean
     subcomponents[1, :]        = np.std(arr, axis=0)                                                                         # Standard Deviation
     subcomponents[2:23, :]     = np.percentile(arr, np.linspace(0,100,21).astype(int), axis=0)                               # Min, Max, and 5% Percentiles between
@@ -583,18 +603,101 @@ def make_subcomponent(arr):
     subcomponents[47, :]       = find_va_factor(arr)
     return subcomponents
 
-def make_factors(arr, _mInd = None):
+def make_simple_components(_S, _R, _Q):
+    _S = _S[:, np.newaxis] if _S.ndim == 1 else _S
+    _R = _R[:, np.newaxis] if _R.ndim == 1 else _R
+    _Q = _Q[:, np.newaxis] if _Q.ndim == 1 else _Q
+    _D = _R - _Q
+    comp_S = make_simple_subcomponents(_S)
+    comp_R = make_simple_subcomponents(_R)
+    comp_Q = make_simple_subcomponents(_Q)
+    comp_D = make_simple_subcomponents(_D)
+    components = np.concatenate([comp_S, comp_R, comp_Q, comp_D], axis=0)
+    components[np.where(np.isfinite(components)==False)] = 0
+    return np.transpose(components)
+
+def make_norm_simple_subcomponents(arr):
+    _percentiles = np.percentile(arr, np.linspace(0,100,21).astype(int), axis=0)
+    _range       = _percentiles[-1] - _percentiles[0]
+    subcomponents = np.zeros((NUM_NORM_SIMPLE_SUBCOMPONENTS, arr.shape[1]))
+    subcomponents[0, :]        = np.mean(arr, axis=0) / _range
+    subcomponents[1, :]        = np.std(arr, axis=0) / _range
+    subcomponents[2:23, :]     = _percentiles / _range
+    subcomponents[23:28, :]    = np.sort(np.partition(arr, 5, axis=0)[0:5,:],axis=0) / _range
+    subcomponents[28:33, :]    = -np.sort(np.partition(-arr, 5, axis=0)[0:5,:],axis=0) / _range
+    subcomponents[33, :]       = np.sum(arr,axis=0) / (_range * arr.shape[0]) 
+    subcomponents[34, :]       = _range / _percentiles[-1]
+    subcomponents[35, :]       = (subcomponents[17,:] - subcomponents[7,:]) / _range
+    subcomponents[36, :]       = (subcomponents[0, :] / subcomponents[12,:]) / _range
+    subcomponents[37, :]       = ((subcomponents[17, :] - subcomponents[12,:]) / (subcomponents[17, :] - subcomponents[7,:]))
+    subcomponents[38:40, :]    = np.array(find_minima_variation(arr)) # already normalised
+    subcomponents[40:42, :]    = np.array(find_removed_factors(arr)) # already normalised
+    subcomponents[42:44, :]    = np.array(find_adj_minima_separation(arr, norm=True))
+    subcomponents[44:46, :]    = np.array(find_adj_sensitivity(arr)) # already normalised
+    subcomponents[46, :]       = find_grad_factor(arr) / _range
+    subcomponents[47, :]       = find_va_factor(arr) # already normalised
+    return subcomponents
+
+def make_norm_simple_components(_S, _R, _Q):
+    _S = _S[:, np.newaxis] if _S.ndim == 1 else _S
+    _R = _R[:, np.newaxis] if _R.ndim == 1 else _R
+    _Q = _Q[:, np.newaxis] if _Q.ndim == 1 else _Q
+    _D = _R - _Q
+    comp_S = make_norm_simple_subcomponents(_S)
+    comp_R = make_norm_simple_subcomponents(_R)
+    comp_Q = make_norm_simple_subcomponents(_Q)
+    comp_D = make_norm_simple_subcomponents(_D)
+    components = np.concatenate([comp_S, comp_R, comp_Q, comp_D], axis=0)
+    components[np.where(np.isfinite(components)==False)] = 0
+    return np.transpose(components)
+
+def make_norm_simple2_subcomponents(arr):
+    _percentiles = np.percentile(arr, np.linspace(0,100,21).astype(int), axis=0)
+    _range       = _percentiles[-1] - _percentiles[0]
+    subcomponents = np.zeros((NUM_NORM_SIMPLE2_SUBCOMPONENTS, arr.shape[1]))
+    subcomponents[0, :]        = np.mean(arr, axis=0) / _range
+    subcomponents[1, :]        = np.std(arr, axis=0) / _range
+    subcomponents[2:23, :]     = _percentiles / _range
+    subcomponents[23:28, :]    = np.sort(np.partition(arr, 5, axis=0)[0:5,:],axis=0) / _range
+    subcomponents[28:33, :]    = -np.sort(np.partition(-arr, 5, axis=0)[0:5,:],axis=0) / _range
+    subcomponents[33, :]       = np.sum(arr,axis=0) / (_range * arr.shape[0]) 
+    subcomponents[34, :]       = _range / _percentiles[-1]
+    subcomponents[35, :]       = (subcomponents[17,:] - subcomponents[7,:]) / _range
+    subcomponents[36, :]       = (subcomponents[0, :] / subcomponents[12,:]) / _range
+    subcomponents[37, :]       = ((subcomponents[17, :] - subcomponents[12,:]) / (subcomponents[17, :] - subcomponents[7,:]))
+    subcomponents[38:40, :]    = np.array(find_minima_variation(arr)) # already normalised
+    subcomponents[40:42, :]    = np.array(find_removed_factors(arr)) # already normalised
+    subcomponents[42:44, :]    = np.array(find_adj_minima_separation(arr, norm=True))
+    subcomponents[44:46, :]    = np.array(find_adj_sensitivity(arr)) # already normalised
+    subcomponents[46, :]       = find_grad_factor(arr) / _range
+    subcomponents[47, :]       = find_va_factor(arr) # already normalised
+    return subcomponents
+
+def make_norm_simple2_components(_S, _R, _Q):
+    _S = _S[:, np.newaxis] if _S.ndim == 1 else _S
+    _R = _R[:, np.newaxis] if _R.ndim == 1 else _R
+    _Q = _Q[:, np.newaxis] if _Q.ndim == 1 else _Q
+    _D = _R - _Q
+    comp_S = make_norm_simple2_subcomponents(_S)
+    comp_R = make_norm_simple2_subcomponents(_R)
+    comp_Q = make_norm_simple2_subcomponents(_Q)
+    comp_D = make_norm_simple2_subcomponents(_D)
+    components = np.concatenate([comp_S, comp_R, comp_Q, comp_D], axis=0)
+    components[np.where(np.isfinite(components)==False)] = 0
+    return np.transpose(components)
+
+def make_complex_subcomponents(arr, _mInd = None):
 
     if _mInd is None:
         _mInd = np.argmin(arr, axis=0)
     elif not hasattr(_mInd, '__iter__'):
         _mInd = np.array([_mInd])
 
-    subcomponents = np.zeros((NUM_COMPONENTS, arr.shape[1]))
+    subcomponents = np.zeros((NUM_COMPLEX_SUBCOMPONENTS, arr.shape[1]))
     subcomponents[ 0, :]     = np.array(find_va_factor(S=arr))
     subcomponents[ 1, :]     = np.array(find_grad_factor(S=arr))
     subcomponents[ 2, :]     = np.array(find_adj_grad_factor(S=arr))
-    # subcomponents[ 3:5, :]   = np.array(find_linear_factors(S=arr, rXY=_rXY, mXY=_mXY))
+    subcomponents[ 3:5, :] = np.array(find_va_grad_fusion(S=arr))
     subcomponents[ 5:9, :]   = np.array(find_area_factors(S=arr, mInd=_mInd))
     subcomponents[ 9:13, :]  = np.array(find_under_area_factors(S=arr, mInd=_mInd))
     subcomponents[ 13:15, :] = np.array(find_peak_factors(S=arr))
@@ -608,26 +711,17 @@ def make_factors(arr, _mInd = None):
     subcomponents[ 37:39, :] = np.array(find_minima_variation(S=arr))
     subcomponents[ 39:41, :] = np.array(find_removed_factors(S=arr))
     subcomponents[ 41:43, :] = np.array(find_mean_median_diff(S=arr))
-    subcomponents[ 43:45, :] = np.array(find_va_grad_fusion(S=arr))
     return subcomponents
 
-def find_factor_components(_S, _R, _Q):
-    global NUM_COMPONENTS
+def make_complex_components(_S, _R, _Q):
     _S = _S[:, np.newaxis] if _S.ndim == 1 else _S
     _R = _R[:, np.newaxis] if _R.ndim == 1 else _R
     _Q = _Q[:, np.newaxis] if _Q.ndim == 1 else _Q
     _D = _R - _Q
-    comp_S = make_subcomponent(_S)
-    comp_R = make_subcomponent(_R)
-    comp_Q = make_subcomponent(_Q)
-    comp_D = make_subcomponent(_D)
+    comp_S = make_complex_subcomponents(_S)
+    comp_R = make_complex_subcomponents(_R)
+    comp_Q = make_complex_subcomponents(_Q)
+    comp_D = make_complex_subcomponents(_D)
     components = np.concatenate([comp_S, comp_R, comp_Q, comp_D], axis=0)
-    components[np.where(np.isfinite(components)==False)] = 0
-    return np.transpose(components)
-
-def find_factors_as_components(_S):
-    global NUM_COMPONENTS
-    _S = _S[:, np.newaxis] if _S.ndim == 1 else _S
-    components = make_factors(_S)
     components[np.where(np.isfinite(components)==False)] = 0
     return np.transpose(components)
