@@ -23,6 +23,16 @@ def scan_directory(path, short_files=False):
         else: raise Exception("Unknown file type detected.")
     return fil_names, dir_names, list(np.unique(file_exts))
 
+def get_full_file_name(path, short_name: str) -> str:
+    dir_scan = os.scandir(path)
+    for entry in dir_scan:
+        if entry.is_file():
+            if entry.name.startswith('.'):
+                continue
+            if os.path.splitext(entry.name)[0].lower() == short_name:
+                return entry.name
+    return ''
+
 def check_dir_type(path, filetype=None, alltype=False):
     fs, ds, exts = scan_directory(path)
     if filetype == '': filetype = None
