@@ -134,13 +134,13 @@ class RobotMonitor2D(RobotMonitor):
     '''
     Robot Monitor using a single SVM with two factors
     '''
-    def __init__(self, vpr: RobotVPR, _factors_in=None, _sample_weight=None):
+    def __init__(self, rvpr: RobotVPR, _factors_in=None, _sample_weight=None):
         
         if _factors_in is None:
             _factors_in = ["grad", "va"]
         _factors_in = list(np.sort(_factors_in)) # alphabetize order
         assert len(np.unique(_factors_in)) == 2, "If _factors_in is specified (not None), user must provide two unique factors."
-        _factors_calc = find_factors(factors_in=_factors_in, _S=vpr.S, rXY=vpr.ref.xy, mInd=vpr.best_match, 
+        _factors_calc = find_factors(factors_in=_factors_in, _S=rvpr.S, rXY=rvpr.ref.xy, mInd=rvpr.best_match, 
                                         cutoff=2, init_pos=([0,0]), _all=False, dists=None, norm=False, # use defaults for these
                                         return_as_dict=True) # to make assignment safer
         self.factor1        = _factors_calc[_factors_in[0]]
@@ -149,22 +149,22 @@ class RobotMonitor2D(RobotMonitor):
 
         self.Xcal           = np.c_[self.factor1,self.factor2]
         self.scaler         = StandardScaler()
-        self.Xcal_scaled    = self.scaler.fit_transform(self.Xcal, vpr.y)
+        self.Xcal_scaled    = self.scaler.fit_transform(self.Xcal, rvpr.y)
 
         self.model = svm.SVC(kernel='rbf',
                              C=1,gamma='scale',
                              class_weight='balanced',
                              probability=True)
 
-        self.model.fit(X=self.Xcal_scaled, y=vpr.y, sample_weight=_sample_weight)
+        self.model.fit(X=self.Xcal_scaled, y=rvpr.y, sample_weight=_sample_weight)
 
         # Save the training inputs in case they are needed later:
-        self.training_y=vpr.y
-        self.training_tolerance=vpr.tolerance
-        self.training_S=vpr.S
-        self.vpr = vpr
+        self.training_y=rvpr.y
+        self.training_tolerance=rvpr.tolerance
+        self.training_S=rvpr.S
+        self.rvpr = rvpr
 
-        self.performance    = self.assess_prediction(vpr)
+        self.performance    = self.assess_prediction(rvpr)
     
     def set_factor_names(self, factor1: str, factor2: str) -> None:
         '''
