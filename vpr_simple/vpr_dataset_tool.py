@@ -7,14 +7,11 @@ import copy
 import logging
 import os
 import gc
-try:
-    import rospkg
-    ROSPKG_ROOT = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__)))
-except:
-    logging.warn('Could not access rospkg; ensure you specify root if using this tool. This is typically due to a missing or incorrect ROS installation.')
 import datetime
 from pathlib import Path
-from ..core.enum_tools import enum_name, enum_get
+from ..vpr_simple import config
+ROSPKG_ROOT = config.prep_rospkg_root()
+from ..core.enum_tools import enum_get
 try:
     from ..core.ros_tools import process_bag
 except:

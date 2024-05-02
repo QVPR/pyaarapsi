@@ -16,3 +16,4 @@ src/CMakeLists.txt
 *.pth.tar
 *.egg-info
 .ipynb_checkpoints
+vpr_simple/config.json

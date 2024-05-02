@@ -8,7 +8,8 @@ import piexif
 import json
 import datetime
 import cv2
-import rospkg
+from ..vpr_simple import config
+ROSPKG_ROOT = config.prep_rospkg_root()
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -40,7 +41,7 @@ class SVMModelProcessor:
         self.printer        = printer
 
         if root is None:
-            self.root       = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__)))
+            self.root       = ROSPKG_ROOT
         else:
             self.root       = root
 
