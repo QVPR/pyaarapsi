@@ -7,6 +7,7 @@ import numpy as np
 import cv2
 from tqdm import tqdm
 import math
+from scipy.spatial.distance import cdist
 
 def loadImg(imPath,reso=None):
     im = cv2.imread(imPath)[:,:,::-1] #is this to transfer from RGB to BGR ??? 
