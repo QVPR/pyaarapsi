@@ -4,7 +4,7 @@ import os
 import subprocess
 import os
 from . import downloads
-MODELS_DIR = downloads.__path__._path[0]
+MODELS_DIR = downloads.__path__._path[0] + '/'
 from ..core.helper_tools import ask_yesnoexit
 
 def download_file(id, file_name):

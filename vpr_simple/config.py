@@ -45,7 +45,7 @@ def get_data_path():
         print("\tTo generate a config file, execute:")
         print("\t>>> from pyaarapsi.vpr_simple import config")
         print("\t>>> from pathlib import Path")
-        print("\t>>> config.make_config(data_path=Path('/path/to/data/directory'))")
+        print("\t>>> config.make_config(data_path=Path('/path/to/data/directory/'))")
     return None
 
 def prep_rospkg_root():
@@ -54,7 +54,7 @@ def prep_rospkg_root():
         logging.warn("pyaarapsi config file missing. Attempting to build using ROS...")
         try:
             import rospkg
-            _path = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__)))
+            _path = rospkg.RosPack().get_path(rospkg.get_package_name(os.path.abspath(__file__))) + '/'
             make_config(data_path=Path(_path))
             rospkg_root = get_data_path()
         except:
