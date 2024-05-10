@@ -196,6 +196,8 @@ def find_precision_atR(P,R,desired_recall,verbose=False):
     R_idx=np.where(x == x.min())[0].max()
     if verbose==True:
         print('at {0:3.1f}% Recall, Precision = {1:3.1f}%'.format(R[R_idx]*100,P[R_idx]*100))
+    if abs(R[R_idx] - desired_recall) > 0.01:
+        print('debug WARNING find_recall_atP: precision value is > 0.01 from desired P (%s,%s)' % (str(desired_recall), str(R[R_idx])))
     return P[R_idx],R[R_idx],R_idx
     
 def find_recall_atP(P,R,desired_precision,verbose=False):
@@ -211,5 +213,5 @@ def find_recall_atP(P,R,desired_precision,verbose=False):
         print('at {0:3.1f}% Precision, Recall = {1:3.1f}%'.format(P[P_idx]*100,R[P_idx]*100))
     #check:
     if abs(P[P_idx] - desired_precision) > 0.01:
-        print('debug WARNING find_recall_atP: precision value is > 0.01 from desired P')
+        print('debug WARNING find_recall_atP: precision value is > 0.01 from desired P (%s,%s)' % (str(desired_precision), str(P[P_idx])))
     return P[P_idx],R[P_idx],P_idx
