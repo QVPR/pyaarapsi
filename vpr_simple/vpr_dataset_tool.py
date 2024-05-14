@@ -403,22 +403,22 @@ class VPRProcessorBase:
             fttypes = fttype_in
         if not all([isinstance(fttype, FeatureType) for fttype in fttypes]):
             raise Exception("[getFeat] fttype_in provided contains elements that are not of type FeatureType")
-        if any([fttype == FeatureType.HYBRIDNET for fttype in fttypes]):
+        if any([fttype.name == FeatureType.HYBRIDNET.name for fttype in fttypes]):
             if self.init_hybridnet:
                 self.check_hybridnet(fttypes)
             else:
                 raise Exception("[getFeat] FeatureType.HYBRIDNET provided but VPRDatasetProcessor not initialised with init_hybridnet=True")
-        if any([fttype == FeatureType.NETVLAD for fttype in fttypes]):
+        if any([fttype.name == FeatureType.NETVLAD.name for fttype in fttypes]):
             if self.init_netvlad:
                 self.check_netvlad(fttypes)
             else:
                 raise Exception("[getFeat] FeatureType.NETVLAD provided but VPRDatasetProcessor not initialised with init_netvlad=True")
-        if any([fttype == FeatureType.SALAD for fttype in fttypes]):
+        if any([fttype.name == FeatureType.SALAD.name for fttype in fttypes]):
             if self.init_salad:
                 self.check_salad(fttypes)
             else:
                 raise Exception("[getFeat] FeatureType.SALAD provided but VPRDatasetProcessor not initialised with init_salad=True")
-        if any([fttype == FeatureType.APGEM for fttype in fttypes]):
+        if any([fttype.name == FeatureType.APGEM.name for fttype in fttypes]):
             if self.init_apgem:
                 self.check_apgem(fttypes)
             else:
@@ -536,7 +536,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
         rosbag_dict         = process_bag(self.root +  '/' + bag_dbp + '/' + bag_name, sample_rate, odom_topic, img_topics, printer=self.print, use_tqdm=self.use_tqdm)
         gc.collect()
         self.print('[generate_dataset] Performing feature extraction...')
-        
+
         feat_vect_dict_raw  = {ft_type: np.stack([self.getFeat(list(rosbag_dict[i]), # Extract features ...
                                                     enum_get(ft_type, FeatureType), # convert string to enum
                                                     img_dims, use_tqdm=self.use_tqdm)
