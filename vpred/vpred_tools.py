@@ -207,8 +207,11 @@ def find_recall_atP(P,R,desired_precision,verbose=False):
     R is a vector of corresponding recall values
     '''
     x=np.array(abs(P - desired_precision))
-    xmin=x[~np.isnan(x)].min() # do this to remove any NaN values for precision
-    P_idx=np.where(x == xmin)[0].max()
+    try:
+        xmin=x[~np.isnan(x)].min() # do this to remove any NaN values for precision
+        P_idx=np.where(x == xmin)[0].max()
+    except ValueError:
+        P_idx = 0
     if verbose==True:
         print('at {0:3.1f}% Precision, Recall = {1:3.1f}%'.format(P[P_idx]*100,R[P_idx]*100))
     #check:
