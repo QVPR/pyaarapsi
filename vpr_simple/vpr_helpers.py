@@ -133,8 +133,9 @@ def filter_dataset(dataset_in, _filters: Optional[dict] = None, _printer=lambda 
             num_holes   = _filters['perforate']['num_holes']    if 'num_holes'      in _filters['perforate']    else None
             hole_damage = _filters['perforate']['hole_damage']  if 'hole_damage'    in _filters['perforate']    else None
             offset      = _filters['perforate']['offset']       if 'offset'         in _filters['perforate']    else None
+            _override   = _filters['perforate']['_override']    if '_override'      in _filters['perforate']    else 0
             filt_indices = perforate(_len=dataset_in['dataset']['time'].shape[0], randomness=randomness, \
-                                     num_holes=num_holes, hole_damage=hole_damage, offset=offset)
+                                     num_holes=num_holes, hole_damage=hole_damage, offset=offset, _override=_override)
             dataset_out             = {'params': dataset_in['params']}
             dataset_out['dataset']  = {key: dataset_in['dataset'][key][filt_indices] for key in dataset_in['dataset'].keys()}
             
