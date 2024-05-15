@@ -20,7 +20,7 @@ from sklearn import svm
 from sklearn.preprocessing import StandardScaler
 
 from ..core.file_system_tools   import scan_directory
-from ..core.ros_tools           import roslogger, LogType
+from ..core.roslogger           import roslogger, LogType
 from ..core.enum_tools          import enum_get
 from ..core.helper_tools        import formatException, m2m_dist
 from .vpr_dataset_tool          import VPRDatasetProcessor

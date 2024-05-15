@@ -4,13 +4,31 @@ import cv2
 from enum import Enum
 from tqdm.auto import tqdm
 import json
-from ..pathing.basic import calc_path_stats
 from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
 from ..vpr_classes.salad import SALAD_Container
 from ..vpr_classes.apgem import APGEM_Container
 from ..core.helper_tools import perforate, formatException
-from typing import Union, List, Optional
+from typing import Union, List, Optional, Tuple
+
+try:
+    from ..pathing.basic            import calc_path_stats
+except:
+    from numpy.typing import NDArray
+    def calc_path_stats(path_xyws: NDArray[np.float32]) -> Tuple[NDArray[np.float32], float]:
+        path_dists      = np.sqrt( \
+                                np.square(path_xyws[:,0] - np.roll(path_xyws[:,0], 1)) + \
+                                np.square(path_xyws[:,1] - np.roll(path_xyws[:,1], 1)) \
+                            )[1:]
+        
+        path_sum        = [0.0]
+        for i in path_dists:
+            path_sum.append(np.sum([path_sum[-1], i]))
+
+        path_len        = path_sum[-1]
+        path_sum        = np.array(path_sum)
+
+        return path_sum, path_len
 
 # For image processing type
 class FeatureType(Enum):
