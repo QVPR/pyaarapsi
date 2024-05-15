@@ -10,6 +10,7 @@ from enum import Enum
 import matplotlib
 from matplotlib.backend_bases import FigureCanvasBase
 import matplotlib.pyplot as plt
+import warnings
 from typing import Optional, Callable, TypeVar, Protocol
 from numpy.typing import NDArray
 from threading import Timer as threadingTimer
@@ -79,20 +80,28 @@ def perforate(  _len: int, \
                 num_holes: Optional[int] = 3, \
                 randomness: Optional[float] = 0.2, \
                 hole_damage: Optional[float] = 0.5, \
-                offset: Optional[float] = 0.0) -> NDArray[np.uint16]:
+                offset: Optional[float] = 0.0,
+                _override: Optional[int] = 1) -> NDArray[np.uint16]:
     '''
     Generate perforated indices
     Generate indices from 0 up to _len, with randomness% removed and num_hole regions with hole_damage% cut out.
     '''
-    assert _len > 10 and _len < 65536, 'Length must be an integer in range uint16 greater than 10 (10 < _len < 65536).'
-    if num_holes is None: num_holes = 3
-    else: assert num_holes < int(_len / 4), 'Too many holes for given length (must be less than length / 4).'
-    if randomness is None: randomness = 0.2
-    else: assert randomness <= 0.5 and randomness >= 0, 'Random hole percentage should not exceed 0.5.'
-    if hole_damage is None: hole_damage = 0.5
-    else: assert hole_damage <= 0.5, 'Hole damage percentage should not exceed 0.5.'
-    if offset is None: offset = 0.0
-    else: assert abs(offset) <= 1.0, 'Offset percentage cannot exceed -1 or 1 (-100% to 100%)'
+    if _override: 
+        warnings.warn("[perforate] Override flag detected - no type checking will be performed. Use at own risk.");
+        if num_holes is None: num_holes = 3
+        if randomness is None: randomness = 0.2
+        if hole_damage is None: hole_damage = 0.5
+        if offset is None: offset = 0.0
+    else:
+        assert _len > 10 and _len < 65536, 'Length must be an integer in range uint16 greater than 10 (10 < _len < 65536).'
+        if num_holes is None: num_holes = 3
+        else: assert num_holes < int(_len / 4), 'Too many holes for given length (must be less than length / 4).'
+        if randomness is None: randomness = 0.2
+        else: assert randomness <= 0.5 and randomness >= 0, 'Random hole percentage should not exceed 0.5.'
+        if hole_damage is None: hole_damage = 0.5
+        else: assert hole_damage <= 0.5, 'Hole damage percentage should not exceed 0.5.'
+        if offset is None: offset = 0.0
+        else: assert abs(offset) <= 1.0, 'Offset percentage cannot exceed -1 or 1 (-100% to 100%)'
 
     # mark random removal:
     out = np.arange(_len)
@@ -102,7 +111,7 @@ def perforate(  _len: int, \
 
     # mark holes:
     partition_length = int((_len / num_holes))
-    for i in range(num_holes):
+    for i in range(int(num_holes)):
         out[(i+1)*partition_length-1 : int((i+1)*(partition_length)-partition_length*hole_damage)-1 : -1] = -1
 
     # apply perforation:

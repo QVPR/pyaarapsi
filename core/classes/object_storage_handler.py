@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import os
 import datetime
+from zipfile import BadZipFile
 from enum import Enum
 from pathlib import Path
 from ...core.helper_tools import vis_dict, formatException
@@ -143,8 +144,8 @@ class Object_Storage_Handler():
         Returns:
             Object_Storage_Handler type; self
         '''
-        self.stored_object.pop("object")
-        self.stored_object.pop("params")
+        if "object" in self.stored_object: self.stored_object.pop("object")
+        if "params" in self.stored_object: self.stored_object.pop("params")
         self.stored_object["object"] = None
         self.stored_object["params"] = {}
         self.loaded = False
@@ -160,18 +161,24 @@ class Object_Storage_Handler():
         Returns:
             Object_Storage_Handler type; self
         '''
-        if saver in [Saver.TORCH, Saver.TORCH_COMPRESS]:
-            compress = saver == Saver.TORCH_COMPRESS
+        if isinstance(saver, Enum):
+            _saver = saver.name
+        elif isinstance(saver, str):
+            _saver = saver
+        else: raise Exception()
+
+        if _saver in [Saver.TORCH.name, Saver.TORCH_COMPRESS.name]:
+            compress = _saver == Saver.TORCH_COMPRESS.name
             self.saver  = lambda file_name: self._torch_save(file_name=file_name, compress=compress)
             self.loader = self._torch_load
             self.suffix = ".pt"
-        elif saver in [Saver.NUMPY, Saver.NUMPY_COMPRESS]:
-            compress = saver == Saver.NUMPY_COMPRESS
+        elif _saver in [Saver.NUMPY.name, Saver.NUMPY_COMPRESS.name]:
+            compress = _saver == Saver.NUMPY_COMPRESS.name
             self.saver  = lambda file_name: self._numpy_save(file_name=file_name, compress=compress)
             self.loader = self._numpy_load
             self.suffix = ".npz"
         else:
-            raise UnknownSaverError("Saver unknown (%s)." % str(saver))
+            raise UnknownSaverError("Saver unknown (%s)." % str(_saver))
         return self
 
     def save(self, overwrite: bool = False) -> Object_Storage_Handler:
@@ -221,7 +228,7 @@ class Object_Storage_Handler():
                 try:
                     self.loader(file_name=name)
                     return name
-                except FileNotFoundError:
+                except (FileNotFoundError, BadZipFile) as e:
                     if self.verbose: print(formatException())
                     self._fix(stored_object_base_name=name)
         return ''
