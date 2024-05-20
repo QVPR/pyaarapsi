@@ -6,18 +6,20 @@ import numpy as np
 import copy
 import logging
 import os
+from contextlib import suppress
 import gc
 import datetime
 from pathlib import Path
 from ..vpr_simple import config
 ROSPKG_ROOT = config.prep_rospkg_root()
 from ..core.enum_tools import enum_get
+from ..core.helper_tools import formatException, vis_dict
 try:
     from ..core.ros_tools import process_bag
 except:
-    logging.warn('Could not access ros_tools; generating features from rosbags will fail. This is typically due to a missing or incorrect ROS installation.')
+    raise Exception()
+    logging.warn('Could not access ros_tools; generating features from rosbags will fail. This is typically due to a missing or incorrect ROS installation. \nError code: \n%s' % formatException())
 from ..core.roslogger import LogType, roslogger
-from ..core.helper_tools import formatException, vis_dict
 from ..core.file_system_tools import scan_directory
 from .vpr_helpers import *
 from ..vpr_classes.netvlad import NetVLAD_Container
@@ -401,8 +403,6 @@ class VPRProcessorBase:
             fttypes = [fttype_in]
         else:
             fttypes = fttype_in
-        if not all([isinstance(fttype, FeatureType) for fttype in fttypes]):
-            raise Exception("[getFeat] fttype_in provided contains elements that are not of type FeatureType")
         if any([fttype.name == FeatureType.HYBRIDNET.name for fttype in fttypes]):
             if self.init_hybridnet:
                 self.check_hybridnet(fttypes)
@@ -502,7 +502,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
 
     def generate_dataset(self, npz_dbp: str, bag_dbp: str, bag_name: str, sample_rate: float, 
                          odom_topic: str, img_topics: list, img_dims: list, ft_types: list, 
-                         filters: str = '{}', store: bool = True) -> dict:
+                         filters: Union[str, dict] = {}, store: bool = True) -> dict:
         '''
         Generate new datasets from parameters
         Inputs are specified such that, other than store, a correct dataset parameters dictionary can be dereferenced to autofill inputs
@@ -533,7 +533,8 @@ class VPRDatasetProcessor(VPRProcessorBase):
             self.bag_dbp        = bag_dbp
 
         # generate:
-        rosbag_dict         = process_bag(self.root +  '/' + bag_dbp + '/' + bag_name, sample_rate, odom_topic, img_topics, printer=self.print, use_tqdm=self.use_tqdm)
+        rosbag_dict         = process_bag(self.root +  '/' + bag_dbp + '/' + bag_name, sample_rate, odom_topic, img_topics, 
+                                          printer=self.print, use_tqdm=self.use_tqdm)
         gc.collect()
         self.print('[generate_dataset] Performing feature extraction...')
 
@@ -574,7 +575,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
 
         return dataset
 
-    def save_dataset(self, name: Optional[str] = None) -> VPRDatasetProcessor:
+    def save_dataset(self, name: Optional[str] = None, allow_overwrite: bool = False) -> VPRDatasetProcessor:
         '''
         Save loaded dataset to file system
 
@@ -592,11 +593,15 @@ class VPRDatasetProcessor(VPRProcessorBase):
         
         # Ensure file name is of correct format, generate if not provided
         file_list, _, _, = scan_directory(dir, short_files=True)
+        overwriting = False
         if (not name is None):
             if not (name.startswith('dataset')):
                 name = "dataset_" + name
             if (name in file_list):
-                raise Exception("Dataset with name %s already exists in directory." % name)
+                if (not allow_overwrite):
+                    raise Exception("Dataset with name %s already exists in directory." % name)
+                else:
+                    overwriting = True
         else:
             name = datetime.datetime.today().strftime("dataset_%Y%m%d")
 
@@ -604,10 +609,11 @@ class VPRDatasetProcessor(VPRProcessorBase):
         for ft_type in self.dataset['params']['ft_types']:
             # Generate unique name:
             file_name = name
-            count = 0
-            while file_name in file_list:
-                file_name = name + "_%d" % count
-                count += 1
+            if not overwriting:
+                count = 0
+                while file_name in file_list:
+                    file_name = name + "_%d" % count
+                    count += 1
             file_list       = file_list + [file_name]
             full_file_path  = dir + "/" + file_name
             full_param_path = dir + "/params/" + file_name
@@ -617,14 +623,21 @@ class VPRDatasetProcessor(VPRProcessorBase):
             sub_params['ft_types']  = [ft_type]
             sub_dataset             = dict(params=sub_params, dataset=sub_data)
 
-            file_ = self._check(params=sub_params)
-            if file_:
-                self.print("[save_dataset] File exists with identical parameters (%s); skipping save." % file_, LogType.DEBUG)
-                continue
+            if not overwriting:
+                file_ = self._check(params=sub_params)
+                if file_:
+                    self.print("[save_dataset] File exists with identical parameters (%s); skipping save." % file_, LogType.DEBUG)
+                    continue
             
+            if overwriting:
+                with suppress(FileNotFoundError): os.remove(full_file_path)
+                with suppress(FileNotFoundError): os.remove(full_param_path)
             np.savez(full_file_path, **sub_dataset)
             np.savez(full_param_path, params=sub_dataset['params']) # save whole dictionary to preserve key object types
-            self.print("[save_dataset] Save complete.\n\t  file: %s\n\tparams: %s." % (full_file_path, full_param_path))
+            if overwriting:
+                self.print("[save_dataset] Overwrite complete.\n\t  file: %s\n\tparams: %s." % (full_file_path, full_param_path))
+            else:
+                self.print("[save_dataset] Save complete.\n\t  file: %s\n\tparams: %s." % (full_file_path, full_param_path))
             del sub_dataset
         return self
 
