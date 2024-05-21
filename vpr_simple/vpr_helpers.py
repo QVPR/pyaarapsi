@@ -8,7 +8,7 @@ from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
 from ..vpr_classes.salad import SALAD_Container
 from ..vpr_classes.apgem import APGEM_Container
-from ..core.helper_tools import perforate, formatException
+from ..core.helper_tools import perforate, formatException, m2m_dist
 from typing import Union, List, Optional, Tuple
 
 try:
@@ -42,27 +42,27 @@ class FeatureType(Enum):
     APGEM               = 8
 
 def getFeatureLength(feature_type: FeatureType, img_dims: list):
-    if feature_type in [FeatureType.SALAD]:
+    if feature_type.name in [FeatureType.SALAD.name]:
         return 8192
-    elif feature_type in [FeatureType.NETVLAD, FeatureType.APGEM, FeatureType.HYBRIDNET]:
+    elif feature_type.name in [FeatureType.NETVLAD.name, FeatureType.APGEM.name, FeatureType.HYBRIDNET.name]:
         return 4096
-    elif feature_type in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.NORM, FeatureType.ROLLNORM]:
+    elif feature_type.name in [FeatureType.RAW.name, FeatureType.PATCHNORM.name, FeatureType.NORM.name, FeatureType.ROLLNORM.name]:
         return img_dims[0] * img_dims[1]
     else:
         raise Exception("Unknown feature type (%s)." % str(feature_type))
     
 def overridesImgDims(feature_type: FeatureType):
-    if feature_type in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.ROLLNORM, FeatureType.NORM]:
+    if feature_type.name in [FeatureType.RAW.name, FeatureType.PATCHNORM.name, FeatureType.ROLLNORM.name, FeatureType.NORM.name]:
         return True
-    elif feature_type in [FeatureType.NETVLAD, FeatureType.HYBRIDNET, FeatureType.SALAD, FeatureType.APGEM]:
+    elif feature_type.name in [FeatureType.NETVLAD.name, FeatureType.HYBRIDNET.name, FeatureType.SALAD.name, FeatureType.APGEM.name]:
         return False
     else:
         raise Exception("Unknown feature type (%s)." % str(feature_type))
     
 def isFeatureSpatiallyRelated(feature_type: FeatureType):
-    if feature_type in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.ROLLNORM, FeatureType.NORM, FeatureType.HYBRIDNET]:
+    if feature_type.name in [FeatureType.RAW.name, FeatureType.PATCHNORM.name, FeatureType.ROLLNORM.name, FeatureType.NORM.name, FeatureType.HYBRIDNET.name]:
         return True
-    elif feature_type in [FeatureType.NETVLAD, FeatureType.SALAD, FeatureType.APGEM]:
+    elif feature_type.name in [FeatureType.NETVLAD.name, FeatureType.SALAD.name, FeatureType.APGEM.name]:
         return False
     else:
         raise Exception("Unknown feature type (%s)." % str(feature_type))
@@ -98,7 +98,7 @@ def make_dataset_dictionary(bag_name: str,
                             sample_rate: Union[int, float] = 5.0, 
                             ft_types: List[str] = [FeatureType.RAW.name], 
                             img_dims: List[int] = [64,64], 
-                            filters: str = ''):
+                            filters: Union[str, dict] = {}):
 
     '''
     Function to help remember the contents of a VPRDatasetProcessor dataset_params dictionary
@@ -116,26 +116,30 @@ def make_svm_dictionary(ref: dict, qry: dict, factors: List[str], tol_thres: flo
 
 def filter_dataset(dataset_in, _filters: Optional[dict] = None, _printer=lambda *args, **kwargs: None):
     if _filters is None:
-        _filt_str = str(dataset_in['params']['filters']).replace("'", '"')
-        try:
-            if not _filt_str:
-                return dataset_in
-            _filters = json.loads(_filt_str)
-            if not _filters:
-                return dataset_in
-            _printer('[filter_dataset] Filters: %s' % str(_filters))
-        except:
-            raise Exception('[filter_dataset] Failed to load filter parameters, string: <%s>. Code: %s' % (_filt_str, formatException()))
-
+        if isinstance(dataset_in['params']['filters'], dict):
+            _filters = copy.deepcopy(dataset_in['params']['filters'])
+        elif isinstance(dataset_in['params']['filters'], str):
+            _filt_str = str(dataset_in['params']['filters']).replace("'", '"')
+            try:
+                if not _filt_str:
+                    return dataset_in
+                _filters = json.loads(_filt_str)
+                if not _filters:
+                    return dataset_in
+                _printer('[filter_dataset] Filters: %s' % str(_filters))
+            except:
+                raise Exception('[filter_dataset] Failed to load filter parameters, string: <%s>. Code: %s' % (_filt_str, formatException()))
+        else:
+            raise Exception("[filter_dataset] Failed to load filter parameters. Got type %s, expected type <class 'str'> or <class 'dict'>." % (str(type(_filters))))
     try:
         if 'distance' in _filters.keys():
             _printer('[filter_dataset] Filtering by distance: %s' % str(_filters['distance']))
             distance_threshold      = _filters['distance']
             try:
-                xy                  = np.transpose(np.stack([dataset_in['dataset']['px'][:,0], dataset_in['dataset']['py'][:,0]]))
+                xy = np.stack([dataset_in['dataset']['px'][:,0], dataset_in['dataset']['py'][:,0]], axis=1)
                 _printer('[filter_dataset] Using first column of px, py for xy array to perform distance filtering.')
             except IndexError:
-                xy                  = np.transpose(np.stack([dataset_in['dataset']['px'], dataset_in['dataset']['py']]))
+                xy = np.stack([dataset_in['dataset']['px'], dataset_in['dataset']['py']], axis=1)
             if not ((xy.shape[1] == 2) and (xy.shape[0] > 1)):
                 raise Exception('Could not build xy array with two columns with more than one entry in each; please check odometry.')
             xy_sum, xy_len          = calc_path_stats(xy)
@@ -171,6 +175,35 @@ def filter_dataset(dataset_in, _filters: Optional[dict] = None, _printer=lambda 
             else:
                 dataset_out             = dataset_in    
             _filters.pop('forward-only')
+            return filter_dataset(dataset_out, _filters=_filters)
+        elif 'crop-loop' in _filters.keys():
+            if _filters['crop-loop']:
+                try:
+                    xy = np.stack([dataset_in['dataset']['px'][:,0], dataset_in['dataset']['py'][:,0]], axis=1)
+                    _printer('[filter_dataset] Using first column of px, py for xy array to perform distance filtering.')
+                except IndexError:
+                    xy = np.stack([dataset_in['dataset']['px'], dataset_in['dataset']['py']], axis=1)
+                xy_start = copy.deepcopy(xy[0:1,:])
+                xy[0:int(xy.shape[0] / 2),:] = 1000
+                overlap_ind = np.argmin(m2m_dist(xy_start, xy))
+                dataset_out             = {'params': dataset_in['params']}
+                dataset_out['dataset']  = {key: dataset_in['dataset'][key][:overlap_ind] for key in dataset_in['dataset'].keys()}
+            else:
+                dataset_out = dataset_in
+            _filters.pop('crop-loop')
+            return filter_dataset(dataset_out, _filters=_filters)
+        elif 'crop-bounds' in _filters.keys():
+            dataset_out             = {'params': dataset_in['params']}
+            dataset_out['dataset']  = {key: dataset_in['dataset'][key][slice(*_filters['crop-bounds'])] for key in dataset_in['dataset'].keys()}
+            _filters.pop('crop-bounds')
+            return filter_dataset(dataset_out, _filters=_filters)
+        elif 'delete-segments' in _filters.keys():
+            dataset_out             = {'params': dataset_in['params']}
+            _preserved              = np.ones(len(dataset_in['dataset']['px']), dtype=bool)
+            for _start, _end in _filters['delete-segments']:
+                _preserved[_start:_end] = False
+            dataset_out['dataset']  = {key: dataset_in['dataset'][key][_preserved] for key in dataset_in['dataset'].keys()}
+            _filters.pop('delete-segments')
             return filter_dataset(dataset_out, _filters=_filters)
         else:
             return dataset_in
@@ -288,7 +321,7 @@ def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType,
     else:
         _fttypes = fttypes
     for fttype in _fttypes:
-        if fttype in [FeatureType.RAW, FeatureType.PATCHNORM, FeatureType.ROLLNORM, FeatureType.NORM]:
+        if fttype.name in [FeatureType.RAW.name, FeatureType.PATCHNORM.name, FeatureType.ROLLNORM.name, FeatureType.NORM.name]:
             ft_ready_list = []
             if use_tqdm: 
                 iter_obj = tqdm(_im)
@@ -297,24 +330,24 @@ def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType,
             for i in iter_obj:
                 imr = cv2.resize(i, dims)
                 ft  = cv2.cvtColor(imr, cv2.COLOR_RGB2GRAY)
-                if fttype == FeatureType.PATCHNORM:
+                if fttype.name == FeatureType.PATCHNORM.name:
                     ft = patchNormaliseImage(ft, 8)
-                elif fttype == FeatureType.ROLLNORM:
+                elif fttype.name == FeatureType.ROLLNORM.name:
                     ft = rollNormaliseImage(ft, 2)
-                elif fttype == FeatureType.NORM:
+                elif fttype.name == FeatureType.NORM.name:
                     ft = normaliseImage(ft)
                 ft_ready_list.append(ft.flatten())
             if len(ft_ready_list) == 1:
                 ft_ready = ft_ready_list[0]
             else:
                 ft_ready = np.stack(ft_ready_list)
-        elif fttype == FeatureType.HYBRIDNET and not nn_hybrid is None:
+        elif fttype.name == FeatureType.HYBRIDNET.name and not nn_hybrid is None:
             ft_ready = nn_hybrid.getFeat(_im, use_tqdm=use_tqdm)
-        elif fttype == FeatureType.NETVLAD and not nn_netvlad is None:
+        elif fttype.name == FeatureType.NETVLAD.name and not nn_netvlad is None:
             ft_ready = nn_netvlad.getFeat(_im, use_tqdm=use_tqdm)
-        elif fttype == FeatureType.SALAD and not nn_salad is None:
+        elif fttype.name == FeatureType.SALAD.name and not nn_salad is None:
             ft_ready = nn_salad.getFeat(_im, use_tqdm=use_tqdm)
-        elif fttype == FeatureType.APGEM and not nn_apgem is None:
+        elif fttype.name == FeatureType.APGEM.name and not nn_apgem is None:
             ft_ready = nn_apgem.getFeat(_im, use_tqdm=use_tqdm)
         else:
             raise Exception("[getFeat] fttype could not be handled.")
