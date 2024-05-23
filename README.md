@@ -18,7 +18,7 @@ One of:
 >>> pip install -e .[complete-versioned] # Same as [basic-versioned,ros-versioned] (Recommended)
 ```
 
-We've got:
+# Contents
 ## core
 - ajax_tools.py: Create and manage AJAX servers, requests for use with python ```Bokeh``` or inter-node data sharing.
 - argparse_tools.py: Methods to parse a variety of data types, for use with python ```argparse``` module.
