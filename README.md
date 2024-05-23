@@ -3,6 +3,21 @@ Multi-purpose python package, for a variety of needs across the AARAPSI Project
 
 Sister ROS Package: https://github.com/QVPR/aarapsi_robot_pack
 
+# Installation steps:
+Grab the repo:
+```
+git clone https://github.com/QVPR/pyaarapsi.git
+```
+One of:
+```
+>>> pip install -e .[basic] # Only standard python dependencies
+>>> pip install -e .[basic,ros] # Standard and ROS python dependencies
+>>> pip install -e .[basic-versioned] # Only standard python dependencies with developer's flavour of package versions
+>>> pip install -e .[basic-versioned,ros-versioned] # Standard and ROS python dependencies with developer's flavour of package versions
+>>> pip install -e .[complete] # Same as [basic,ros]
+>>> pip install -e .[complete-versioned] # Same as [basic-versioned,ros-versioned] (Recommended)
+```
+
 We've got:
 ## core
 - ajax_tools.py: Create and manage AJAX servers, requests for use with python ```Bokeh``` or inter-node data sharing.
