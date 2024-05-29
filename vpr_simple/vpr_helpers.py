@@ -114,6 +114,45 @@ def make_svm_dictionary(ref: dict, qry: dict, factors: List[str], tol_thres: flo
     svm_svm_dict    = dict(factors=factors, tol_thres=tol_thres, tol_mode=tol_mode)
     return            dict(ref=ref, qry=qry, svm=svm_svm_dict, npz_dbp=ref['npz_dbp'], bag_dbp=ref['bag_dbp'], svm_dbp=svm_dbp)
 
+def correct_filters(_filters: Union[dict, str]) -> Tuple[dict, bool]:
+    _filters_out = copy.deepcopy(_filters)
+    fixed = False
+    if isinstance(_filters_out, str):
+        if not len(_filters_out): 
+            return {}, True
+        else:
+            _filters_out = json.loads(_filters_out.replace("'", '"'))
+        fixed = True
+    if 'distance' in _filters_out:
+        if _filters_out['distance'] == 0: 
+            _filters_out.pop('distance')
+            fixed = True
+    if 'perforate' in _filters_out:
+        randomness  = _filters_out['perforate']['randomness']  if 'randomness'  in _filters_out['perforate'] else 0
+        num_holes   = _filters_out['perforate']['num_holes']   if 'num_holes'   in _filters_out['perforate'] else 0
+        hole_damage = _filters_out['perforate']['hole_damage'] if 'hole_damage' in _filters_out['perforate'] else 0
+        if (randomness == 0) and ((num_holes == 0) or (hole_damage == 0)): 
+            _filters_out.pop('perforate')
+            fixed = True
+    if 'forward-only' in _filters_out:
+        if not _filters_out['forward-only']: 
+            _filters_out.pop('forward-only')
+            fixed = True
+    if 'crop-loop' in _filters_out:
+        if not _filters_out['crop-loop']: 
+            _filters_out.pop('crop-loop')
+            fixed = True
+    if 'crop-bounds' in _filters_out:
+        if all(i is None for i in _filters_out['crop-bounds']): 
+            _filters_out.pop('crop-bounds')
+            fixed = True
+        elif _filters_out['crop-bounds'][0] == 0: 
+            _filters_out.pop('crop-bounds')
+            fixed = True
+    if 'delete-segments' in _filters_out:
+        if not len(_filters_out['delete-segments']): _filters_out.pop('delete-segments')
+    return _filters_out, fixed
+
 def filter_dataset(dataset_in, _filters: Optional[dict] = None, _printer=lambda *args, **kwargs: None):
     if _filters is None:
         if isinstance(dataset_in['params']['filters'], dict):

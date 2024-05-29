@@ -20,13 +20,13 @@ except:
     logging.warn('Could not access ros_tools; generating features from rosbags will fail. This is typically due to a missing or incorrect ROS installation. \nError code: \n%s' % formatException())
 from ..core.roslogger import LogType, roslogger
 from ..core.file_system_tools import scan_directory
-from .vpr_helpers import *
+from .vpr_helpers import filter_dataset, FeatureType, correct_filters, make_dataset_dictionary, getFeat
 from ..vpr_classes.netvlad import NetVLAD_Container
 from ..vpr_classes.hybridnet import HybridNet_Container
 from ..vpr_classes.salad import SALAD_Container
 from ..vpr_classes.apgem import APGEM_Container
 
-from typing import Optional, Union, overload, Callable
+from typing import Optional, Union, overload, Callable, List
 
 class VPRProcessorBase:
     def __init__(self, cuda: bool = False, ros: bool = False, printer: Optional[Callable] = None,
@@ -430,7 +430,6 @@ class VPRProcessorBase:
         except Exception as e:
             raise Exception("[getFeat] Feature vector could not be constructed.\nCode: %s" % (e))
 
-
 class VPRDatasetProcessor(VPRProcessorBase):
     def __init__(self, dataset_params: Optional[dict] = None, try_gen: bool = True, 
                  init_netvlad: bool = False, init_hybridnet: bool = False, init_salad: bool = False,
@@ -750,34 +749,63 @@ class VPRDatasetProcessor(VPRProcessorBase):
             str type; loaded dataset dictionary file name if successful, 'NEW GENERATION' if a file is generated, else ''.
         '''
         self.dataset_params = copy.deepcopy(dataset_params)
-        self.npz_dbp = dataset_params['npz_dbp']
-        self.bag_dbp = dataset_params['bag_dbp']
+        orig_filters = copy.deepcopy(self.dataset_params['filters'])
+        self.dataset_params.pop('filters')
+        self.dataset_params['filters'], filters_corrected = correct_filters(orig_filters)
+        if filters_corrected: self.print('[load_dataset] Trivial filters provided, reduced from: <%s, %s> to: <%s, %s>' \
+                                         % (str(orig_filters), str(type(orig_filters)), \
+                                            str(self.dataset_params['filters']), str(type(self.dataset_params['filters']))), LogType.WARN)
+        self.npz_dbp = self.dataset_params['npz_dbp']
+        self.bag_dbp = self.dataset_params['bag_dbp']
 
         self.print("[load_dataset] Loading dataset.")
         datasets = self._get_datasets()
-        sub_params = copy.deepcopy(dataset_params)
-        sub_params['ft_types'] = [dataset_params['ft_types'][0]]
-        _name = ''
-        for name in datasets:
-            if datasets[name]['params'] == sub_params:
-                try:
-                    self._load(name)
-                    _name = name
-                    break
-                except:
-                    self._fix(name)
+        sub_params = copy.deepcopy(self.dataset_params)
+        sub_params['ft_types'] = [self.dataset_params['ft_types'][0]]
+        if (self.dataset_params['filters'] == {}):
+            print("FILTERING")
+            _name = self._filter_load_helper(datasets=datasets, sub_params=copy.deepcopy(sub_params), save=try_gen)
+        else:
+            print("NORMAL")
+            _name = self._normal_load_helper(datasets=datasets, sub_params=copy.deepcopy(sub_params))
         if not _name == '':
-            if len(dataset_params['ft_types']) > 1:
-                for ft_type in dataset_params['ft_types'][1:]:
+            if len(self.dataset_params['ft_types']) > 1:
+                for ft_type in self.dataset_params['ft_types'][1:]:
                     if not self.extend_dataset(ft_type, try_gen=try_gen, save=try_gen):
                         return ''
             return _name
         else: 
             if try_gen:
-                self.print('[load_dataset] Generating dataset with params: %s' % (str(dataset_params)), LogType.DEBUG)
-                self.generate_dataset(**dataset_params)
+                self.print('[load_dataset] Generating dataset with params: %s' % (str(self.dataset_params)), LogType.DEBUG)
+                self.generate_dataset(**self.dataset_params)
                 return 'NEW GENERATION'
             return ''
+        
+    def _filter_load_helper(self, datasets: dict, sub_params: dict, save: bool = True):
+        # Attempt to load, as-is:
+        name_from_filter_load = self._normal_load_helper(datasets=datasets, sub_params=sub_params)
+        if not (name_from_filter_load == ''): return name_from_filter_load
+        # Couldn't find a match: try to find an unfiltered version:
+        stored_filters = sub_params.pop('filters')
+        sub_params['filters'] = {}
+        name_from_filterless_load = self._normal_load_helper(datasets=datasets, sub_params=sub_params)
+        if (name_from_filterless_load == ''): return name_from_filterless_load
+        # Success - now apply filters:
+        self.dataset['filters'] = copy.deepcopy(stored_filters)
+        self.dataset = filter_dataset(self.dataset, _printer=lambda msg: self.print(msg, LogType.DEBUG))
+        if save:
+            self.save_dataset()
+        return 'NEW GENERATION'
+        
+    def _normal_load_helper(self, datasets: dict, sub_params: dict):
+        for name in datasets:
+            if datasets[name]['params'] == sub_params:
+                try:
+                    self._load(name)
+                    return name
+                except:
+                    self._fix(name)
+        return ''
     
     def swap(self, dataset_params: dict, generate: bool = False, allow_false: bool = True) -> bool:
         '''
