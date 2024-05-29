@@ -17,7 +17,6 @@ from ..core.helper_tools import formatException, vis_dict
 try:
     from ..core.ros_tools import process_bag
 except:
-    raise Exception()
     logging.warn('Could not access ros_tools; generating features from rosbags will fail. This is typically due to a missing or incorrect ROS installation. \nError code: \n%s' % formatException())
 from ..core.roslogger import LogType, roslogger
 from ..core.file_system_tools import scan_directory
