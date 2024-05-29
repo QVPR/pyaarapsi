@@ -763,10 +763,8 @@ class VPRDatasetProcessor(VPRProcessorBase):
         sub_params = copy.deepcopy(self.dataset_params)
         sub_params['ft_types'] = [self.dataset_params['ft_types'][0]]
         if (self.dataset_params['filters'] == {}):
-            print("FILTERING")
             _name = self._filter_load_helper(datasets=datasets, sub_params=copy.deepcopy(sub_params), save=try_gen)
         else:
-            print("NORMAL")
             _name = self._normal_load_helper(datasets=datasets, sub_params=copy.deepcopy(sub_params))
         if not _name == '':
             if len(self.dataset_params['ft_types']) > 1:
