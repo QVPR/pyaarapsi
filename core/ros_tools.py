@@ -8,6 +8,7 @@ import rosbag
 import logging
 import numpy as np
 import genpy
+import warnings
 from enum import Enum
 
 from tqdm.auto import tqdm
@@ -190,6 +191,8 @@ def rip_bag(bag_path: str, sample_rate: float, topics_in: List[str], timing: int
     Returns:
     List
     '''
+    # warnings.warn('Deprecated, please use scan_bag.')
+    
     topics         = [None] + topics_in
     data           = []
     logged_t       = -1
@@ -217,6 +220,59 @@ def rip_bag(bag_path: str, sample_rate: float, topics_in: List[str], timing: int
                     data.append(row)
                     row         = [None] * num_topics
                     num_rows    = num_rows + 1
+                
+    return data
+
+def scan_bag(bag_path: str, sample_rate: float, topics_in: List[str], timer_topic: Optional[str] = None, 
+             printer: Callable = print, use_tqdm: bool = True) -> list:
+    '''
+    Prototype
+
+    Open a ROS bag and store messages from particular topics, sampling at a specified rate.
+    If no messages are received, list is populated with NoneType (empties are also NoneType)
+    Data is appended by row containing the raw ROS messages
+    First column corresponds to sample_rate * len(data)
+    Returns data (type List)
+
+    Inputs:
+    - bag_path:     str type; Full file path for bag, i.e. /home/user/bag_file.bag
+    - sample_rate:  float type; Rate at which rosbag should be sampled
+    - topics_in:    List[str] type; List of strings for topics to extract, forms keys in returned data
+    - timer_topic:  str type (Optional); topic from topics_in to grab timestamps from
+    - printer:      Callable type (default: print); Method wrapper for printing
+    - use_tqdm:     bool type (default: True); Bool to enable/disable use of tqdm
+    Returns:
+    List
+    '''
+    warnings.warn('scan_bag is in development stage, use at own risk.')
+    
+    data           = {k: [] for k in topics_in + ['__counter', '__timestamp']}
+    logged_t       = -1
+    logged_c       = -1
+    dt             = 1/sample_rate
+
+    timer_topic    = topics_in[-1] if timer_topic is None else timer_topic
+
+    # Read rosbag
+    printer("Scanning through rosbag, processing topics: %s" % str(topics_in))
+
+    row = {k: None for k in topics_in + ['__counter', '__timestamp']}
+    with rosbag.Bag(bag_path, 'r') as ros_bag:
+        iter_obj = ros_bag.read_messages(topics=topics_in)
+        for (topic, msg, timestamp) in tqdm(iter_obj) if use_tqdm else iter_obj:
+            if logged_t == -1: logged_t = timestamp.stamp.to_sec()
+            row[topic] = msg
+            _timer = row[timer_topic]
+            if not isinstance(_timer, genpy.Message) or _timer is None:
+                continue
+            logged_c            = _timer.header.stamp.to_sec()
+            if timestamp.stamp.to_sec() - logged_t > dt:
+                logged_t         = timestamp.header.stamp.to_sec()
+                row['__timestamp'] = (logged_t + dt/2) - ((logged_t + dt/2) % dt) # round to nearest dt step
+                row['__counter']   = (logged_c + dt/2) - ((logged_c + dt/2) % dt)
+                for k, v in row.items():
+                    data[k].append(v)
+                row         = {k: None for k in topics_in + ['__counter', '__timestamp']} # reset row
                 
     return data
 
