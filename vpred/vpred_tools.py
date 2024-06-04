@@ -1,4 +1,10 @@
+#! /usr/bin/env python3
+'''
+VPR prediction tools
+'''
+from typing import Tuple
 import numpy as np
+from numpy.typing import NDArray
 import matplotlib.pyplot as plt
 from pyaarapsi.core.helper_tools import m2m_dist
 
@@ -93,7 +99,7 @@ def is_within_frame_tolerance(frame_error,tolerance): #frame error as np.array
 def is_within_position_error(position_error,tolerance): #position error as np.array
     return(position_error <= tolerance)
 
-def find_metrics(tp,fp,tn,fn,verbose):
+def find_metrics(tp,fp,tn,fn,verbose) -> Tuple[float, float, int, int, int, int]:
     num_tp=sum(tp)
     num_fp=sum(fp)
     num_tn=sum(tn)
@@ -103,15 +109,16 @@ def find_metrics(tp,fp,tn,fn,verbose):
     if verbose == True:
         print('TP={0}, TN={1}, FP={2}, FN={3}'.format(num_tp,num_tn,num_fp,num_fn))
         print('precision={0:3.1f}%  recall={1:3.1f}%\n'.format(precision*100,recall*100))
-    return [precision, recall, num_tp, num_fp, num_tn, num_fn]
+    return (precision, recall, num_tp, num_fp, num_tn, num_fn)
 
-def find_vpr_performance_metrics(match_found,in_tolerance,match_exists,verbose=False): #as np.array
+def find_vpr_performance_metrics(match_found,in_tolerance,match_exists,verbose=False
+                                 ) -> Tuple[float, float, int, int, int, int]:
 
     if ((not issubclass(match_found.dtype.type, np.bool_)) or 
          (not issubclass(in_tolerance.dtype.type, np.bool_)) or
           (not issubclass(match_exists.dtype.type, np.bool_))):
         print('ERROR find_vpr_performance_metrics: inputs must all be boolean arrays')
-        return []
+        return [0, 0, 0, 0, 0, 0]
 
     no_match_found = np.logical_not(match_found).astype('int')
     not_in_tolerance = np.logical_not(in_tolerance).astype('int')
@@ -151,14 +158,15 @@ def find_y(S,actual_match,tolerance_threshold): # Note this doesn't account for 
     in_tol = is_within_frame_tolerance(frame_error,tolerance_threshold)
     return in_tol
 
-def find_closedloop_performance_metrics(S,actual_match,tolerance,pred_intol):
+def find_closedloop_performance_metrics(S,actual_match,tolerance,pred_intol
+                        ) -> Tuple[NDArray, NDArray, NDArray, NDArray, NDArray, NDArray, NDArray]:
 
     actually_intol=find_y(S,actual_match,tolerance)
     match_exists = np.full_like(pred_intol,True)  # Assume that a match exist for each query -- need to rework if not!!
 
     match_distances=find_best_match_distances(S)
     d_sweep = np.linspace(match_distances.min(),match_distances.max(),2000) #2000 is number of points in p-r curve
-    
+
     p=np.full_like(d_sweep,np.nan)
     r=np.full_like(d_sweep,np.nan)
     tp=np.full_like(d_sweep,np.nan)
@@ -168,22 +176,31 @@ def find_closedloop_performance_metrics(S,actual_match,tolerance,pred_intol):
 
     for i, v in enumerate(d_sweep):
         match_found = apply_distance_threshold(match_distances, v) & pred_intol.astype('bool')
-        [p[i], r[i], tp[i], fp[i], tn[i], fn[i]] = find_vpr_performance_metrics(match_found,actually_intol,match_exists,verbose=False)
+        (p[i], r[i], tp[i], fp[i], tn[i], fn[i]) = \
+            find_vpr_performance_metrics(match_found,actually_intol,match_exists,verbose=False)
     return p,r,tp,fp,tn,fn,d_sweep
 
 def find_baseline_performance_metrics(S,actual_match,tolerance):
-    return find_closedloop_performance_metrics(S,actual_match,tolerance, np.full(len(actual_match),True))
+    '''
+    TODO
+    '''
+    return find_closedloop_performance_metrics(S,actual_match,tolerance, 
+                                               np.full(len(actual_match),True))
 
 def plot_baseline_vs_closedloop_PRcurves(S,actual_match,tolerance,y_pred):
-    p,r,tp,fp,tn,fn,d=find_baseline_performance_metrics(S,actual_match,tolerance)
-    plt.plot(r,p);
-    p,r,tp,fp,tn,fn,d=find_closedloop_performance_metrics(S,actual_match,tolerance,y_pred)
-    plt.plot(r,p); 
-    plt.xlim(0,1); plt.ylim(0,1);
-    plt.ylabel('Precision');
-    plt.xlabel('Recall');
-    plt.legend(['baseline','closed-loop']);
-    plt.title('Baseline vs Closed-Loop Performance');
+    '''
+    TODO
+    '''
+    p,r,_,_,_,_,_=find_baseline_performance_metrics(S,actual_match,tolerance)
+    plt.plot(r,p)
+    p,r,_,_,_,_,_=find_closedloop_performance_metrics(S,actual_match,tolerance,y_pred)
+    plt.plot(r,p)
+    plt.xlim(0,1)
+    plt.ylim(0,1)
+    plt.ylabel('Precision')
+    plt.xlabel('Recall')
+    plt.legend(['baseline','closed-loop'])
+    plt.title('Baseline vs Closed-Loop Performance')
     return
 
 def find_precision_atR(P,R,desired_recall,verbose=False):
@@ -199,7 +216,7 @@ def find_precision_atR(P,R,desired_recall,verbose=False):
     if abs(R[R_idx] - desired_recall) > 0.01:
         print('debug WARNING find_recall_atP: precision value is > 0.01 from desired P (%s,%s)' % (str(desired_recall), str(R[R_idx])))
     return P[R_idx],R[R_idx],R_idx
-    
+
 def find_recall_atP(P,R,desired_precision,verbose=False):
     ''' 
     Return the recall at a specific precision
@@ -216,5 +233,6 @@ def find_recall_atP(P,R,desired_precision,verbose=False):
         print('at {0:3.1f}% Precision, Recall = {1:3.1f}%'.format(P[P_idx]*100,R[P_idx]*100))
     #check:
     if abs(P[P_idx] - desired_precision) > 0.01:
-        print('debug WARNING find_recall_atP: precision value is > 0.01 from desired P (%s,%s)' % (str(desired_precision), str(P[P_idx])))
+        print('debug WARNING find_recall_atP: precision value is > 0.01 from desired P (%s,%s)' \
+              % (str(desired_precision), str(P[P_idx])))
     return P[P_idx],R[P_idx],P_idx

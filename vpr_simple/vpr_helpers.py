@@ -1,20 +1,22 @@
 import copy
-import numpy as np
-import cv2
 from enum import Enum
-from tqdm.auto import tqdm
 import json
-from ..vpr_classes.netvlad import NetVLAD_Container
-from ..vpr_classes.hybridnet import HybridNet_Container
-from ..vpr_classes.salad import SALAD_Container
-from ..vpr_classes.apgem import APGEM_Container
-from ..core.helper_tools import perforate, formatException, m2m_dist
 from typing import Union, List, Optional, Tuple
 
+from tqdm.auto import tqdm
+import numpy as np
+from numpy.typing import NDArray
+from cv2 import resize as cv_resize, cvtColor as cv_cvtColor, \
+    COLOR_RGB2GRAY as cv_COLOR_RGB2GRAY # pylint: disable=E0611
+
+from pyaarapsi.vpr_classes.netvlad import NetVLAD_Container
+from pyaarapsi.vpr_classes.hybridnet import HybridNet_Container
+from pyaarapsi.vpr_classes.salad import SALAD_Container
+from pyaarapsi.vpr_classes.apgem import APGEM_Container
+from pyaarapsi.core.helper_tools import perforate, formatException, m2m_dist
 try:
-    from ..pathing.basic            import calc_path_stats
+    from pyaarapsi.pathing.basic import calc_path_stats
 except:
-    from numpy.typing import NDArray
     def calc_path_stats(path_xyws: NDArray[np.float32]) -> Tuple[NDArray[np.float32], float]:
         path_dists      = np.sqrt( \
                                 np.square(path_xyws[:,0] - np.roll(path_xyws[:,0], 1)) + \
@@ -32,6 +34,9 @@ except:
 
 # For image processing type
 class FeatureType(Enum):
+    '''
+    VPR Descriptors
+    '''
     RAW                 = 1
     PATCHNORM           = 2
     NETVLAD             = 3
@@ -367,8 +372,8 @@ def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType,
             else: 
                 iter_obj = _im
             for i in iter_obj:
-                imr = cv2.resize(i, dims)
-                ft  = cv2.cvtColor(imr, cv2.COLOR_RGB2GRAY)
+                imr = cv_resize(i, dims)
+                ft  = cv_cvtColor(imr, cv_COLOR_RGB2GRAY)
                 if fttype.name == FeatureType.PATCHNORM.name:
                     ft = patchNormaliseImage(ft, 8)
                 elif fttype.name == FeatureType.ROLLNORM.name:
@@ -396,59 +401,53 @@ def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType,
     return ft_list
 
 def patchNormaliseImage(img, patchLength):
-# TODO: vectorize
 # take input image, divide into regions, normalise
 # returns: patch normalised image
-
+# TODO: vectorize
     img1 = img.astype(float)
     img2 = img1.copy()
-    
     if patchLength == 1: # single pixel; already p-n'd
         return img2
-
     for i in range(img1.shape[0]//patchLength): # floor division -> number of rows
         iStart = i*patchLength
         iEnd = (i+1)*patchLength
         for j in range(img1.shape[1]//patchLength): # floor division -> number of cols
             jStart = j*patchLength
             jEnd = (j+1)*patchLength
-
             mean1 = np.mean(img1[iStart:iEnd, jStart:jEnd])
             std1 = np.std(img1[iStart:iEnd, jStart:jEnd])
-
             img2[iStart:iEnd, jStart:jEnd] = img1[iStart:iEnd, jStart:jEnd] - mean1 # offset remove mean
             if std1 == 0:
                 std1 = 0.1
             img2[iStart:iEnd, jStart:jEnd] /= std1 # crush by std
-
-    return img2   
+    return img2
 
 def normaliseImage(img):
+    '''
+    Normalise whole image to be bounded between -1 and 1.
+    '''
     img1 = img.astype(float)
     img2 = img1.copy()
-
     _mean = np.mean(img2.flatten())
     _std  = np.std(img2.flatten())
     if _std == 0:
         _std = 0.1
-        
     return (img - _mean) / _std
 
 def rollNormaliseImage(img, kernel_size):
-# take input image and use a rolling kernel to noramlise
-# returns: rolling-kernel-normalised image
-# TODO: pad with average value of image to fix edge artefacts
-# TODO: reduce square artefacts by transitioning to circular average region
-
+    '''
+    take input image and use a rolling kernel to noramlise
+    returns: rolling-kernel-normalised image
+    TODO: pad with average value of image to fix edge artefacts
+    TODO: reduce square artefacts by transitioning to circular average region
+    '''
     img1            = img.astype(float)
     img2            = img1.copy()
-    
     if kernel_size == 1: # single pixel; already p-n'd
         return img2
-    
     k_options       = list(range(-kernel_size,kernel_size+1,1))
-    rolled_stack    = np.dstack([np.roll(np.roll(img2,i,0),j,1) for j in k_options for i in k_options])
+    rolled_stack    = np.dstack([np.roll(np.roll(img2,i,0),j,1)
+                                 for j in k_options for i in k_options])
     #rollnormed      = 255 - (np.mean(rolled_stack, 2) / np.std(rolled_stack, 2))
     rollnormed      = np.mean(rolled_stack, 2)
-
-    return rollnormed  
+    return rollnormed

@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-
-import numpy as np
+'''
+SVM Model Tool
+'''
 import os
 from pathlib import Path
-from PIL import Image
-import piexif
 import json
 import datetime
-import cv2
-from ..vpr_simple import config
-ROSPKG_ROOT = config.prep_rospkg_root()
+import warnings
+from typing import Optional, Union
+
+from cv2 import resize as cv_resize, INTER_AREA as cv_INTER_AREA #pylint: disable=E0611
+import numpy as np
+from PIL import Image
+import piexif
+
 import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 #from sklearnex import patch_sklearn # Package for speeding up sklearn (must be run on GPU; TODO)
@@ -19,17 +22,19 @@ import matplotlib.pyplot as plt
 from sklearn import svm
 from sklearn.preprocessing import StandardScaler
 
-from ..core.file_system_tools   import scan_directory
-from ..core.roslogger           import roslogger, LogType
-from ..core.enum_tools          import enum_get
-from ..core.helper_tools        import formatException, m2m_dist
-from .vpr_dataset_tool          import VPRDatasetProcessor
-from .vpr_helpers               import SVM_Tolerance_Mode, FeatureType
-from ..vpred.vpred_tools        import find_prediction_performance_metrics
-from ..vpred.vpred_factors      import find_factors
-from ..vpred.robotvpr           import RobotVPR, RobotRun
+from pyaarapsi.core.file_system_tools import scan_directory
+from pyaarapsi.core.roslogger import roslogger, LogType
+from pyaarapsi.core.enum_tools import enum_get
+from pyaarapsi.core.helper_tools import formatException, m2m_dist
+from pyaarapsi.vpr_simple.vpr_dataset_tool import VPRDatasetProcessor
+from pyaarapsi.vpr_simple.vpr_helpers import SVM_Tolerance_Mode, FeatureType
+from pyaarapsi.vpr_simple import config
+from pyaarapsi.vpred.vpred_tools import find_prediction_performance_metrics
+from pyaarapsi.vpred.vpred_factors import find_factors
+from pyaarapsi.vpred.robotvpr import RobotVPR, RobotRun
 
-from typing import Optional
+matplotlib.use('Agg')
+ROSPKG_ROOT = config.prep_rospkg_root()
 
 class SVMModelProcessor:
     def __init__(self, ros=False, root=None, load_field=False, printer=None, use_tqdm: bool = False, cuda: bool = False, 
@@ -199,13 +204,13 @@ class SVMModelProcessor:
             raise Exception('Model failed to load.')
         return False
     
-    def predict(self, dvc, mInd, rXY, init_pos=np.array([0,0])):
+    def predict(self, dvc, match_ind, rXY, init_pos=np.array([0,0])):
         if not self.model_ready:
             raise Exception("Model not loaded in system. Either call 'generate_model' or 'load_model' before using this method.")
         
         # Extract factors:
         _factors_out = find_factors(factors_in=self.svm_params['factors'], _S=dvc, 
-                                          rXY=rXY, mInd=mInd, init_pos=init_pos, return_as_dict=True)
+                                          rXY=rXY, match_ind=match_ind, init_pos=init_pos, return_as_dict=True)
 
         X = np.c_[[_factors_out[i] for i in self.svm_params['factors']]]
         if X.shape[1] == 1:
@@ -231,40 +236,55 @@ class SVMModelProcessor:
 
         return self.predict_from_datasets(ref=ref_dict, qry=qry_dict, do_print=do_print)
     
-    def predict_from_datasets(self, ref, qry, do_print=False, return_ytest: bool = False):
+    def predict_from_datasets_with_ytest(self, ref: Union[VPRDatasetProcessor, dict],
+                                         qry: Union[VPRDatasetProcessor, dict], do_print=False):
+        '''
+        todo
+        '''
         if isinstance(ref, VPRDatasetProcessor):
-            ref = ref.dataset['dataset']
+            ref_data = ref.dataset['dataset']
+            ref_params = ref.dataset['params']
         elif 'dataset' in ref.keys():
-            ref = ref['dataset']
-
+            ref_data = ref['dataset']
+            ref_params = ref['params']
+        else:
+            raise ValueError("ref must either be a VPRDatasetProcessor with a loaded dataset, "
+                             "or its dataset dictionary.")
         if isinstance(qry, VPRDatasetProcessor):
-            qry = qry.dataset['dataset']
+            qry_data = qry.dataset['dataset']
+            qry_params = qry.dataset['params']
         elif 'dataset' in qry.keys():
-            qry = qry['dataset']
-
+            qry_data = qry['dataset']
+            qry_params = qry['params']
+        else:
+            raise ValueError("qry must either be a VPRDatasetProcessor with a loaded dataset, "
+                             "or its dataset dictionary.")
+        # Generate reference and query numpy array; columns are x,y:
+        if ref_data['px'].ndim > 1:
+            warnings.warn(f"[predict_from_datasets_with_ytest] Detected multiple odometry topics "
+                f"in ref_data, using zeroth index ({str(ref_params['odom_topic'][0])})")
+            test_ref_xy      = np.stack([ref_data['px'][:,0], ref_data['py'][:,0]], axis=1)
+        else:
+            test_ref_xy      = np.stack([ref_data['px'], ref_data['py']], axis=1)
+        if qry_data['px'].ndim > 1:
+            warnings.warn(f"[predict_from_datasets_with_ytest] Detected multiple odometry topics "
+                f"in qry_data, using zeroth index ({str(qry_params['odom_topic'][0])})")
+            test_qry_xy      = np.stack([qry_data['px'][:,0], qry_data['py'][:,0]], axis=1)
+        else:
+            test_qry_xy      = np.stack([qry_data['px'], qry_data['py']], axis=1)
         # Generate similarity matrix for reference to query:
-        S_test = m2m_dist(arr_1=ref[self.feat_type], arr_2=qry[self.feat_type])
-
+        S_test = m2m_dist(arr_1=ref_data[self.feat_type], arr_2=qry_data[self.feat_type])
         # Extract factors:
-        _factors_out = find_factors(factors_in=self.svm_params['factors'], _S=S_test, 
-                                    rXY=np.stack(arrays=[ref['px'], ref['py']], axis=1), 
-                                    mInd=np.argmin(a=S_test, axis=0), return_as_dict=True)
-
+        _factors_out = find_factors(factors_in=self.svm_params['factors'], _S=S_test,
+                                    rXY=test_ref_xy,
+                                    match_ind=np.argmin(a=S_test, axis=0), return_as_dict=True)
         factors_test = np.array([_factors_out[i] for i in self.svm_params['factors']])
-
         # Form input vector
         X_test = np.transpose(np.array(factors_test))
-
         # Generate data transforming scaler:
         X_test_scaled = self.scaler.transform(X=X_test)
-
         # Make predictions on calibration set to assess performance
         pred_test = self.svm_model.predict(X=X_test_scaled)
-        
-        # Generate reference and query numpy array; columns are x,y:
-        test_ref_xy = np.stack([ref['px'], ref['py']], 1)
-        test_qry_xy = np.stack([qry['px'], qry['py']], 1)
-
         # Generate similarity matrix for reference to query **Positions**:
         euc_dists_test = self._calc_euc_dists(ref_xy=test_ref_xy, qry_xy=test_qry_xy)
         
@@ -274,19 +294,21 @@ class SVMModelProcessor:
         error_dist_test, error_inds_test, minimum_in_tol = self._calc_errors(
             ref_xy=test_ref_xy, match_inds=match_inds_test, true_inds=true_inds_test, euc_dists=euc_dists_test)
         
-        y_test, _ = self._calc_y(error_dist=error_dist_test, error_inds=error_inds_test, 
+        y_test, _ = self._calc_y(error_dist=error_dist_test, error_inds=error_inds_test,
                                  minimum_in_tol=minimum_in_tol)
 
         [precision, recall, num_tp, num_fp, num_tn, num_fn] = \
-            find_prediction_performance_metrics(predicted_in_tolerance=pred_test, 
+            find_prediction_performance_metrics(predicted_in_tolerance=pred_test,
                                                 actually_in_tolerance=y_test, verbose=False)
         if do_print:
             self.print('Performance of prediction on calibration set:\nTP={0}, TN={1}, FP={2}, FN={3}\nprecision={4:3.1f}% recall={5:3.1f}%\n' \
                     .format(num_tp,num_tn,num_fp,num_fn,precision*100,recall*100))
         performance_metrics = {'precision': precision, 'recall': recall, 'num_tp': num_tp, 'num_fp': num_fp, 'num_tn': num_tn, 'num_fn': num_fn}
         
-        if not return_ytest: return pred_test, performance_metrics
         return pred_test, performance_metrics, y_test
+    
+    def predict_from_datasets(self, *args, **kwargs):
+        return self.predict_from_datasets_with_ytest(*args, **kwargs)[0:2]
     
     def generate_svm_mat(self, array_dim=500):
         # Generate decision function matrix:
@@ -320,7 +342,7 @@ class SVMModelProcessor:
         indices_cols        = np.arange(img_np.shape[1])[np.sum(np.sum(img_np,2),0) != 255*3*img_np.shape[0]]
         indices_rows        = np.arange(img_np.shape[0])[np.sum(np.sum(img_np,2),1) != 255*3*img_np.shape[1]]
         img_np_crop         = img_np[np.min(indices_rows) : np.max(indices_rows)+1, np.min(indices_cols) : np.max(indices_cols)+1]
-        final_image         = np.array(cv2.resize(img_np_crop, (array_dim, array_dim), interpolation = cv2.INTER_AREA), dtype=np.uint8)
+        final_image         = np.array(cv_resize(img_np_crop, (array_dim, array_dim), interpolation = cv_INTER_AREA), dtype=np.uint8)
         
         return {'image': final_image, 'x_lim': x_lim, 'y_lim': y_lim}
 
@@ -391,7 +413,7 @@ class SVMModelProcessor:
 
         # Extract factors:
         _factors_out = find_factors(factors_in=self.svm_params['factors'], _S=self.S_train, 
-                                          rXY=self.cal_ref_xy, mInd=self.match_inds_train, return_as_dict=True)
+                                          rXY=self.cal_ref_xy, match_ind=self.match_inds_train, return_as_dict=True)
         self.factors_train = np.array([_factors_out[i] for i in self.svm_params['factors']])
 
         # Form input vector
@@ -601,7 +623,8 @@ class SVMModelProcessor:
         return True
     
 class SVMFieldLoader(SVMModelProcessor):
-    def __init__(self, model_params, ros=False):
+    def __init__(self, *args, model_params, ros=False, **kwargs):
+        super().__init__(*args, **kwargs)
         self.field          = None
         self.field_ready    = False
         self.ros            = ros
@@ -623,4 +646,3 @@ class SVMFieldLoader(SVMModelProcessor):
                     self.print("Load failed, performing cleanup. Code: \n%s" % formatException())
                     self._fix(name)
         return False
-
