@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
-import numpy as np
-import torch
 import os
 import datetime
 from zipfile import BadZipFile
 from enum import Enum
 from pathlib import Path
-from ...core.helper_tools import vis_dict, formatException
-from ...core.file_system_tools import scan_directory
+from typing import Tuple, Dict
 
-from typing import Tuple
+import numpy as np
+import torch
 
-class ObjectNotLoadedError(Exception): ...
-class PathDoesNotExistError(Exception): ...
-class UnknownSaverError(Exception): ...
+from pyaarapsi.core.helper_tools import vis_dict, formatException
+from pyaarapsi.core.file_system_tools import scan_directory
+
+class ObjectNotLoadedError(Exception):
+    ...
+class PathDoesNotExistError(Exception):
+    ...
+class UnknownSaverError(Exception):
+    ...
 
 class Saver(Enum):
     NUMPY           = 0
@@ -80,10 +84,11 @@ class Object_Storage_Handler():
         Returns:
             dict type; stored object container dictionary
         '''
-        if check and (not self.loaded): raise ObjectNotLoadedError()
+        if check and (not self.loaded): 
+            raise ObjectNotLoadedError()
         return self.stored_object
 
-    def get_object(self, check: bool = False) -> object:
+    def get_object(self, check: bool = False) -> Dict:
         '''
         Get loaded stored object
 
@@ -92,7 +97,8 @@ class Object_Storage_Handler():
         Returns:
             dict type; stored object
         '''
-        if check and (not self.loaded): raise ObjectNotLoadedError()
+        if check and (not self.loaded): 
+            raise ObjectNotLoadedError()
         return self.stored_object['object']
     
     def set_object(self, object_to_store: object, object_params: dict, saved: bool = False) -> Object_Storage_Handler:
@@ -165,7 +171,8 @@ class Object_Storage_Handler():
             _saver = saver.name
         elif isinstance(saver, str):
             _saver = saver
-        else: raise Exception()
+        else:
+            raise UnknownSaverError()
 
         if _saver in [Saver.TORCH.name, Saver.TORCH_COMPRESS.name]:
             compress = _saver == Saver.TORCH_COMPRESS.name
@@ -228,8 +235,9 @@ class Object_Storage_Handler():
                 try:
                     self.loader(file_name=name)
                     return name
-                except (FileNotFoundError, BadZipFile) as e:
-                    if self.verbose: print(formatException())
+                except (FileNotFoundError, BadZipFile):
+                    if self.verbose: 
+                        print(formatException())
                     self._fix(stored_object_base_name=name)
         return ''
 

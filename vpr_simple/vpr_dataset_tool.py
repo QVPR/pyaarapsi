@@ -1,44 +1,53 @@
 #!/usr/bin/env python3
-
+'''
+VPRDatasetProcessor Class; also has abstract VPRProcessorBase
+'''
 from __future__ import annotations
 
-import numpy as np
 import copy
 import logging
 import os
 from contextlib import suppress
+from abc import ABC
 import gc
 import datetime
 from pathlib import Path
-from ..vpr_simple import config
-ROSPKG_ROOT = config.prep_rospkg_root()
-from ..core.enum_tools import enum_get
-from ..core.helper_tools import formatException, vis_dict
-try:
-    from ..core.ros_tools import process_bag
-except:
-    logging.warn('Could not access ros_tools; generating features from rosbags will fail. This is typically due to a missing or incorrect ROS installation. \nError code: \n%s' % formatException())
-from ..core.roslogger import LogType, roslogger
-from ..core.file_system_tools import scan_directory
-from .vpr_helpers import filter_dataset, FeatureType, correct_filters, make_dataset_dictionary, getFeat
-from ..vpr_classes.netvlad import NetVLAD_Container
-from ..vpr_classes.hybridnet import HybridNet_Container
-from ..vpr_classes.salad import SALAD_Container
-from ..vpr_classes.apgem import APGEM_Container
-
 from typing import Optional, Union, overload, Callable, List
 
-class VPRProcessorBase:
+import numpy as np
+
+from pyaarapsi.vpr_simple import config
+from pyaarapsi.core.enum_tools import enum_get
+from pyaarapsi.core.helper_tools import formatException, vis_dict
+try:
+    from pyaarapsi.core.ros_tools import process_bag
+except:
+    logging.warn("Could not access ros_tools; generating features from rosbags will fail. "
+                 "This is typically due to a missing or incorrect ROS installation. "
+                 f"\nError code: \n{formatException()}")
+from pyaarapsi.core.roslogger import LogType, roslogger
+from pyaarapsi.core.file_system_tools import scan_directory
+from pyaarapsi.vpr_simple.vpr_helpers import filter_dataset, FeatureType, correct_filters, \
+    make_dataset_dictionary, getFeat
+from pyaarapsi.vpr_classes.netvlad import NetVLAD_Container
+from pyaarapsi.vpr_classes.hybridnet import HybridNet_Container
+from pyaarapsi.vpr_classes.salad import SALAD_Container
+from pyaarapsi.vpr_classes.apgem import APGEM_Container
+
+ROSPKG_ROOT = config.prep_rospkg_root()
+
+class VPRProcessorBase(ABC):
+    '''
+    Abstract base class of VPRDatasetProcessor
+    '''
     def __init__(self, cuda: bool = False, ros: bool = False, printer: Optional[Callable] = None,
                  init_netvlad: bool = False, init_hybridnet: bool = False, init_salad: bool = False,
                  init_apgem: bool = False):
-        
-        self.dataset: dict                  = {}
-        self.dataset_params                 = {}
-        self.printer: Optional[Callable]    = printer
-        self.ros                            = ros
-        self.cuda                           = cuda
-
+        self.dataset: dict                              = {}
+        self.dataset_params                             = {}
+        self.printer: Optional[Callable]                = printer
+        self.ros                                        = ros
+        self.cuda                                       = cuda
         self.borrowed_nns                               = {'netvlad': False, 'hybridnet': False, 'salad': False, 'apgem': False}
         self.netvlad: Optional[NetVLAD_Container]       = None
         self.hybridnet: Optional[HybridNet_Container]   = None
@@ -85,13 +94,13 @@ class VPRProcessorBase:
         if not self.dataset:
             return {}
         return self.dataset['params']
-    
+
     def show(self, printer = print) -> str:
         '''
         Print dataset contents
 
         Inputs:
-        - printer:    method type {default: print}; will display contents through provided print method
+        - printer: method type {default: print}; used for verbose printing
         Returns:
             str type; representation of dataset dictionary contents
         '''
@@ -104,7 +113,7 @@ class VPRProcessorBase:
         Inputs:
         - text:     str type; contents to print
         - logtype:  LogType type; logging channel to write to
-        - throttle: float type {default: 0}; rate to limit publishing contents at if repeatedly executed
+        - throttle: float type {default: 0}; rate to limit publishing contents for repeated prints
         Returns:
             None
         '''
@@ -477,8 +486,8 @@ class VPRDatasetProcessor(VPRProcessorBase):
             self.root       = root
 
         # Declare attributes:
-        self.npz_dbp: str                               = ''
-        self.bag_dbp: str                               = ''
+        self.npz_dbp: str   = "/data/compressed_sets"
+        self.bag_dbp: str   = "/data/rosbags"
 
         if not (dataset_params is None): # If parameters have been provided:
             self.print("Loading model from parameters...", LogType.DEBUG)
@@ -519,7 +528,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
         Returns:
             dict type; Generated dataset dictionary
         '''
-        self.dataset_params = make_dataset_dictionary(bag_name=bag_name, npz_dbp=npz_dbp, bag_dbp=bag_dbp, 
+        self.dataset_params = make_dataset_dictionary(bag_name=bag_name, npz_dbp=npz_dbp, bag_dbp=bag_dbp,
                                                       odom_topic=odom_topic, img_topics=img_topics, sample_rate=sample_rate,
                                                       ft_types=ft_types, img_dims=img_dims, filters=filters)
         self.check_netvlad(ft_types)
@@ -531,7 +540,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
             self.bag_dbp        = bag_dbp
 
         # generate:
-        rosbag_dict         = process_bag(self.root +  '/' + bag_dbp + '/' + bag_name, sample_rate, odom_topic, img_topics, 
+        rosbag_dict         = process_bag(self.root +  '/' + bag_dbp + '/' + bag_name, sample_rate, odom_topic, img_topics,
                                           printer=self.print, use_tqdm=self.use_tqdm)
         gc.collect()
         self.print('[generate_dataset] Performing feature extraction...')
@@ -541,7 +550,8 @@ class VPRDatasetProcessor(VPRProcessorBase):
                                                     img_dims, use_tqdm=self.use_tqdm)
                                         for i in img_topics], axis=1) # for each image topic provided,
                                     for ft_type in ft_types} # for each feature type provided
-        [rosbag_dict.pop(i,None) for i in img_topics] # reduce memory overhead
+        for i in img_topics:
+            rosbag_dict.pop(i,None) # reduce memory overhead
 
         # Flatten arrays if only one image topic provided:
         feature_vector_dict = {i: feat_vect_dict_raw[i][:,0] \
@@ -703,7 +713,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
         assert len(dataset_params['ft_types']) == 1, 'Can only open one dataset'
 
         self.print("[open_dataset] Loading dataset.", LogType.DEBUG)
-        datasets = self._get_datasets()
+        datasets = self.get_datasets()
         for name in datasets:
             if datasets[name]['params'] == dataset_params:
                 try:
@@ -759,7 +769,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
         self.bag_dbp = self.dataset_params['bag_dbp']
 
         self.print("[load_dataset] Loading dataset.")
-        datasets = self._get_datasets()
+        datasets = self.get_datasets()
         sub_params = copy.deepcopy(self.dataset_params)
         sub_params['ft_types'] = [self.dataset_params['ft_types'][0]]
         if (self.dataset_params['filters'] == {}):
@@ -923,7 +933,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
         Returns:
             str type; '' if no matching parameters, otherwise file name of matching parameters (from npz_dbp/params)
         '''
-        datasets = self._get_datasets()
+        datasets = self.get_datasets()
         if params is None:
             if not self.dataset:
                 return ""
@@ -933,7 +943,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
                 return name
         return ""
     
-    def _get_datasets(self) -> dict:
+    def get_datasets(self) -> dict:
         '''
         Helper function to iterate over parameter dictionaries and compile a list
 

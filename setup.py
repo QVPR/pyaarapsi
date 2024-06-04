@@ -62,7 +62,7 @@ ros_install_versioned_require_list = [
             
 setup(
     name='pyaarapsi',
-    version='0.2.0',
+    version='0.2.1',
     description='PyAARAPSI: Python Package for AARAPSI Project',
     author='Owen Claxton, Connor Malone, and Helen Carson',
     author_email='claxtono@qut.edu.au',

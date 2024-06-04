@@ -245,7 +245,7 @@ def scan_bag(bag_path: str, sample_rate: float, topics_in: List[str], timer_topi
     List
     '''
     warnings.warn('scan_bag is in development stage, use at own risk.')
-    
+
     data           = {k: [] for k in topics_in + ['__counter', '__timestamp']}
     logged_t       = -1
     logged_c       = -1
