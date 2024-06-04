@@ -135,9 +135,10 @@ class RobotMonitor2D(RobotMonitor):
     Robot Monitor using a single SVM with two factors
     '''
     def __init__(self, rvpr: RobotVPR, _factors_in=None, _sample_weight=None):
-        
+        print("SVM Factors: {}".format(_factors_in))
         if _factors_in is None:
             _factors_in = ["grad", "va"]
+            print('Using OG factors for some reason')
         _factors_in = list(np.sort(_factors_in)) # alphabetize order
         assert len(np.unique(_factors_in)) == 2, "If _factors_in is specified (not None), user must provide two unique factors."
         _factors_calc = find_factors(factors_in=_factors_in, _S=rvpr.S, rXY=rvpr.ref.xy, mInd=rvpr.best_match, 
