@@ -255,22 +255,26 @@ class Object_Storage_Handler():
             if stored_objects[name]['params'] == params:
                 return name
         return ''
-    
+
     def _get_possible_parameters(self) -> dict:
         '''
         [Internal] Helper function to iterate over parameter dictionaries and compile a list
-
         Inputs:
         - None
         Returns:
-            dict type; keys correspond to file names in param folder, values are loaded parameter dictionaries
+            dict type; keys correspond to file names in param folder, values are loaded 
+                       parameter dictionaries
         '''
-        
-        return {os.path.splitext(entry.name)[0]: 
-                    dict(params=dict(np.load(entry.path, allow_pickle=True))['params'].item()) # extract .item(), repackage
-                    for entry in os.scandir(self.param_path)
-                    if entry.is_file() and entry.name.startswith(self.prefix)}
-    
+        out_dict = {}
+        for entry in os.scandir(self.param_path):
+            if entry.is_file() and entry.name.startswith(self.prefix):
+                try:
+                    out_dict[os.path.splitext(entry.name)[0]] = \
+                        {"params": dict(np.load(entry.path, allow_pickle=True))['params'].item()}
+                except BadZipFile:
+                    self._fix(stored_object_base_name=entry.name)
+        return out_dict
+
     def _fix(self, stored_object_base_name: str) -> Tuple[bool, bool]:
         '''
         [Internal] Helper function to remove broken/erroneous files
@@ -278,21 +282,26 @@ class Object_Storage_Handler():
         Inputs:
         - stored_object_name: str type; name of file(s) to purge
         Returns:
-            tuple type; contains two booleans: 1) whether a stored object container was purged, 2) whether a param file was purged 
+            tuple type; contains two booleans:  1) whether a stored object container was purged, 
+                                                2) whether a param file was purged 
         '''
-        stored_object_name          = stored_object_base_name + (self.suffix if not stored_object_base_name.endswith(self.suffix) else '')
-        stored_object_param_name    = stored_object_base_name + ('.npz' if not stored_object_base_name.endswith('.npz') else '')
+        stored_object_name          = stored_object_base_name + \
+            (self.suffix if not stored_object_base_name.endswith(self.suffix) else '')
+        stored_object_param_name    = stored_object_base_name + \
+            ('.npz' if not stored_object_base_name.endswith('.npz') else '')
         purged_object               = False
         purged_params               = False
         try:
             os.remove(self.storage_path / stored_object_name)
-            if self.verbose: print("Purged: " + str(self.storage_path / stored_object_name))
+            if self.verbose: 
+                print("Purged: " + str(self.storage_path / stored_object_name))
             purged_object = True
         except FileNotFoundError:
             pass
         try:
             os.remove(self.param_path / stored_object_param_name)
-            if self.verbose: print("Purged: " + str(self.param_path / stored_object_param_name))
+            if self.verbose:
+                print("Purged: " + str(self.param_path / stored_object_param_name))
             purged_params = True
         except FileNotFoundError:
             pass
