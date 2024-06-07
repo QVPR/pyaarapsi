@@ -12,7 +12,7 @@ try:
     from pyaarapsi.pathing.basic_rospy import make_path_speeds, make_zones, \
         publish_reversible_xyw_pose, publish_xyw_pose, publish_xyzrpy_pose
     #pylint: enable=W0611
-except ImportError:
+except (ImportError, NameError):
     warnings.warn("Failed to import ROS-related packages and message structures: some functions"
                   "will error.")
 
