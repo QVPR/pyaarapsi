@@ -8,13 +8,10 @@ import numpy as np
 from numpy.typing                   import NDArray
 
 try:
-    import rospy
-    from nav_msgs.msg                   import Path
-    from std_msgs.msg                   import Header, ColorRGBA
-    from geometry_msgs.msg              import PoseStamped, Point, Vector3
-    from visualization_msgs.msg         import MarkerArray, Marker
-
-    from pyaarapsi.core.ros_tools       import q_from_yaw, q_from_rpy, ROS_Publisher
+    #pylint: disable=W0611
+    from pyaarapsi.pathing.basic_rospy import make_path_speeds, make_zones, \
+        publish_reversible_xyw_pose, publish_xyw_pose, publish_xyzrpy_pose
+    #pylint: enable=W0611
 except ImportError:
     warnings.warn("Failed to import ROS-related packages and message structures: some functions"
                   "will error.")
@@ -70,56 +67,7 @@ def calc_zone_stats(path_len: float, len_guess: float, num_guess: Union[float, i
 
     return len_true, num_true
 
-def make_path_speeds(path_xyws: NDArray[np.float32], path_indices: List[int]
-                     ) -> Tuple[Path, MarkerArray]:
-    '''
-    TODO
-    '''
-    path            = Path(header=Header(stamp=rospy.Time.now(), frame_id="map"))
-    path.poses      = []
-    speeds          = MarkerArray()
-    speeds.markers  = []
-    direction       = np.sign(np.sum(path_xyws[:,2]))
-    for i in path_indices:
-        new_pose                        = PoseStamped(header=Header(stamp=rospy.Time.now(),
-                                                                    frame_id="map"))
-        new_pose.pose.position          = Point(x=path_xyws[i,0], y=path_xyws[i,1], z=0.0)
-        new_pose.pose.orientation       = q_from_yaw(path_xyws[i,2])
-        #
-        new_speed                       = Marker(header=Header(stamp=rospy.Time.now(),
-                                                               frame_id='map'))
-        new_speed.type                  = new_speed.ARROW
-        new_speed.action                = new_speed.ADD
-        new_speed.id                    = i
-        new_speed.color                 = ColorRGBA(r=0.859, g=0.094, b=0.220, a=0.5)
-        new_speed.scale                 = Vector3(x=path_xyws[i,3], y=0.05, z=0.05)
-        new_speed.pose.position         = Point(x=path_xyws[i,0], y=path_xyws[i,1], z=0.0)
-        new_speed.pose.orientation      = q_from_yaw(path_xyws[i,2] - direction * np.pi/2)
-        #
-        path.poses.append(new_pose)
-        speeds.markers.append(new_speed)
-    return path, speeds
 
-def make_zones(path_xyws: NDArray[np.float32], zone_indices: List[int]) -> MarkerArray:
-    '''
-    TODO
-    '''
-    zones           = MarkerArray()
-    zones.markers   = []
-    for c, i in enumerate(zone_indices):
-        k                           = i % path_xyws.shape[0]
-        new_zone                    = Marker(header=Header(stamp=rospy.Time.now(),
-                                                           frame_id='map'))
-        new_zone.type               = new_zone.CUBE
-        new_zone.action             = new_zone.ADD
-        new_zone.id                 = c
-        new_zone.color              = ColorRGBA(r=1.000, g=0.616, b=0.000, a=0.5)
-        new_zone.scale              = Vector3(x=0.05, y=1.0, z=1.0)
-        new_zone.pose.position      = Point(x=path_xyws[k,0], y=path_xyws[k,1], z=0.0)
-        new_zone.pose.orientation   = q_from_yaw(path_xyws[k,2])
-
-        zones.markers.append(new_zone)
-    return zones
 
 def calc_path_errors(ego, current_ind: int, path_xyws: NDArray[np.float32]
                      ) -> Tuple[float, float]:
@@ -139,11 +87,11 @@ def global2local(ego, x: Union[float, NDArray[np.float32]], y: Union[float, NDAr
     '''
     TODO
     '''
-    Tx  = x - ego[0]
-    Ty  = y - ego[1]
-    R   = np.sqrt(np.power(Tx, 2) + np.power(Ty, 2))
-    A   = np.arctan2(Ty, Tx) - ego[2]
-    return list(np.multiply(np.cos(A), R)), list(np.multiply(np.sin(A), R))
+    tx  = x - ego[0]
+    ty  = y - ego[1]
+    arr_r   = np.sqrt(np.power(tx, 2) + np.power(ty, 2))
+    arr_a   = np.arctan2(ty, tx) - ego[2]
+    return list(np.multiply(np.cos(arr_a), arr_r)), list(np.multiply(np.sin(arr_a), arr_r))
 
 def calc_yaw_error(ego, goal) -> float:
     '''
@@ -159,8 +107,7 @@ def calc_y_error(ego, goal) -> float:
     Heading error, linear
     '''
     # Convert to local coordinates
-    rel_x, rel_y    = global2local(ego, np.array([goal[0]]), np.array([goal[1]]))
-    return rel_y[0]
+    return global2local(ego, np.array([goal[0]]), np.array([goal[1]]))[1][0]
 
 def calc_nearest_zone(zone_indices: List[int], current_ind: int, _len: int) -> int:
     '''
@@ -181,46 +128,32 @@ def calc_current_ind(ego, path_xyws: NDArray[np.float32]) -> int:
     '''
     return np.argmin(m2m_dist(path_xyws[:,0:2], ego[0:2], True), axis=0)
 
+class BadLookaheadMode(Exception):
+    '''
+    Bad lookahead.
+    '''
+
 def calc_target(current_ind: int, lookahead: float, lookahead_mode: Lookahead_Mode,
-                path_xyws: NDArray[np.float32], path_sum: NDArray[np.float32], reverse: bool = False):
+                path_xyws: NDArray[np.float32], path_sum: NDArray[np.float32],
+                reverse: bool = False):
     '''
     TODO
     '''
-    adj_lookahead = np.max([lookahead * (path_xyws[current_ind, 3]/np.max(path_xyws[:, 3].flatten())), 0.4])
+    adj_lookahead = np.max([lookahead * (path_xyws[current_ind, 3] \
+                                         / np.max(path_xyws[:, 3].flatten())), 0.4])
     if reverse:
         adj_lookahead *= -1
     if lookahead_mode == Lookahead_Mode.INDEX:
         target_ind  = (current_ind + int(np.round(adj_lookahead))) % path_xyws.shape[0]
     elif lookahead_mode == Lookahead_Mode.DISTANCE:
-        target_ind    = int(np.argmin(np.abs(path_sum - ((path_sum[current_ind] + adj_lookahead) % path_sum[-1]))))
+        target_ind    = int(np.argmin(np.abs(path_sum - ((path_sum[current_ind] + adj_lookahead)
+                                                         % path_sum[-1]))))
         dist = (path_sum[target_ind] - path_sum[current_ind]) % path_sum[-1]
         while dist < np.abs(adj_lookahead):
             target_ind = int((target_ind + np.sign(adj_lookahead)) % path_sum.shape[0])
             dist = (path_sum[target_ind] - path_sum[current_ind]) % path_sum[-1]
         adj_lookahead = dist
     else:
-        raise Exception('Unknown lookahead_mode: %s' % str(lookahead_mode))
+        raise BadLookaheadMode(f'Unknown lookahead_mode: {str(lookahead_mode)}')
     return target_ind, adj_lookahead
-
-def publish_reversible_xyw_pose(pose_xyw: list, pub: Union[rospy.Publisher, ROS_Publisher], frame_id='map', reverse: bool = False) -> None:
-    pose = [*pose_xyw] # decouple from input
-    if reverse:
-        pose[2] = angle_wrap(pose[2] + np.pi, 'RAD')
-    publish_xyw_pose(pose, pub, frame_id)
-
-def publish_xyw_pose(pose_xyw: list, pub: Union[rospy.Publisher, ROS_Publisher], frame_id='map') -> None:
-    # Update visualisation of current goal/target pose
-    goal                    = PoseStamped(header=Header(stamp=rospy.Time.now(), frame_id=frame_id))
-    goal.pose.position      = Point(x=pose_xyw[0], y=pose_xyw[1], z=0.0)
-    goal.pose.orientation   = q_from_yaw(pose_xyw[2])
-    pub.publish(goal)
-
-def publish_xyzrpy_pose(xyzrpy: list, pub: Union[rospy.Publisher, ROS_Publisher], frame_id='map') -> None:
-    # Update visualisation of current goal/target pose
-    goal                    = PoseStamped(header=Header(stamp=rospy.Time.now(), frame_id=frame_id))
-    goal.pose.position      = Point(x=xyzrpy[0], y=xyzrpy[1], z=xyzrpy[2])
-    goal.pose.orientation   = q_from_rpy(r=xyzrpy[3],p=xyzrpy[4],y=xyzrpy[5])
-    pub.publish(goal)
-
-
                 
