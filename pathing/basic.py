@@ -3,9 +3,9 @@
 Basic pathing helper functions
 '''
 import warnings
-from typing                         import Union, List, Tuple
+from typing import Union, List, Tuple
 import numpy as np
-from numpy.typing                   import NDArray
+from numpy.typing import NDArray
 
 try:
     #pylint: disable=W0611
@@ -16,8 +16,8 @@ except (ImportError, NameError):
     warnings.warn("Failed to import ROS-related packages and message structures: some functions"
                   "will error.")
 
-from pyaarapsi.core.helper_tools    import angle_wrap, normalize_angle, m2m_dist
-from pyaarapsi.pathing.enums        import Lookahead_Mode
+from pyaarapsi.core.helper_tools import angle_wrap, normalize_angle, m2m_dist
+from pyaarapsi.pathing.enums import Lookahead_Mode
 
 def make_speed_array(w_interp):
     '''
