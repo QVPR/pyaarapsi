@@ -203,36 +203,45 @@ def plot_baseline_vs_closedloop_PRcurves(S,actual_match,tolerance,y_pred):
     plt.title('Baseline vs Closed-Loop Performance')
     return
 
-def find_precision_atR(P,R,desired_recall,verbose=False):
+def find_precision_atR(P,R,desired_recall,verbose=False) -> Tuple[float, float, int]:
     ''' 
     Return the precision at a specific recall
     P is a vector of precision values
     R is a vector of corresponding recall values
+    ---
+    Returns
+    Closest R value to desired_recall, equivalent precision, index of both.
     '''
-    x=np.array(abs(R - desired_recall))
-    R_idx=np.where(x == x.min())[0].max()
-    if verbose==True:
-        print('at {0:3.1f}% Recall, Precision = {1:3.1f}%'.format(R[R_idx]*100,P[R_idx]*100))
+    x = np.array(abs(R - desired_recall))
+    R_idx = np.where(x == x.min())[0].max()
+    if verbose:
+        print(f'at {R[R_idx]*100:3.1f}% Recall, Precision = {P[R_idx]*100:3.1f}%')
     if abs(R[R_idx] - desired_recall) > 0.01:
-        print('debug WARNING find_recall_atP: precision value is > 0.01 from desired P (%s,%s)' % (str(desired_recall), str(R[R_idx])))
+        print(f'debug WARNING find_recall_atP: precision value is > 0.01 '
+              f'from desired P ({str(desired_recall)},{str(R[R_idx])})')
+    # Given Recall, Calculated Precision, Index of both.
     return P[R_idx],R[R_idx],R_idx
 
-def find_recall_atP(P,R,desired_precision,verbose=False):
+def find_recall_atP(P,R,desired_precision,verbose=False) -> Tuple[float, float, int]:
     ''' 
     Return the recall at a specific precision
     P is a vector of precision values
     R is a vector of corresponding recall values
+    ---
+    Returns
+    Closest P value to desired_precision, equivalent recall, index of both.
     '''
-    x=np.array(abs(P - desired_precision))
+    x = np.array(abs(P - desired_precision))
     try:
-        xmin=x[~np.isnan(x)].min() # do this to remove any NaN values for precision
-        P_idx=np.where(x == xmin)[0].max()
+        xmin = x[~np.isnan(x)].min() # do this to remove any NaN values for precision
+        P_idx = np.where(x == xmin)[0].max()
     except ValueError:
         P_idx = 0
-    if verbose==True:
-        print('at {0:3.1f}% Precision, Recall = {1:3.1f}%'.format(P[P_idx]*100,R[P_idx]*100))
+    if verbose:
+        print(f'at {P[P_idx]*100:3.1f}% Precision, Recall = {R[P_idx]*100:3.1f}%')
     #check:
     if abs(P[P_idx] - desired_precision) > 0.01:
-        print('debug WARNING find_recall_atP: precision value is > 0.01 from desired P (%s,%s)' \
-              % (str(desired_precision), str(P[P_idx])))
+        print(f'debug WARNING find_recall_atP: precision value is > 0.01 '
+              f'from desired P ({str(desired_precision)},{str(P[P_idx])})')
+    
     return P[P_idx],R[P_idx],P_idx
