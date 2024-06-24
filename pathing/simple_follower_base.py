@@ -645,13 +645,14 @@ class Simple_Follower_Class(Dataset_Loader):
 
                 self.loop_contents()
 
-            except rospy.exceptions.ROSInterruptException as e:
+            except rospy.exceptions.ROSInterruptException:
                 pass
             except Exception as e:
                 if self.parameters_ready:
                     raise Exception('Critical failure. ' + formatException()) from e
                 else:
-                    self.print('Main loop exception, attempting to handle; waiting for parameters to update. Details:\n' + formatException(), LogType.DEBUG, throttle=5)
+                    self.print('Main loop exception, attempting to handle; waiting for parameters '
+                               'to update. Details:\n' + formatException(), LogType.DEBUG, throttle=5)
                     rospy.sleep(0.5)
 
     def path_follow(self, ego, current_ind, reverse=False):

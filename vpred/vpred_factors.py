@@ -12,7 +12,7 @@ CHECK_RIGHT_HASH = {}
 def check_right(bool_list, index, length):
     global CHECK_RIGHT_HASH
     _key = (index, length)
-    try: 
+    try:
         return CHECK_RIGHT_HASH[_key]
     except KeyError:
         _ret = None
@@ -32,15 +32,15 @@ def find_minima(sequence: np.ndarray, check_ends=True, fast=False):
             raise Exception("sequence must be either a np.ndarray or list object")
     if (_len:=len(sequence)) < 3:
         raise Exception("sequence is too short.")
-    
+    #
     CHECK_RIGHT_HASH.clear()
-
+    #
     seq_l       = sequence.copy()
     seq_r       = sequence.copy()
     seq_l[:-1] -= sequence[1:]
     seq_r[1:]  -= sequence[:-1]
     minima_bool = ((sequence + seq_l >= sequence) + (sequence + seq_r >= sequence)) == False
-    
+    #
     if not fast:
         flat_bool   = ((seq_l == 0) + (seq_r == 0))
         i = 0
@@ -59,7 +59,7 @@ def find_minima(sequence: np.ndarray, check_ends=True, fast=False):
                 i = _right + 1
             else:
                 i += 1
-
+    #
     minima_bool[0] = 0
     minima_bool[-1] = 0
     if check_ends:
@@ -67,10 +67,10 @@ def find_minima(sequence: np.ndarray, check_ends=True, fast=False):
             minima_bool[0] = True
         if sequence[-1] < sequence[-2]:
             minima_bool[-1] = True
-
+    #
     minima_inds = np.arange(_len)[minima_bool]
     minima_vals = sequence[minima_bool]
-
+    #
     return minima_vals, minima_inds
 
 def find_va_factor(S):
@@ -333,7 +333,6 @@ def find_sensitivity(S):
 def find_adj_sensitivity(S):
     if S.ndim == 1:
         S = S[:, np.newaxis]
-    
     ref_len = S.shape[0]
     qry_list = np.arange(S.shape[1])
     factors1 = np.zeros(qry_list[-1] + 1)
@@ -355,7 +354,6 @@ def find_adj_sensitivity(S):
 def find_minima_variation(S):
     if S.ndim == 1:
         S = S[:, np.newaxis]
-    
     ref_len = S.shape[0]
     qry_list = np.arange(S.shape[1])
     factors1 = np.zeros(qry_list[-1] + 1)
@@ -370,7 +368,6 @@ def find_minima_variation(S):
 def find_minima_separation(S):
     if S.ndim == 1:
         S = S[:, np.newaxis]
-    
     ref_len = S.shape[0]
     qry_list = np.arange(S.shape[1])
     factors1 = np.zeros(qry_list[-1] + 1)
@@ -393,7 +390,6 @@ def find_minima_separation(S):
 def find_adj_minima_separation(S, norm: bool = False):
     if S.ndim == 1:
         S = S[:, np.newaxis]
-    
     ref_len = S.shape[0]
     qry_list = np.arange(S.shape[1])
     factors1 = np.zeros(qry_list[-1] + 1)
@@ -486,12 +482,14 @@ def find_removed_factors(S):
     for q in qry_list:
         Sv = copy.deepcopy(S[:,q])
         _min1 = Sv.min()
-        _range1 = (Sv.max() - _min1)
+        _max1 = Sv.max()
         Sv[Sv.argmin()] = Sv.max()
         _min2 = Sv.min()
-        _range2 = (Sv.max() - _min2)
-        factors1[q] = np.abs(_range2 - _range1) / _range1
-        factors2[q] = np.abs(_min1 - _min2) / _range1
+        Sv[Sv.argmin()] = _min1
+        Sv[Sv.argmax()] = Sv.min()
+        _max2 = Sv.max()
+        factors1[q] = np.abs((_min1 - _min2) / (_max1 - _min1))
+        factors2[q] = np.abs((_max1 - _max2) / (_max1 - _min1))
     return factors1, factors2
 
 def try_pop(_list: list, item, _recurse = False):
