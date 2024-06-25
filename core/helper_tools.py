@@ -3,19 +3,25 @@ import time
 import select
 import sys
 import traceback
-import numpy as np
 import pickle
-from fastdist import fastdist
+import warnings
 from enum import Enum
+# from threading import Timer as threadingTimer
+from typing import Optional, Callable, TypeVar, Protocol
+
+from fastdist import fastdist
+import numpy as np
+
 import matplotlib
 from matplotlib.backend_bases import FigureCanvasBase
 import matplotlib.pyplot as plt
-import warnings
-from typing import Optional, Callable, TypeVar, Protocol
+
 from numpy.typing import NDArray
-from threading import Timer as threadingTimer
 
 class Bool(Enum):
+    '''
+    Bool with an optional unset value
+    '''
     UNSET = -1
     FALSE = 0
     TRUE  = 1
@@ -23,11 +29,11 @@ class Bool(Enum):
 class SupportsCanvas(Protocol):
     canvas: FigureCanvasBase
 
-def brandn(*args, fill_with_linear=True):
+def brandn(*args, mean: float = 0.5, scale: float = 6.0, fill_with_linear=True):
     '''
     Bounded normal random with smooth probability distribution between 0 and 1.
     '''
-    x = 0.5 + (np.random.randn(*args)/6.0)
+    x = mean + (np.random.randn(*args)/scale)
     input_was_array = isinstance(x, np.ndarray) # flag so we return same type
     if not input_was_array: x = np.array([x]) # convert scalar to array
     out_of_bounds = (x<0) | (x>1)
@@ -39,7 +45,6 @@ def brandn(*args, fill_with_linear=True):
         x[out_of_bounds] = np.random.rand(np.sum(out_of_bounds))
     if not input_was_array: x = x[0] # convert array back to scalar
     return x
-    
 
 def input_with_timeout(prompt, timeout):
     'https://stackoverflow.com/questions/15528939/time-limited-input'
@@ -338,10 +343,10 @@ def vis_dict(input: dict, printer = print) -> str:
                         _this_str += sub_dict_struct(input[sub_key], lvl + 1, sub_key)
                 else:
                     _this_str += "\t%s%s\n" % (indent, type(input[0]))
-            except:
+            except Exception as e:
                 _this_str = "\t%s[Unknown]\n" % (indent)
             return "%s%s %s %s:\n%s" % (indent, key, type(input), _this_len, _this_str)
-        except:
+        except Exception as e:
             return "%s%s %s\n" % (indent, key, type(input))
     dictionary_view = sub_dict_struct(input, 0, 'root')
     if not printer is None:
