@@ -22,13 +22,13 @@ from torch.optim.optimizer import Optimizer
 from torch import nn, Tensor
 from torch.utils.data.dataloader import DataLoader
 
-from pyaarapsi.core.enum_tools                      import enum_get
-from pyaarapsi.core.classes.object_storage_handler  import Object_Storage_Handler as OSH, Saver
-from pyaarapsi.vpr_simple.vpr_helpers               import FeatureType
-from pyaarapsi.vpr_simple.vpr_dataset_tool          import VPRDatasetProcessor
+from pyaarapsi.core.enum_tools import enum_get
+from pyaarapsi.core.classes.object_storage_handler import Object_Storage_Handler as OSH, Saver
+from pyaarapsi.vpr_simple.vpr_helpers import FeatureType
+from pyaarapsi.vpr_simple.vpr_dataset_tool import VPRDatasetProcessor
 
-from pyaarapsi.nn.enums import SampleMode, ScalerUsage, ApplyModel, GenMode, TrainData, ModelClass, \
-                    LossType, TrainOrTest
+from pyaarapsi.nn.enums import SampleMode, ScalerUsage, ApplyModel, GenMode, TrainData, \
+    ModelClass, LossType, TrainOrTest
 from pyaarapsi.nn.exceptions import BadSampleMode, LoadFailure, BadApplyModel, BadCombosKey, \
     BadScaler
 from pyaarapsi.nn.general_helpers import get_rand_seed
