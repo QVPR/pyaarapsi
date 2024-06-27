@@ -38,8 +38,8 @@ class BasicDataset(Dataset):
         self.provide_gt = provide_gt
         #
         self.scale_data = scale_data
-        self.scaler     = StandardScaler() if scaler is None else copy.deepcopy(scaler)
         self.fitted     = not scaler is None
+        self.scaler     = StandardScaler() if not self.fitted else copy.deepcopy(scaler)
         self.seed       = None
         #
         self.update()
@@ -99,7 +99,8 @@ class BasicDataset(Dataset):
         #
         if not self.fitted:
             self.fit_scaler()
-        else: self.use_scaler()
+        else:
+            self.use_scaler()
         #
         for i in range(self.length):
             self.data.append(from_numpy(self.scaled_raw_data[i]).float())

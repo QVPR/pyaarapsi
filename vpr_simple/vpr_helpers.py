@@ -1,12 +1,18 @@
+#!/usr/bin/env python3
+'''
+Helper commands for VPR
+'''
 import copy
-from enum import Enum
+from enum import Enum, unique
 import json
+import cv2
 from typing import Union, List, Optional, Tuple
 
 from tqdm.auto import tqdm
 import numpy as np
 from numpy.typing import NDArray
-from cv2 import resize as cv_resize, cvtColor as cv_cvtColor, \
+# from numpy.typing import NDArray
+from cv2 import resize as cv_resize, cvtColor as cv_cvtColor, INTER_AREA as cv_INTER_AREA, \
     COLOR_RGB2GRAY as cv_COLOR_RGB2GRAY # pylint: disable=E0611
 
 from pyaarapsi.vpr_classes.netvlad import NetVLAD_Container
@@ -14,25 +20,10 @@ from pyaarapsi.vpr_classes.hybridnet import HybridNet_Container
 from pyaarapsi.vpr_classes.salad import SALAD_Container
 from pyaarapsi.vpr_classes.apgem import APGEM_Container
 from pyaarapsi.core.helper_tools import perforate, formatException, m2m_dist
-try:
-    from pyaarapsi.pathing.basic import calc_path_stats
-except:
-    def calc_path_stats(path_xyws: NDArray[np.float32]) -> Tuple[NDArray[np.float32], float]:
-        path_dists      = np.sqrt( \
-                                np.square(path_xyws[:,0] - np.roll(path_xyws[:,0], 1)) + \
-                                np.square(path_xyws[:,1] - np.roll(path_xyws[:,1], 1)) \
-                            )[1:]
-        
-        path_sum        = [0.0]
-        for i in path_dists:
-            path_sum.append(np.sum([path_sum[-1], i]))
-
-        path_len        = path_sum[-1]
-        path_sum        = np.array(path_sum)
-
-        return path_sum, path_len
+from pyaarapsi.pathing.basic import calc_path_stats
 
 # For image processing type
+@unique
 class FeatureType(Enum):
     '''
     VPR Descriptors
@@ -46,33 +37,91 @@ class FeatureType(Enum):
     SALAD               = 7
     APGEM               = 8
 
+    class Exception(Exception):
+        '''
+        Bad usage.
+        '''
+
+def make_features_presentable(features: NDArray[np.float64],
+                              out_dims: Optional[Tuple[int,int]] = None,
+                              feature_dims: Optional[Tuple[int,int]] = None) -> NDArray[np.float64]:
+    '''
+    This function will reshape an input feature vector into a 2D, presentable image ready for
+    matplotlib. The image will have [width, height] == out_dims.
+    If the feature dimensions are not provided, the vector will be reshaped into a rectangle with
+    equivalent/similar aspect ratio (padding additional pixels with zero).
+    If the feature dimensions are provided, the vector will be reshaped directly into these.
+    The output image is generated using:
+    >>> cv2.resize(..., (out_dims[1], out_dims[0]), interpolation=cv2.INTER_AREA)
+    This ensures np.reshape and cv2.resize use the same ordering of dimensions.
+    '''
+    if out_dims is None:
+        out_dims = [64,64]
+    assert np.array(out_dims).shape == (2,)
+    features_copy = copy.deepcopy(features)
+    if not feature_dims is None:
+        out_arr = np.reshape(features_copy, feature_dims).astype(float)
+        return cv_resize(out_arr, (out_dims[1], out_dims[0]), interpolation=cv_INTER_AREA)
+    features_flat = features_copy.flatten()
+    new_h = int(np.round(np.sqrt(features_flat.shape[0] * out_dims[0] / out_dims[1])))
+    new_w = int(np.round(features_flat.shape[0] / new_h))
+    while (new_h * new_w) < features_flat.shape[0]:
+        if new_h < new_w:
+            new_w += 1
+        else:
+            new_h += 1
+    out_arr = np.zeros((new_h, new_w)).astype(float)
+    out_arr_view = out_arr.view().reshape(-1)
+    out_arr_view[:features_flat.shape[0]] = features_flat
+    return cv_resize(out_arr, (out_dims[1], out_dims[0]), interpolation=cv_INTER_AREA)
+
 def getFeatureLength(feature_type: FeatureType, img_dims: list):
+    '''
+    Get length of vector per FeatureType when used to generate features
+    Although measurable after-the-fact, useful for allocating ahead of time.
+    '''
     if feature_type.name in [FeatureType.SALAD.name]:
         return 8192
-    elif feature_type.name in [FeatureType.NETVLAD.name, FeatureType.APGEM.name, FeatureType.HYBRIDNET.name]:
+    elif feature_type.name in [FeatureType.NETVLAD.name, FeatureType.APGEM.name,
+                               FeatureType.HYBRIDNET.name]:
         return 4096
-    elif feature_type.name in [FeatureType.RAW.name, FeatureType.PATCHNORM.name, FeatureType.NORM.name, FeatureType.ROLLNORM.name]:
+    elif feature_type.name in [FeatureType.RAW.name, FeatureType.PATCHNORM.name,
+                               FeatureType.NORM.name, FeatureType.ROLLNORM.name]:
         return img_dims[0] * img_dims[1]
     else:
-        raise Exception("Unknown feature type (%s)." % str(feature_type))
-    
+        raise FeatureType.Exception(f"Unknown feature type ({str(feature_type)}).")
+
 def overridesImgDims(feature_type: FeatureType):
-    if feature_type.name in [FeatureType.RAW.name, FeatureType.PATCHNORM.name, FeatureType.ROLLNORM.name, FeatureType.NORM.name]:
+    '''
+    Whether the img_dims parameter is used for each FeatureType.
+    '''
+    if feature_type.name in [FeatureType.RAW.name, FeatureType.PATCHNORM.name,
+                             FeatureType.ROLLNORM.name, FeatureType.NORM.name]:
         return True
-    elif feature_type.name in [FeatureType.NETVLAD.name, FeatureType.HYBRIDNET.name, FeatureType.SALAD.name, FeatureType.APGEM.name]:
+    elif feature_type.name in [FeatureType.NETVLAD.name, FeatureType.HYBRIDNET.name,
+                               FeatureType.SALAD.name, FeatureType.APGEM.name]:
         return False
     else:
         raise Exception("Unknown feature type (%s)." % str(feature_type))
-    
+
 def isFeatureSpatiallyRelated(feature_type: FeatureType):
-    if feature_type.name in [FeatureType.RAW.name, FeatureType.PATCHNORM.name, FeatureType.ROLLNORM.name, FeatureType.NORM.name, FeatureType.HYBRIDNET.name]:
+    '''
+    Whether elements of the feature vector relate.
+    '''
+    if feature_type.name in [FeatureType.RAW.name, FeatureType.PATCHNORM.name,
+                             FeatureType.ROLLNORM.name, FeatureType.NORM.name,
+                             FeatureType.HYBRIDNET.name]:
         return True
-    elif feature_type.name in [FeatureType.NETVLAD.name, FeatureType.SALAD.name, FeatureType.APGEM.name]:
+    elif feature_type.name in [FeatureType.NETVLAD.name, FeatureType.SALAD.name,
+                               FeatureType.APGEM.name]:
         return False
     else:
         raise Exception("Unknown feature type (%s)." % str(feature_type))
 
 class ViewMode(Enum):
+    '''
+    Unused.
+    '''
     FORWARD  	        = 0
     FORWARDRIGHT 	    = 1
     RIGHT 		        = 2
@@ -85,39 +134,50 @@ class ViewMode(Enum):
     forward             = 9
 
 class VPR_Tolerance_Mode(Enum):
+    '''
+    How to generate gt distances and errors
+    '''
     METRE_CROW_TRUE     = 0
     METRE_CROW_MATCH    = 1
     METRE_LINE          = 2
-    FRAME               = 3 
+    FRAME               = 3
 
 class SVM_Tolerance_Mode(Enum):
+    '''
+    How to determine whether a match is in-tolerance
+    '''
     DISTANCE            = 0
     FRAME               = 1
     TRACK_DISTANCE      = 2
 
-def make_dataset_dictionary(bag_name: str, 
-                            npz_dbp: str = "/data/compressed_sets", 
-                            bag_dbp: str = "/data/rosbags", 
-                            odom_topic: Union[str, List[str]] = "/odom/true", 
-                            img_topics: List[str] = ["/ros_indigosdk_occam/image0/compressed"], 
-                            sample_rate: Union[int, float] = 5.0, 
-                            ft_types: List[str] = [FeatureType.RAW.name], 
-                            img_dims: List[int] = [64,64], 
+def make_dataset_dictionary(bag_name: str,
+                            npz_dbp: str = "/data/compressed_sets",
+                            bag_dbp: str = "/data/rosbags",
+                            odom_topic: Union[str, List[str]] = "/odom/true",
+                            img_topics: List[str] = ["/ros_indigosdk_occam/image0/compressed"],
+                            sample_rate: Union[int, float] = 5.0,
+                            ft_types: List[str] = [FeatureType.RAW.name],
+                            img_dims: List[int] = [64,64],
                             filters: Union[str, dict] = {}):
 
     '''
     Function to help remember the contents of a VPRDatasetProcessor dataset_params dictionary
     '''
-    return dict(bag_name=bag_name, npz_dbp=npz_dbp, bag_dbp=bag_dbp, odom_topic=odom_topic, 
-                img_topics=img_topics, sample_rate=sample_rate, ft_types=ft_types, img_dims=img_dims, filters=filters)
+    return dict(bag_name=bag_name, npz_dbp=npz_dbp, bag_dbp=bag_dbp, odom_topic=odom_topic,
+                img_topics=img_topics, sample_rate=sample_rate, ft_types=ft_types,
+                img_dims=img_dims, filters=filters)
 
-def make_svm_dictionary(ref: dict, qry: dict, factors: List[str], tol_thres: float = 0.5, 
-                        tol_mode: SVM_Tolerance_Mode = SVM_Tolerance_Mode.DISTANCE, 
+def make_svm_dictionary(ref: dict, qry: dict, factors: List[str], tol_thres: float = 0.5,
+                        tol_mode: SVM_Tolerance_Mode = SVM_Tolerance_Mode.DISTANCE,
                         svm_dbp='/cfg/svm_models'):
+    '''
+    Function to help remember the contents of an SVMModelProcessor params dictionary
+    '''
     assert ref['npz_dbp'] == qry['npz_dbp']
     assert ref['bag_dbp'] == qry['bag_dbp']
-    svm_svm_dict    = dict(factors=factors, tol_thres=tol_thres, tol_mode=tol_mode)
-    return            dict(ref=ref, qry=qry, svm=svm_svm_dict, npz_dbp=ref['npz_dbp'], bag_dbp=ref['bag_dbp'], svm_dbp=svm_dbp)
+    svm_svm_dict = dict(factors=factors, tol_thres=tol_thres, tol_mode=tol_mode)
+    return  dict(ref=ref, qry=qry, svm=svm_svm_dict, npz_dbp=ref['npz_dbp'],
+                 bag_dbp=ref['bag_dbp'], svm_dbp=svm_dbp)
 
 def correct_filters(_filters: Union[dict, str]) -> Tuple[dict, bool]:
     _filters_out = copy.deepcopy(_filters)
@@ -280,16 +340,16 @@ def discretise(dict_in, metrics=None, mode=None, keep='first'):
     return filtered
 
 def roundSpatial(spatial_vec, metrics=None):
-        if metrics is None:
-            metrics = {'x': 0.05, 'y': 0.05, 'yaw': (2*np.pi/360)}
-        new_spatial_vec = {}
-        for key in metrics:
-            new_spatial_vec[key] = np.round(np.array(spatial_vec[key])/metrics[key],0) * metrics[key]
-        new_spatial_matrix = np.transpose(np.stack([new_spatial_vec[key] for key in list(new_spatial_vec)]))
-        groupings = []
-        for arr in np.unique(new_spatial_matrix, axis=0): # for each unique row combination:
-            groupings.append(list(np.array(np.where(np.all(new_spatial_matrix==arr,axis=1))).flatten())) # indices
-            #groupings.append(list(np.array((np.all(new_spatial_matrix==arr,axis=1))).flatten())) # bools
+    if metrics is None:
+        metrics = {'x': 0.05, 'y': 0.05, 'yaw': (2*np.pi/360)}
+    new_spatial_vec = {}
+    for key in metrics:
+        new_spatial_vec[key] = np.round(np.array(spatial_vec[key])/metrics[key],0) * metrics[key]
+    new_spatial_matrix = np.transpose(np.stack([new_spatial_vec[key] for key in list(new_spatial_vec)]))
+    groupings = []
+    for arr in np.unique(new_spatial_matrix, axis=0): # for each unique row combination:
+        groupings.append(list(np.array(np.where(np.all(new_spatial_matrix==arr,axis=1))).flatten())) # indices
+        #groupings.append(list(np.array((np.all(new_spatial_matrix==arr,axis=1))).flatten())) # bools
         return new_spatial_vec, groupings
     
 def keep_operation(d_in, groupings, mode='first'):
@@ -333,7 +393,8 @@ def keep_operation(d_in, groupings, mode='first'):
         if i[0] == 'times':
             ind = c
             break
-    if ind == -1: raise Exception("Fatal")
+    if ind == -1:
+        raise Exception("Fatal")
     cropped_reorder = cropped_store[cropped_store[:,-1].argsort()]
     d_in.pop('times')
     d_in['times'] = cropped_reorder[:,ind]
@@ -348,9 +409,9 @@ def keep_operation(d_in, groupings, mode='first'):
                         d_in[bigkey][midkey][i[2]] = np.stack(cropped_reorder[:,c],axis=0)
     return d_in
 
-def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType, List[FeatureType]], 
-            dims: list, use_tqdm: bool = False, 
-            nn_hybrid: Optional[HybridNet_Container] = None, 
+def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType, List[FeatureType]],
+            dims: list, use_tqdm: bool = False,
+            nn_hybrid: Optional[HybridNet_Container] = None,
             nn_netvlad: Optional[NetVLAD_Container] = None,
             nn_salad: Optional[SALAD_Container] = None,
             nn_apgem: Optional[APGEM_Container] = None) -> Union[np.ndarray, List[np.ndarray]]:
@@ -394,7 +455,7 @@ def getFeat(im: Union[np.ndarray, List[np.ndarray]], fttypes: Union[FeatureType,
         elif fttype.name == FeatureType.APGEM.name and not nn_apgem is None:
             ft_ready = nn_apgem.getFeat(_im, use_tqdm=use_tqdm)
         else:
-            raise Exception("[getFeat] fttype could not be handled.")
+            raise FeatureType.Exception("[getFeat] fttype could not be handled.")
         ft_list.append(ft_ready)
     if len(ft_list) == 1: 
         return ft_list[0]
@@ -416,7 +477,8 @@ def patchNormaliseImage(img, patchLength):
             jEnd = (j+1)*patchLength
             mean1 = np.mean(img1[iStart:iEnd, jStart:jEnd])
             std1 = np.std(img1[iStart:iEnd, jStart:jEnd])
-            img2[iStart:iEnd, jStart:jEnd] = img1[iStart:iEnd, jStart:jEnd] - mean1 # offset remove mean
+            # offset remove mean:
+            img2[iStart:iEnd, jStart:jEnd] = img1[iStart:iEnd, jStart:jEnd] - mean1
             if std1 == 0:
                 std1 = 0.1
             img2[iStart:iEnd, jStart:jEnd] /= std1 # crush by std
