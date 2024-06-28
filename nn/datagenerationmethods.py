@@ -71,20 +71,6 @@ class DataGenerationMethods(ABC):
         return train_data_list, check_data_list, recovery_info
 
     @staticmethod
-    def generate_dataset_manual(*args, **kwargs):
-        '''
-        TODO
-        '''
-        raise NotImplementedError()
-
-    @staticmethod
-    def generate_dataset_from_npz(*args, **kwargs):
-        '''
-        TODO
-        '''
-        raise NotImplementedError()
-
-    @staticmethod
     def generate_dataloader_from_npz(*args, **kwargs):
         '''
         TODO
@@ -100,13 +86,6 @@ class DataGenerationMethods(ABC):
 
     @staticmethod
     def prepare_training_data(*args, **kwargs):
-        '''
-        TODO
-        '''
-        raise NotImplementedError()
-
-    @staticmethod
-    def make_training_data(*args, **kwargs):
         '''
         TODO
         '''
