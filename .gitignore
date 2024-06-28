@@ -1,4 +1,3 @@
-pyaarapsi.code-workspace
 .vscode/
 build/
 .prof
@@ -15,5 +14,6 @@ src/CMakeLists.txt
 *.npz
 *.pth.tar
 *.egg-info
+*.code-workspace
 .ipynb_checkpoints
 vpr_simple/config.json
