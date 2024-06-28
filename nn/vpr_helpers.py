@@ -13,7 +13,6 @@ from pyaarapsi.vpr_simple.vpr_helpers import FeatureType, SVM_Tolerance_Mode
 from pyaarapsi.vpr_simple.vpr_dataset_tool import VPRDatasetProcessor
 from pyaarapsi.core.helper_tools import m2m_dist
 
-
 def make_vpr_dataset_params_subset( ft_type: Union[FeatureType, str], npz_dbp: str, bag_dbp: str,
                                     odom_topic: str, img_topics: str,  sample_rate: str,
                                     img_dims: str, filters: Union[str, dict]) -> dict:

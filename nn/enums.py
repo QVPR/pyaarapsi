@@ -23,6 +23,12 @@ class TrainOrTest(Enum):
     '''
     TRAIN   = 0
     TEST    = 1
+    #
+    @staticmethod
+    class Exception(Exception):
+        '''
+        Bad usage
+        '''
 
 @unique
 class AblationVersion(Enum):
@@ -32,6 +38,12 @@ class AblationVersion(Enum):
     ORIGINAL    = 0
     MEDIAN      = 1
     ADJ_MEDIAN  = 2
+    #
+    @staticmethod
+    class Exception(Exception):
+        '''
+        Bad usage
+        '''
 
 @unique
 class SampleMode(Enum):
@@ -40,6 +52,12 @@ class SampleMode(Enum):
     '''
     FRONT   = 0
     RANDOM  = 1
+    #
+    @staticmethod
+    class Exception(Exception):
+        '''
+        Bad usage
+        '''
 
 @unique
 class TrainData(Enum):
@@ -49,6 +67,12 @@ class TrainData(Enum):
     OFFICE_SVM = "Office SVM"
     CAMPUS_SVM = "Campus SVM"
     BOTH_SVM   = "Office+Campus SVM"
+    #
+    @staticmethod
+    class Exception(Exception):
+        '''
+        Bad usage
+        '''
 
 @unique
 class ApplyModel(Enum):
@@ -59,6 +83,12 @@ class ApplyModel(Enum):
     USE_CAMPUS      = 1 # Regardless of environment, TrainData.CAMPUS_SVM
     USE_FUSED       = 2 # Regardless of environment, TrainData.BOTH_SVM
     MATCH_TO_TRAIN  = 3 # For Office use TrainData.OFFICE_SVM, for Campus use TrainData.CAMPUS_SVM
+    #
+    @staticmethod
+    class Exception(Exception):
+        '''
+        Bad usage
+        '''
 
 @unique
 class ScalerUsage(Enum):
@@ -69,6 +99,12 @@ class ScalerUsage(Enum):
     NORM1           = 1
     STANDARD        = 2
     STANDARD_SHARED = 3
+    #
+    @staticmethod
+    class Exception(Exception):
+        '''
+        Bad usage
+        '''
 
 @unique
 class ModelClass(Enum):
@@ -77,6 +113,12 @@ class ModelClass(Enum):
     '''
     BASIC           = BasicMLPNN
     CUSTOM          = CustomMLPNN
+    #
+    @staticmethod
+    class Exception(Exception):
+        '''
+        Bad usage
+        '''
 
 @unique
 class LossType(Enum):
@@ -124,6 +166,12 @@ class LossType(Enum):
     # TRIPLETMARGINLOSS             = nn.TripletMarginLoss
     # TRIPLETMARGINWITHDISTANCELOSS = nn.TripletMarginWithDistanceLoss
     # CTCLOSS                       = nn.CTCLoss
+    #
+    @staticmethod
+    class Exception(Exception):
+        '''
+        Bad usage
+        '''
 
 @unique
 class GenMode(Enum):
@@ -175,3 +223,9 @@ class GenMode(Enum):
         '''
         return (np.min([self.subcomponent_size, 10]) * self.num_subcomponent_groups) \
                 + (query_length if self.uses_query_length else 0)
+    #
+    @staticmethod
+    class Exception(Exception):
+        '''
+        Bad usage
+        '''

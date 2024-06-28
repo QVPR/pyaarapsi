@@ -10,7 +10,6 @@ from pyaarapsi.vpr_simple.vpr_helpers import FeatureType
 from pyaarapsi.core.enum_tools import enum_get
 
 from pyaarapsi.nn.enums import ModelClass, GenMode
-from pyaarapsi.nn.exceptions import BadVPRDescriptor, BadModelClass, BadGenMode
 
 #pylint: disable=C0103
 class ParamHolder:
@@ -45,7 +44,7 @@ def get_svm_features(ft_type_in: Union[FeatureType, str]) -> List[str]:
     elif isinstance(ft_type_in, str):
         name = ft_type_in
     else:
-        raise BadVPRDescriptor(f"Unknown input: {str(ft_type_in)}")
+        raise FeatureType.Exception(f"Unknown input: {str(ft_type_in)}")
     #
     if name == FeatureType.NETVLAD.name:
         features  = ["area", "mlows"]
@@ -56,7 +55,7 @@ def get_svm_features(ft_type_in: Union[FeatureType, str]) -> List[str]:
     elif name == FeatureType.APGEM.name:
         features = ["rIQR", "va"]
     else:
-        raise BadVPRDescriptor(f"Unknown Feature Type: {name}")
+        raise FeatureType.Exception(f"Unknown Feature Type: {name}")
     return list(np.sort(features))
 
 def get_model_params(model_class: ModelClass, num_features: int, num_classes: int, layer_size: int,
@@ -69,7 +68,7 @@ def get_model_params(model_class: ModelClass, num_features: int, num_classes: in
     elif isinstance(model_class, str):
         name = model_class
     else:
-        raise BadModelClass(f"Unknown input: {str(model_class)}")
+        raise ModelClass.Exception(f"Unknown input: {str(model_class)}")
     #
     if name == ModelClass.BASIC.name:
         return {"input_ftrs": num_features, "n_classes": num_classes, "layer_size": layer_size,
@@ -83,7 +82,7 @@ def get_model_params(model_class: ModelClass, num_features: int, num_classes: in
                 "output_structure": output_struct, "add_sigmoid": True, 
                 "add_desc": "svm replacement"}
     else:
-        raise BadModelClass(f"Unknown Model Class {name}")
+        raise ModelClass.Exception(f"Unknown Model Class {name}")
 
 def get_num_features(mode: GenMode, query_length: int = 0):
     '''
@@ -92,7 +91,7 @@ def get_num_features(mode: GenMode, query_length: int = 0):
     if isinstance(mode, GenMode):
         mode = mode.name
     elif not isinstance(mode, str):
-        raise BadGenMode(f"Unknown mode: {str(mode)}")
+        raise GenMode.Exception(f"Unknown mode: {str(mode)}")
     #
     gmode = enum_get(mode, GenMode, wrap=False)   # seems pointless, but it is to debug load/save
                                                     # where object versions can differ

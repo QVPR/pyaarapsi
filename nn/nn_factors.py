@@ -17,7 +17,6 @@ from pyaarapsi.vpred.vpred_factors import find_va_factor, find_grad_factor, find
 
 from pyaarapsi.nn.enums import GenMode
 from pyaarapsi.nn.general_helpers import throw
-from pyaarapsi.nn.exceptions import BadGenMode
 
 def make_simple_subcomponents(arr):
     '''
@@ -169,7 +168,7 @@ def make_components(mode: GenMode, vect: NDArray, ref_feats: NDArray, qry_feats:
     if isinstance(mode, GenMode):
         mode = mode.name
     elif not isinstance(mode, str):
-        raise BadGenMode(f"Unknown mode: {str(mode)}")
+        raise GenMode.Exception(f"Unknown mode: {str(mode)}")
     #
     # ref_feats: SAD(64x64), 1000 images -> [1000, 4096]
     # qry_feats: ^^        , 3 queries -> [3, 4096]
@@ -284,7 +283,7 @@ def make_components(mode: GenMode, vect: NDArray, ref_feats: NDArray, qry_feats:
         i_1 = np.stack([get_hist(inds, i, query_length) for i in range(len(inds))], axis=1)
         comps  = [make_simple_subcomponents(i) for i in four_group] + [i_1]
     else:
-        raise BadGenMode(f'Unknown GenMode: {str(mode)}')
+        raise GenMode.Exception(f'Unknown GenMode: {str(mode)}')
     #
     components = np.concatenate(comps, axis=0)
     components[np.where(np.isfinite(components) is False)] = 0
