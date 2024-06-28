@@ -2,7 +2,7 @@
 '''
 Abstract base class for generating datasets for neural networks
 '''
-from abc import ABC
+from abc import ABC, abstractmethod
 from enum import Enum
 from itertools import chain as ch
 from typing import Optional, Tuple, Union
@@ -71,6 +71,7 @@ class DataGenerationMethods(ABC):
         return train_data_list, check_data_list, recovery_info
 
     @staticmethod
+    @abstractmethod
     def generate_dataloader_from_npz(*args, **kwargs):
         '''
         TODO
@@ -78,6 +79,7 @@ class DataGenerationMethods(ABC):
         raise NotImplementedError()
 
     @staticmethod
+    @abstractmethod
     def rebuild_training_data(*args, **kwargs):
         '''
         TODO
@@ -85,6 +87,7 @@ class DataGenerationMethods(ABC):
         raise NotImplementedError()
 
     @staticmethod
+    @abstractmethod
     def prepare_training_data(*args, **kwargs):
         '''
         TODO
@@ -92,6 +95,7 @@ class DataGenerationMethods(ABC):
         raise NotImplementedError()
 
     @staticmethod
+    @abstractmethod
     def test_nn_using_npz(*args, **kwargs):
         '''
         TODO
@@ -99,6 +103,7 @@ class DataGenerationMethods(ABC):
         raise NotImplementedError()
 
     @staticmethod
+    @abstractmethod
     def test_nn_using_mvect(*args, **kwargs):
         '''
         TODO
