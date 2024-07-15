@@ -17,8 +17,8 @@ from torch.optim.optimizer import Optimizer
 from torch import nn, Tensor
 
 from pyaarapsi.core.enum_tools import enum_get
-from pyaarapsi.core.classes.object_storage_handler import Object_Storage_Handler as OSH, Saver
-from pyaarapsi.vpr_simple.vpr_helpers import FeatureType
+from pyaarapsi.core.classes.objectstoragehandler import ObjectStorageHandler as OSH, Saver
+from pyaarapsi.vpr.classes.vprdescriptor import VPRDescriptor
 
 from pyaarapsi.nn.enums import ApplyModel, TrainData, ModelClass, LossType
 from pyaarapsi.nn.exceptions import LoadFailure, BadCombosKey
@@ -116,7 +116,7 @@ def process_data_through_model(dataloader: list, model: nn.Module, continuous_mo
             output['labels_bin'] += [i >= bin_threshold for i in new_labels]
     return output
 
-def test_model_loader(train_data: Union[TrainData, str], feature_type: Union[FeatureType, str],
+def test_model_loader(train_data: Union[TrainData, str], descriptor_type: Union[VPRDescriptor, str],
                   nn_general: NNGeneral, df_nn_train: DFNNTrain, general: General,
                   allow_generate: bool = True) -> Tuple[nn.Module, OSH]:
     '''
@@ -126,19 +126,19 @@ def test_model_loader(train_data: Union[TrainData, str], feature_type: Union[Fea
     assert not (nn_general.FORCE_GENERATE and (not allow_generate)), \
         "Cannot force generation and yet forbid generation!"
     train_data = train_data.name if isinstance(train_data, Enum) else train_data
-    feature_type = feature_type.name if isinstance(feature_type, Enum) else feature_type
+    descriptor_type = descriptor_type.name if isinstance(descriptor_type, Enum) else descriptor_type
 
     model_osh          = OSH(storage_path=Path(general.DIR_NN), build_dir=True,
                              build_dir_parents=True, prefix="nn", saver=Saver.TORCH_COMPRESS)
     raw_store_params   = {'nn_define': df_nn_train,
-                          'train_data': train_data, 'feature_type': feature_type}
+                          'train_data': train_data, 'descriptor_type': descriptor_type}
     store_params       = make_storage_safe(raw_store_params)
     verbose            = nn_general.VERBOSE
     if verbose:
         print(store_params)
     return model_osh.load(params=store_params), raw_store_params
 
-def get_model_for(train_data: Union[TrainData, str], feature_type: Union[FeatureType, str],
+def get_model_for(train_data: Union[TrainData, str], vpr_descriptor: Union[VPRDescriptor, str],
                   nn_general: NNGeneral, df_nn_train: DFNNTrain, general: General,
                   datagen: DataGenerationMethods, allow_generate: bool = True
                   ) -> Tuple[nn.Module, OSH]:
@@ -149,19 +149,19 @@ def get_model_for(train_data: Union[TrainData, str], feature_type: Union[Feature
     assert not (nn_general.FORCE_GENERATE and (not allow_generate)), \
         "Cannot force generation and yet forbid generation!"
     train_data = train_data.name if isinstance(train_data, Enum) else train_data
-    feature_type = feature_type.name if isinstance(feature_type, Enum) else feature_type
+    vpr_descriptor = vpr_descriptor.name if isinstance(vpr_descriptor, Enum) else vpr_descriptor
     # Initialise:
     model = (enum_get(df_nn_train.MODEL_CLASS.name, ModelClass,
                 wrap=False).value)(**df_nn_train.MODEL_PARAMS)
-    criterion = (enum_get(df_nn_train.LOSS_TYPE[feature_type].name, LossType,
+    criterion = (enum_get(df_nn_train.LOSS_TYPE[vpr_descriptor].name, LossType,
                     wrap=False).value)()
     optimizer = torch.optim.Adam(model.parameters(), lr=df_nn_train.LEARNING_RATE)
     model_osh = OSH(storage_path=Path(general.DIR_NN), build_dir=True,
                         build_dir_parents=True, prefix="nn", saver=Saver.TORCH_COMPRESS)
     store_params = make_storage_safe({'nn_define': df_nn_train, 'train_data': train_data,
-                                      'feature_type': feature_type})
+                                      'descriptor_type': vpr_descriptor})
     store_params['nn_define'].pop('MAX_EPOCH')
-    max_epoch_number = df_nn_train.MAX_EPOCH[feature_type]
+    max_epoch_number = df_nn_train.MAX_EPOCH[vpr_descriptor]
     verbose = nn_general.VERBOSE
     num_workers = nn_general.NUM_WORKERS
     device = general.DEVICE
@@ -216,14 +216,14 @@ def get_model_for(train_data: Union[TrainData, str], feature_type: Union[Feature
             print("Detected existing model, reconstruction of training data required.")
         training_data, checking_data = datagen.rebuild_training_data(
             recovery_info=recovery_info, scaler=model.get_scaler(),
-            train_data=train_data, feature_type=feature_type,
+            train_data=train_data, vpr_descriptor=vpr_descriptor,
             df_nn_train=df_nn_train, vpr_dp=general.VPR_DP,
             num_workers=num_workers, verbose=verbose)
     else:
         if verbose:
             print("Detected new model, new training data required.")
         training_data, checking_data, recovery_info, scaler = datagen.prepare_training_data(
-            train_data=train_data, feature_type=feature_type,
+            train_data=train_data, vpr_descriptor=vpr_descriptor,
             df_nn_train=df_nn_train, vpr_dp=general.VPR_DP,
             num_workers=num_workers, verbose=verbose)
         model.set_scaler(scaler=scaler)
@@ -235,7 +235,7 @@ def get_model_for(train_data: Union[TrainData, str], feature_type: Union[Feature
         # Generate TRAIN results:
         train_output = process_data_through_model(dataloader=training_data, model=model,
             continuous_model=df_nn_train.CONTINUOUS_MODEL,
-            cont_threshold=0.5, bin_threshold=df_nn_train.TRAIN_THRESHOLD[feature_type],
+            cont_threshold=0.5, bin_threshold=df_nn_train.TRAIN_THRESHOLD[vpr_descriptor],
             criterion=criterion, optimizer=optimizer,
             calculate_loss=True, perform_backward_pass=True)
         for k in train_output.keys():
@@ -246,7 +246,7 @@ def get_model_for(train_data: Union[TrainData, str], feature_type: Union[Feature
         with torch.no_grad():
             check_output = process_data_through_model(dataloader=checking_data, model=model,
                 continuous_model=df_nn_train.CONTINUOUS_MODEL,
-                cont_threshold=0.5, bin_threshold=df_nn_train.TRAIN_THRESHOLD[feature_type],
+                cont_threshold=0.5, bin_threshold=df_nn_train.TRAIN_THRESHOLD[vpr_descriptor],
                 criterion=criterion, optimizer=optimizer,
                 calculate_loss=True, perform_backward_pass=False)
             for k in check_output.keys():

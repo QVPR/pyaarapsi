@@ -8,14 +8,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 import rospy
-from nav_msgs.msg                   import Path
-from std_msgs.msg                   import Header, ColorRGBA
-from geometry_msgs.msg              import PoseStamped, Point, Vector3
-from visualization_msgs.msg         import MarkerArray, Marker
+from nav_msgs.msg import Path
+from std_msgs.msg import Header, ColorRGBA
+from geometry_msgs.msg import PoseStamped, Point, Vector3
+from visualization_msgs.msg import MarkerArray, Marker
 
-
-from pyaarapsi.core.helper_tools    import angle_wrap
-from pyaarapsi.core.ros_tools       import q_from_yaw, q_from_rpy, ROS_Publisher
+from pyaarapsi.core.helper_tools import angle_wrap
+from pyaarapsi.core.ros_tools import q_from_yaw, q_from_rpy, ROSPublisher
 
 def make_path_speeds(path_xyws: NDArray[np.float32], path_indices: List[int]
                      ) -> Tuple[Path, MarkerArray]:
@@ -68,7 +67,7 @@ def make_zones(path_xyws: NDArray[np.float32], zone_indices: List[int]) -> Marke
         zones.markers.append(new_zone)
     return zones
 
-def publish_reversible_xyw_pose(pose_xyw: list, pub: Union[rospy.Publisher, ROS_Publisher],
+def publish_reversible_xyw_pose(pose_xyw: list, pub: Union[rospy.Publisher, ROSPublisher],
                                 frame_id='map', reverse: bool = False) -> None:
     '''
     TODO
@@ -78,7 +77,7 @@ def publish_reversible_xyw_pose(pose_xyw: list, pub: Union[rospy.Publisher, ROS_
         pose[2] = angle_wrap(pose[2] + np.pi, 'RAD')
     publish_xyw_pose(pose, pub, frame_id)
 
-def publish_xyw_pose(pose_xyw: list, pub: Union[rospy.Publisher, ROS_Publisher],
+def publish_xyw_pose(pose_xyw: list, pub: Union[rospy.Publisher, ROSPublisher],
                      frame_id='map') -> None:
     '''
     TODO
@@ -89,7 +88,7 @@ def publish_xyw_pose(pose_xyw: list, pub: Union[rospy.Publisher, ROS_Publisher],
     goal.pose.orientation   = q_from_yaw(pose_xyw[2])
     pub.publish(goal)
 
-def publish_xyzrpy_pose(xyzrpy: list, pub: Union[rospy.Publisher, ROS_Publisher],
+def publish_xyzrpy_pose(xyzrpy: list, pub: Union[rospy.Publisher, ROSPublisher],
                         frame_id='map') -> None:
     '''
     TODO

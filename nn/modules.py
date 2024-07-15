@@ -7,7 +7,8 @@ from typing import Tuple
 
 import numpy as np
 import torch
-from torch import nn, Tensor, zeros, log, neg, clamp, mean, sigmoid, sum as tsum # pylint: disable=E0611
+from torch import nn, Tensor, zeros, log, neg, clamp, mean, sigmoid, \
+    sum as tsum # pylint: disable=E0611
 import torch.nn.functional as F
 from sklearn.preprocessing import StandardScaler
 
@@ -232,7 +233,8 @@ class GTAwareWeightedMSELoss(nn.Module):
         super().__init__(*args, **kwargs)
         self.weight_fp = weight_fp
 
-    def forward(self, pred: Tensor, actual: Tensor, gt_error: Tensor, tolerance: Tensor): #pylint: disable=W0613
+    def forward(self, pred: Tensor, actual: Tensor, gt_error: Tensor, tolerance: Tensor
+                ): #pylint: disable=W0613
         '''
         pass pred (Tensor) through loss; aiming for actual
         '''
@@ -258,7 +260,8 @@ class GTAwareWeightedMSELoss2(nn.Module):
         super().__init__(*args, **kwargs)
         self.weight_fp = weight_fp
 
-    def forward(self, pred: Tensor, actual: Tensor, gt_error: Tensor, tolerance: Tensor): #pylint: disable=W0613
+    def forward(self, pred: Tensor, actual: Tensor, gt_error: Tensor, tolerance: Tensor
+                ): #pylint: disable=W0613
         '''
         pass pred (Tensor) through loss; aiming for actual
         '''
@@ -280,7 +283,8 @@ class GTAwareWeightedMSELoss3(nn.Module):
         super().__init__(*args, **kwargs)
         self.weight_fp = weight_fp
 
-    def forward(self, pred: Tensor, actual: Tensor, gt_error: Tensor, tolerance: Tensor): #pylint: disable=W0613
+    def forward(self, pred: Tensor, actual: Tensor, gt_error: Tensor, tolerance: Tensor
+                ): #pylint: disable=W0613
         '''
         pass pred (Tensor) through loss; aiming for actual
         '''
@@ -303,7 +307,8 @@ class GTAwareWeightedMSELoss4(nn.Module):
         super().__init__(*args, **kwargs)
         self.weight_fp = weight_fp
 
-    def forward(self, pred: Tensor, actual: Tensor, gt_error: Tensor, tolerance: Tensor): #pylint: disable=W0613
+    def forward(self, pred: Tensor, actual: Tensor, gt_error: Tensor, tolerance: Tensor
+                ): #pylint: disable=W0613
         '''
         pass pred (Tensor) through loss; aiming for actual
         '''
@@ -326,7 +331,8 @@ class GTAwareWeightedMSELoss5(nn.Module):
         super().__init__(*args, **kwargs)
         self.weight_fp = weight_fp
 
-    def forward(self, pred: Tensor, actual: Tensor, gt_error: Tensor, tolerance: Tensor): #pylint: disable=W0613
+    def forward(self, pred: Tensor, actual: Tensor, gt_error: Tensor, tolerance: Tensor
+                ): #pylint: disable=W0613
         '''
         pass pred (Tensor) through loss; aiming for actual
         '''
@@ -340,7 +346,8 @@ class GTAwareWeightedMSELoss6(nn.Module):
         super().__init__(*args, **kwargs)
         self.weight_fp = weight_fp
 
-    def forward(self, pred: Tensor, actual: Tensor, gt_error: Tensor, tolerance: Tensor): #pylint: disable=W0613
+    def forward(self, pred: Tensor, actual: Tensor, gt_error: Tensor, tolerance: Tensor
+                ): #pylint: disable=W0613
         '''
         pass pred (Tensor) through loss; aiming for actual
         '''

@@ -4,20 +4,23 @@ Parameters.
 '''
 import copy
 import warnings
-from typing import List
+from typing import List, Tuple
 import torch
 import numpy as np
 from matplotlib import image as mpl_image
 
 from pyaarapsi.core.classes.defaultdict import DefaultDict
-from pyaarapsi.vpr_simple.vpr_helpers import FeatureType, SVM_Tolerance_Mode
-from pyaarapsi.vpr_simple.vpr_dataset_tool import VPRDatasetProcessor
-from pyaarapsi.vpr_simple import config
+from pyaarapsi.vpr.classes.vprdescriptor import VPRDescriptor
+from pyaarapsi.vpr.classes.data.svmparams import SVMToleranceMode
+from pyaarapsi.vpr.vpr_dataset_tool import VPRDatasetProcessor
+from pyaarapsi.vpr import config
 
 from pyaarapsi.nn.enums import SampleMode, ScalerUsage, ApplyModel, ModelClass, GenMode, LossType, \
     AblationVersion
 from pyaarapsi.nn.param_helpers import get_model_params, ParamHolder
 from pyaarapsi.nn.vpr_helpers import make_vpr_dataset_params_subset, make_svm_dataset_params_subset
+from pyaarapsi.vpr.classes.dimensions import ImageDimensions
+from pyaarapsi.vpr.classes.data.rosbagdatafilter import RosbagDataFilter
 
 # How to configure pyaarapsi's config:
 # >>> import pyaarapsi.vpr_simple.config as config
@@ -50,30 +53,24 @@ class DFVPR(ParamHolder):
     ---
     These variables are used across the experiment and testing jupyter notebooks.
     '''
-    DO_FILTERS: bool                    = False
-    DO_PERFORATE: bool                  = False
-    NPZ_DBP: str                        = "/data/compressed_sets"
-    BAG_DBP: str                        = "/data/rosbags"
-    SVM_DBP: str                        = "/cfg/svm_models"
     ODOM_TOPIC: str                     = "/odom/true"
     ENC_TOPIC: str                      = "/jackal_velocity_controller/odom"
-    ODOM_TOPICS: List[str]              = [ODOM_TOPIC, ENC_TOPIC]
     IMG_TOPIC: str                      = "/ros_indigosdk_occam/image0/compressed"
-    IMG_TOPICS: List[str]               = [IMG_TOPIC]
-    IMG_DIMS: List[int]                 = [64,64]
-    SAMPLE_RATE: float                  = 10.0
+    ODOM_TOPICS: List[str]              = (ODOM_TOPIC, ENC_TOPIC)
+    IMG_TOPICS: List[str]               = (IMG_TOPIC,)
+    IMG_DIMS: List[int]                 = ImageDimensions(width=64,height=64)
+    SAMPLE_RATE: int                    = 10 * 1000
     SVM_FACTORS: DefaultDict            = DefaultDict(default=["grad", "va"])
-    SVM_TOL_MODE: SVM_Tolerance_Mode    = SVM_Tolerance_Mode.DISTANCE
-    TRAIN_QRY_FILTER: dict              = {}
-    TRAIN_REF_FILTER: dict              = {}
-    TEST_QRY_FILTER: dict               = {}
-    TEST_REF_FILTER: dict               = (lambda DF=DO_FILTERS, DP=DO_PERFORATE: {
-                                            **({"distance": 0.05} if DF else {}),
-                                            **({"perforate":
-                                                {"randomness": 0.8, "hole_damage": 0.0,
-                                                 "num_holes": 1, "_override": 1}} if DP else {})
-                                            })()
+    SVM_TOL_MODE: SVMToleranceMode      = SVMToleranceMode.DISTANCE
     COMBOS: dict                        = copy.deepcopy(_COMBOS)
+    TRAIN_REF_IMAGE_FILTERS: Tuple[RosbagDataFilter]   = ()
+    TRAIN_QRY_IMAGE_FILTERS: Tuple[RosbagDataFilter]   = ()
+    TEST_REF_IMAGE_FILTERS: Tuple[RosbagDataFilter]    = ()
+    TEST_QRY_IMAGE_FILTERS: Tuple[RosbagDataFilter]    = ()
+    TRAIN_REF_FEATURE_FILTERS: Tuple[RosbagDataFilter] = ()
+    TRAIN_QRY_FEATURE_FILTERS: Tuple[RosbagDataFilter] = ()
+    TEST_REF_FEATURE_FILTERS: Tuple[RosbagDataFilter]  = ()
+    TEST_QRY_FEATURE_FILTERS: Tuple[RosbagDataFilter]  = ()
 
 class General(ParamHolder):
     '''
@@ -121,7 +118,7 @@ class General(ParamHolder):
     # Ensure these do not get stored.
     ParamHolder.IGNORED_VARIABLES.extend(["VPR_DP", "BGIMG1", "BGIMG2", "DEVICE"])
     try:
-        VPR_DP.init_nns()
+        VPR_DP.init_all_containers()
     except:#pylint: disable=W0702
         warnings.warn("[params] Unable to initialize generation for GEN_IP.")
 
@@ -133,40 +130,39 @@ class DFGeneral(ParamHolder):
     ---
     These variables are used across the experiment and testing jupyter notebooks.
     '''
-    FEATURE_TYPES           = [FeatureType.APGEM, FeatureType.NETVLAD, FeatureType.SALAD]
-    FEATURE_NAMES           = ["AP-GeM", "NetVLAD", "SALAD"]
+    DESCRIPTOR_TYPES        = [VPRDescriptor.APGEM, VPRDescriptor.NETVLAD, VPRDescriptor.SALAD]
     VPR                     = DFVPR()
     SVM_SUBSETS             = {} # Populate this below:
-    TRAIN_REF_SUBSETS       = {} # ^^^
-    TRAIN_QRY_SUBSETS       = {} # ^^^
-    TEST_REF_SUBSETS        = {} # ^^^
-    TEST_QRY_SUBSETS        = {} # ^^^
+    TRAIN_REF_SUBSETS       = {} # ^^
+    TRAIN_QRY_SUBSETS       = {} # ^^
+    TEST_REF_SUBSETS        = {} # ^^
+    TEST_QRY_SUBSETS        = {} # ^^
 
-for ft in DFGeneral.FEATURE_TYPES:
-    DFGeneral.TEST_QRY_SUBSETS[ft.name] = make_vpr_dataset_params_subset(
-        ft_type=ft, npz_dbp=DFVPR.NPZ_DBP, bag_dbp=DFVPR.BAG_DBP,
-        odom_topic=DFVPR.ODOM_TOPICS, # << also has encoder topic!
-        img_topics=DFVPR.IMG_TOPICS, sample_rate=DFVPR.SAMPLE_RATE,
-        img_dims=DFVPR.IMG_DIMS, filters=DFVPR.TEST_QRY_FILTER)
-    DFGeneral.TEST_REF_SUBSETS[ft.name] = make_vpr_dataset_params_subset(
-        ft_type=ft, npz_dbp=DFVPR.NPZ_DBP, bag_dbp=DFVPR.BAG_DBP,
-        odom_topic=DFVPR.ODOM_TOPIC,
-        img_topics=DFVPR.IMG_TOPICS, sample_rate=DFVPR.SAMPLE_RATE,
-        img_dims=DFVPR.IMG_DIMS, filters=DFVPR.TEST_REF_FILTER)
-    DFGeneral.TRAIN_QRY_SUBSETS[ft.name] = make_vpr_dataset_params_subset(
-        ft_type=ft, npz_dbp=DFVPR.NPZ_DBP, bag_dbp=DFVPR.BAG_DBP,
-        odom_topic=DFVPR.ODOM_TOPIC,
-        img_topics=DFVPR.IMG_TOPICS, sample_rate=DFVPR.SAMPLE_RATE,
-        img_dims=DFVPR.IMG_DIMS, filters=DFVPR.TRAIN_QRY_FILTER)
-    DFGeneral.TRAIN_REF_SUBSETS[ft.name] = make_vpr_dataset_params_subset(
-        ft_type=ft, npz_dbp=DFVPR.NPZ_DBP, bag_dbp=DFVPR.BAG_DBP,
-        odom_topic=DFVPR.ODOM_TOPIC,
-        img_topics=DFVPR.IMG_TOPICS, sample_rate=DFVPR.SAMPLE_RATE,
-        img_dims=DFVPR.IMG_DIMS, filters=DFVPR.TRAIN_REF_FILTER)
-    DFGeneral.SVM_SUBSETS[ft.name] = make_svm_dataset_params_subset(
-        tol_mode=DFVPR.SVM_TOL_MODE, svm_dbp=DFVPR.SVM_DBP,
-        ref_subset=copy.deepcopy(DFGeneral.TRAIN_REF_SUBSETS[ft.name]),
-        qry_subset=copy.deepcopy(DFGeneral.TRAIN_QRY_SUBSETS[ft.name]))
+for descriptor_type in DFGeneral.DESCRIPTOR_TYPES:
+    DFGeneral.TRAIN_REF_SUBSETS[descriptor_type.name] = make_vpr_dataset_params_subset(
+        img_topics=DFVPR.IMG_TOPICS, odom_topics=DFVPR.ODOM_TOPICS, \
+        vpr_descriptors=(descriptor_type,), img_dims=DFVPR.IMG_DIMS, sample_rate=DFVPR.SAMPLE_RATE,
+        image_filters=DFVPR.TRAIN_REF_IMAGE_FILTERS,
+        feature_filters=DFVPR.TRAIN_REF_FEATURE_FILTERS)
+    DFGeneral.TRAIN_QRY_SUBSETS[descriptor_type.name] = make_vpr_dataset_params_subset(
+        img_topics=DFVPR.IMG_TOPICS, odom_topics=DFVPR.ODOM_TOPICS, \
+        vpr_descriptors=(descriptor_type,), img_dims=DFVPR.IMG_DIMS, sample_rate=DFVPR.SAMPLE_RATE,
+        image_filters=DFVPR.TRAIN_QRY_IMAGE_FILTERS,
+        feature_filters=DFVPR.TRAIN_QRY_FEATURE_FILTERS)
+    DFGeneral.TEST_REF_SUBSETS[descriptor_type.name] = make_vpr_dataset_params_subset(
+        img_topics=DFVPR.IMG_TOPICS, odom_topics=DFVPR.ODOM_TOPICS, \
+        vpr_descriptors=(descriptor_type,), img_dims=DFVPR.IMG_DIMS, sample_rate=DFVPR.SAMPLE_RATE,
+        image_filters=DFVPR.TEST_REF_IMAGE_FILTERS,
+        feature_filters=DFVPR.TEST_REF_FEATURE_FILTERS)
+    DFGeneral.TEST_QRY_SUBSETS[descriptor_type.name] = make_vpr_dataset_params_subset(
+        img_topics=DFVPR.IMG_TOPICS, odom_topics=DFVPR.ODOM_TOPICS, \
+        vpr_descriptors=(descriptor_type,), img_dims=DFVPR.IMG_DIMS, sample_rate=DFVPR.SAMPLE_RATE,
+        image_filters=DFVPR.TEST_QRY_IMAGE_FILTERS,
+        feature_filters=DFVPR.TEST_QRY_FEATURE_FILTERS)
+    DFGeneral.SVM_SUBSETS[descriptor_type.name] = make_svm_dataset_params_subset(
+        tol_mode=DFVPR.SVM_TOL_MODE,
+        ref_subset=copy.deepcopy(DFGeneral.TRAIN_REF_SUBSETS[descriptor_type.name]),
+        qry_subset=copy.deepcopy(DFGeneral.TRAIN_QRY_SUBSETS[descriptor_type.name]))
 
 class DFNNTrain(ParamHolder):
     '''
@@ -179,9 +175,9 @@ class DFNNTrain(ParamHolder):
     BATCH_SIZE              = 8         # pass x features through at once (typically powers of 2)
     LEARNING_RATE           = 0.00001   # on each pass, how much change is made to each weight
     MAX_EPOCH               = DefaultDict(default=-1, **{
-                                          FeatureType.APGEM.name: 50,
-                                          FeatureType.NETVLAD.name: 50,
-                                          FeatureType.SALAD.name: 100,
+                                          VPRDescriptor.APGEM.name: 50,
+                                          VPRDescriptor.NETVLAD.name: 50,
+                                          VPRDescriptor.SALAD.name: 100,
                                           })
     # MAX_EPOCH               = DefaultDict(default=100)
     TRAIN_CHECK_RATIO       = 0.8
@@ -200,9 +196,9 @@ class DFNNTrain(ParamHolder):
     APPLY_SCALERS           = ScalerUsage.STANDARD_SHARED # use NONE, NORM1 at own risk.
     APPLY_MODEL             = ApplyModel.USE_FUSED
     LOSS_TYPE               = DefaultDict(default=LossType.NONE, **{
-                                          FeatureType.APGEM.name: LossType.WEIGHTED_MSE_LOSS5,
-                                          FeatureType.NETVLAD.name: LossType.WEIGHTED_MSE_LOSS2,
-                                          FeatureType.SALAD.name: LossType.WEIGHTED_MSE_LOSS34,
+                                          VPRDescriptor.APGEM.name: LossType.WEIGHTED_MSE_LOSS5,
+                                          VPRDescriptor.NETVLAD.name: LossType.WEIGHTED_MSE_LOSS2,
+                                          VPRDescriptor.SALAD.name: LossType.WEIGHTED_MSE_LOSS34,
                                           })
     VPR                     = DFVPR()
     QRY_SUBSETS             = copy.deepcopy(DFGeneral.TRAIN_QRY_SUBSETS)

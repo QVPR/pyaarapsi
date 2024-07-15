@@ -6,9 +6,8 @@ from enum import Enum
 from typing import Union, List, Any
 import numpy as np
 
-from pyaarapsi.vpr_simple.vpr_helpers import FeatureType
+from pyaarapsi.vpr.classes.vprdescriptor import VPRDescriptor
 from pyaarapsi.core.enum_tools import enum_get
-
 from pyaarapsi.nn.enums import ModelClass, GenMode
 
 #pylint: disable=C0103
@@ -35,27 +34,27 @@ def get_paramholder_variables(klass: ParamHolder) -> dict:
             for k in klass_keys
             if ((not k.startswith('_')) and (not k in klass.IGNORED_VARIABLES))}
 
-def get_svm_features(ft_type_in: Union[FeatureType, str]) -> List[str]:
+def get_svm_features(descriptor_type: Union[VPRDescriptor, str]) -> List[str]:
     '''
     Get SVM features per VPR descriptor.
     '''
-    if isinstance(ft_type_in, Enum):
-        name = ft_type_in.name
-    elif isinstance(ft_type_in, str):
-        name = ft_type_in
+    if isinstance(descriptor_type, Enum):
+        name = descriptor_type.name
+    elif isinstance(descriptor_type, str):
+        name = descriptor_type
     else:
-        raise FeatureType.Exception(f"Unknown input: {str(ft_type_in)}")
+        raise VPRDescriptor.Exception(f"Unknown input: {str(descriptor_type)}")
     #
-    if name == FeatureType.NETVLAD.name:
+    if name == VPRDescriptor.NETVLAD.name:
         features  = ["area", "mlows"]
-    elif name == FeatureType.RAW.name:
+    elif name == VPRDescriptor.SAD.name:
         features  = ["grad", "va"]
-    elif name == FeatureType.SALAD.name:
+    elif name == VPRDescriptor.SALAD.name:
         features  = ["senssum_all", "va"]
-    elif name == FeatureType.APGEM.name:
+    elif name == VPRDescriptor.APGEM.name:
         features = ["rIQR", "va"]
     else:
-        raise FeatureType.Exception(f"Unknown Feature Type: {name}")
+        raise VPRDescriptor.Exception(f"Unknown Descriptor Type: {name}")
     return list(np.sort(features))
 
 def get_model_params(model_class: ModelClass, num_features: int, num_classes: int, layer_size: int,
@@ -115,5 +114,7 @@ def make_storage_safe(object_in):
         return object_in.name
     elif isParamHolder(object_in):
         return make_storage_safe(get_paramholder_variables(object_in))
+    elif callable(getattr(object_in, "save_ready", None)):
+        return object_in.save_ready()
     else:
         raise TypeError(f"Unknown type: {str(type(object_in))}, {str(object_in)}")

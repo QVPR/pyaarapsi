@@ -1,36 +1,35 @@
 #!/usr/bin/env python3
+'''
+Tools for transforms
+'''
+from typing import Optional, Tuple, Literal, overload, Union
 import numpy as np
-from typing import Optional
+from numpy.typing import NDArray
 
-def rotationMatrixToEulerAngles(R: np.ndarray) -> np.ndarray:
+def rotation_matrix_to_euler_angles(rot_mat: NDArray) -> NDArray:
     '''
     Convert a 3x3 Rotation Matrix to roll, pitch, yaw Euler angles
     https://learnopencv.com/rotation-matrix-to-euler-angles/
-    
     Inputs:
     - R: np.ndarray type; 3x3 Rotation Matrix
     Returns:
     np.ndarray type; [roll, pitch, yaw]
     '''
-    sy = np.sqrt(R[0,0] * R[0,0] +  R[1,0] * R[1,0])
- 
+    sy = np.sqrt(rot_mat[0,0] * rot_mat[0,0] +  rot_mat[1,0] * rot_mat[1,0])
     singular = sy < 1e-6
- 
-    if not singular :
-        x = np.arctan2(R[2,1] , R[2,2])
-        y = np.arctan2(-R[2,0], sy)
-        z = np.arctan2(R[1,0], R[0,0])
-    else :
-        x = np.arctan2(-R[1,2], R[1,1])
-        y = np.arctan2(-R[2,0], sy)
+    if not singular:
+        x = np.arctan2( rot_mat[2,1] , rot_mat[2,2])
+        y = np.arctan2(-rot_mat[2,0], sy)
+        z = np.arctan2( rot_mat[1,0], rot_mat[0,0])
+    else:
+        x = np.arctan2(-rot_mat[1,2], rot_mat[1,1])
+        y = np.arctan2(-rot_mat[2,0], sy)
         z = 0
- 
     return np.array([x, y, z])
 
 def rotation_matrix_2d(y: float, radians=True):
     '''
     Create a 2D rotation matrix
-
     Inputs:
     - y:        float type; yaw angle
     - radians:  bool type {default: True}; set unit of y to radians
@@ -40,8 +39,8 @@ def rotation_matrix_2d(y: float, radians=True):
     if not radians:
         y = y * np.pi / 180
     c, s = np.cos(y), np.sin(y)
-    R = np.array([[c,-s],[s,c]])
-    return R
+    rot_mat = np.array([[c,-s],[s,c]])
+    return rot_mat
 
 def rotation_matrix_xy(y: float, radians=True):
     '''
@@ -56,8 +55,8 @@ def rotation_matrix_xy(y: float, radians=True):
     if not radians:
         y = y * np.pi / 180
     cy, sy = np.cos(y), np.sin(y)
-    Rz = np.array([[cy,-sy,0],[sy,cy,0],[0,0,1]])
-    return Rz
+    rot_z_mat = np.array([[cy,-sy,0],[sy,cy,0],[0,0,1]])
+    return rot_z_mat
 
 def rotation_matrix_xz(p: float, radians=True):
     '''
@@ -72,8 +71,8 @@ def rotation_matrix_xz(p: float, radians=True):
     if not radians:
         p = p * np.pi / 180
     cp, sp = np.cos(p), np.sin(p)
-    Ry = np.array([[1,0,0],[0,cp,-sp],[0,sp,cp]])
-    return Ry
+    rot_y_mat = np.array([[1,0,0],[0,cp,-sp],[0,sp,cp]])
+    return rot_y_mat
 
 def rotation_matrix_yz(r: float, radians=True):
     '''
@@ -88,8 +87,8 @@ def rotation_matrix_yz(r: float, radians=True):
     if not radians:
         r = r * np.pi / 180
     cr, sr = np.cos(r), np.sin(r)
-    Rx = np.array([[1,0,0],[0,cr,-sr],[0,sr,cr]])
-    return Rx
+    rot_x_mat = np.array([[1,0,0],[0,cr,-sr],[0,sr,cr]])
+    return rot_x_mat
 
 def rotation_matrix_3d(r: float, p: float, y: float, order='rpy', radians=True):
     '''
@@ -104,17 +103,20 @@ def rotation_matrix_3d(r: float, p: float, y: float, order='rpy', radians=True):
     Returns:
     - np.ndarray type (3x3) rotation matrix
     '''
-    assert sum([i in order for i in 'rpy']) == 3 and len(order) == 3, 'Order must be some combination of "rpy"'
-    Rs_ = { 'r': rotation_matrix_yz(r, radians=radians), 
-            'p': rotation_matrix_xz(p, radians=radians), 
-            'y': rotation_matrix_xy(y, radians=radians) }
-    R = np.matmul(Rs_[order[2]], np.matmul(Rs_[order[1]], Rs_[order[0]]))
-    return R
+    assert sum([i in order for i in 'rpy']) == 3 and len(order) == 3, \
+        'Order must be some combination of "rpy"'
+    individual_rot_mats = { 'r': rotation_matrix_yz(r, radians=radians),
+                            'p': rotation_matrix_xz(p, radians=radians),
+                            'y': rotation_matrix_xy(y, radians=radians) }
+    rot_mat = np.matmul(individual_rot_mats[order[2]], \
+                        np.matmul(individual_rot_mats[order[1]], individual_rot_mats[order[0]]))
+    return rot_mat
 
-def homogeneous_transform(r: float, p: float, y: float, X: float, Y: float, Z: float, order='rpy', radians=True):
+def homogeneous_transform(r_ang: float, p_ang: float, y_ang: float, \
+                          x_lin: float, y_lin: float, z_lin: float, order='rpy', radians=True):
     '''
-    Input rotation angles (roll, pitch, yaw) and linear translations (x, y, z) to construct a 4x4 homogeneous transform matrix
-
+    Input rotation angles (roll, pitch, yaw) and linear translations (x, y, z) to construct a
+        4x4 homogeneous transform matrix
     Inputs:
     - r:        float type; roll angle
     - p:        float type; pitch angle
@@ -127,13 +129,28 @@ def homogeneous_transform(r: float, p: float, y: float, X: float, Y: float, Z: f
     Returns:
     - np.ndarray type (4x4) homogeneous transform matrix
     '''
-    R = rotation_matrix_3d(r, p, y, order=order, radians=radians)
-    H = np.eye(4)
-    H[0:3,0:3] = R
-    H[0:3,3] = np.array([X,Y,Z])
-    return H
+    rot_mat = rotation_matrix_3d(r_ang, p_ang, y_ang, order=order, radians=radians)
+    h_transform = np.eye(4)
+    h_transform[0:3,0:3] = rot_mat
+    h_transform[0:3,3] = np.array([x_lin, y_lin, z_lin])
+    return h_transform
 
-def apply_homogeneous_transform(H: np.ndarray, X: list, Y: list, Z: Optional[list] = None, cast_to_list = True):
+@overload
+def apply_homogeneous_transform(h_transform: NDArray, x_data: list, y_data: list, \
+                                z_data: Optional[list] = None, cast_to_list: Literal[True] = True
+                                ) -> Tuple[list, list, list]:
+    ...
+
+@overload
+def apply_homogeneous_transform(h_transform: NDArray, x_data: list, y_data: list, \
+                                z_data: Optional[list] = None, cast_to_list: Literal[False] = True
+                                ) -> Tuple[NDArray, NDArray, NDArray]:
+    ...
+
+def apply_homogeneous_transform(h_transform: NDArray, x_data: list, y_data: list, \
+                                z_data: Optional[list] = None, cast_to_list: bool = True
+                                ) -> Tuple[Union[NDArray, list], Union[NDArray, list], \
+                                           Union[NDArray, list]]:
     '''
     Input a homogeneous transform and lists of X, Y, Z values for points to transform
 
@@ -146,36 +163,59 @@ def apply_homogeneous_transform(H: np.ndarray, X: list, Y: list, Z: Optional[lis
     Returns:
     - (X, Y, Z); transformed point coordinate lists
     '''
-    if Z is None:
-        Z = [0] * len(X)
-    assert H.shape == (4,4), 'Homogeneous transform dimensions incorrect; Criteria: H.shape == (4,4)'
-    assert len(X) == len(Y) == len(Z), 'Number of elements in X must match that of in Y and Z'
-    xyz_ = np.stack([np.array(X).flatten(),np.array(Y).flatten(), np.array(Z).flatten(), np.ones(len(X)).flatten()])
-    XYZ_ = np.matmul(H, xyz_)
+    x_data_in = np.array(x_data) if isinstance(x_data, list) else x_data
+    y_data_in = np.array(y_data) if isinstance(y_data, list) else y_data
+    if z_data is None:
+        z_data_in = np.array([0] * len(x_data))
+    else:
+        z_data_in = np.array(z_data) if isinstance(z_data, list) else z_data
+    assert isinstance(x_data_in, np.ndarray) and isinstance(y_data_in, np.ndarray) \
+        and isinstance(z_data_in, np.ndarray)
+    assert h_transform.shape == (4,4), \
+        'Homogeneous transform dimensions incorrect; Criteria: H.shape == (4,4)'
+    assert x_data_in.size == y_data_in.size == z_data_in.size, \
+        'Number of elements in X must match that of in Y and Z'
+    flat_xyz = np.stack([x_data_in.flatten(), y_data_in.flatten(), z_data_in.flatten(), \
+                         np.ones(len(z_data_in)).flatten()])
+    transformed_xyz = np.matmul(h_transform, flat_xyz)
     if cast_to_list:
-        return list(XYZ_[0,:]), list(XYZ_[1,:]), list(XYZ_[2,:])
-    return XYZ_[0,:], XYZ_[1,:], XYZ_[2,:]
+        return list(transformed_xyz[0,:]), list(transformed_xyz[1,:]), list(transformed_xyz[2,:])
+    return transformed_xyz[0,:], transformed_xyz[1,:], transformed_xyz[2,:]
 
-class Transform_Builder(object):
+class TransformBuilder(object):
+    '''
+    Tool to construct a homogeneous transformation matrix
+    '''
     def __init__(self):
         self._transform  = np.eye(4)
         self._components = []
-
+    #
     def translate(self, x: float = 0, y: float = 0, z: float = 0):
+        '''
+        Add a translation to the homogeneous transform matrix
+        '''
         new_transform = homogeneous_transform(0,0,0,x,y,z)
         self._components.append(new_transform)
         self._transform = np.matmul(new_transform, self._transform)
         return self
-
+    #
     def rotate(self, r: float = 0, p: float = 0, y: float = 0, order: str = 'rpy', radians=True):
+        '''
+        Add a rotation to the homogeneous transform matrix
+        '''
         new_transform   = homogeneous_transform(r,p,y,0,0,0,order=order,radians=radians)
         self._transform = np.matmul(new_transform, self._transform)
         self._components.append(new_transform)
         return self
-    
+    #
     def get(self):
+        '''
+        Get transform
+        '''
         return self._transform
-        
+    #
     def get_components(self):
+        '''
+        Get transform components
+        '''
         return self._components
-        

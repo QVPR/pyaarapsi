@@ -9,11 +9,12 @@ from typing import Callable
 import numpy as np
 from numpy.typing import NDArray
 
-from pyaarapsi.vpred.vpred_factors import find_va_factor, find_grad_factor, find_adj_grad_factor, \
-    find_va_grad_fusion, find_area_factors, find_under_area_factors, find_peak_factors, \
-    find_relative_mean_std, find_relative_percentiles, find_iqr_factors, find_match_distance, \
-    find_minima_separation, find_sensitivity, find_sum_factor, find_minima_variation, \
-    find_removed_factors, find_mean_median_diff, find_adj_minima_separation, find_adj_sensitivity
+from pyaarapsi.vpr.pred.vpred_factors import find_va_factor, find_grad_factor, \
+    find_adj_grad_factor, find_va_grad_fusion, find_area_factors, find_under_area_factors, \
+    find_peak_factors, find_relative_mean_std, find_relative_percentiles, find_iqr_factors, \
+    find_match_distance, find_minima_separation, find_sensitivity, find_sum_factor, \
+    find_minima_variation, find_removed_factors, find_mean_median_diff, \
+    find_adj_minima_separation, find_adj_sensitivity
 
 from pyaarapsi.nn.enums import GenMode
 from pyaarapsi.nn.general_helpers import throw

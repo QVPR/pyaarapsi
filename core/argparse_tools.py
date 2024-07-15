@@ -1,13 +1,51 @@
+#!/usr/bin/env python3
+'''
+This file provides a collections of functions to parse (or raise an exception whilst trying to
+parse) an input. Functions are named check_<desired output type>
+'''
 import argparse as ap
 import string
 from enum import Enum
-from .enum_tools import enum_value_options
-from typing import List, Tuple, Any, Optional, Type, Union
+from typing import List, Tuple, Any, Optional, Type, Union, TypeVar, overload
+from pyaarapsi.core.enum_tools import enum_value_options
 
-'''
-This file provides a collections of functions to parse (or raise an exception whilst trying to parse) an input.
-Functions are named check_<desired output type>
-'''
+
+InstanceT = TypeVar("InstanceT")
+@overload
+def assert_iterable_instances(iterable_in: List[InstanceT], type_in: Type,
+                                empty_ok: bool = False, iter_type: Optional[Type] = None \
+                                ) -> List[InstanceT]:
+    ...
+
+@overload
+def assert_iterable_instances(iterable_in: Tuple[InstanceT], type_in: Type,
+                                empty_ok: bool = False, iter_type: Optional[Type] = None \
+                                ) -> Tuple[InstanceT]:
+    ...
+
+def assert_iterable_instances(iterable_in: Union[List[InstanceT], Tuple[InstanceT]], type_in: Type,
+                                empty_ok: bool = False, iter_type: Optional[Type] = None \
+                                ) -> Union[List[InstanceT], Tuple[InstanceT]]:
+    '''
+    Perform assertion on an iterable.
+    Raises AssertionError on failure
+    '''
+    if iter_type is not None:
+        assert_instance(instance_in=iterable_in, type_in=iter_type)
+    if not empty_ok:
+        assert len(iterable_in) > 0, "Iterable must have non-zero length."
+    for i in iterable_in:
+        assert_instance(instance_in=i, type_in=type_in)
+    return iterable_in
+
+def assert_instance(instance_in: InstanceT, type_in: Type) -> InstanceT:
+    '''
+    Perform assertion on an instance.
+    Raises AssertionError on failure
+    '''
+    assert isinstance(instance_in, type_in), f"Incorrect type, got: {type(instance_in)} " \
+                                                f"(wanted: {type_in})"
+    return instance_in
 
 def check_int(value: Any) -> int:
     '''
@@ -18,29 +56,28 @@ def check_int(value: Any) -> int:
     Returns:
     - int
     '''
-    error_text = "%s is an invalid integer value." % (str(value))
+    error_text = f"{str(value)} is an invalid integer value."
     try:
         ivalue = int(value)
-    except:
-        raise ap.ArgumentTypeError(error_text)
+    except Exception as e:
+        raise ap.ArgumentTypeError(error_text) from e
     return ivalue
 
-# https://stackoverflow.com/questions/14117415/in-python-using-argparse-allow-only-positive-integers
 def check_positive_int(value: Any) -> int:
     '''
     Parse an input value as a positive (>= 0) int.
-
+    https://stackoverflow.com/questions/14117415/in-python-using-argparse-allow-
+        only-positive-integers
     Inputs:
     - any
     Returns:
     - int
     '''
-    error_text = "%s is an invalid positive integer value." % (str(value))
+    error_text = f"{str(value)} is an invalid positive integer value."
     try:
         ivalue = int(value)
-    except:
-        raise ap.ArgumentTypeError(error_text)
-        
+    except Exception as e:
+        raise ap.ArgumentTypeError(error_text) from e
     if ivalue <= 0:
         raise ap.ArgumentTypeError(error_text)
     return ivalue
@@ -54,11 +91,11 @@ def check_float(value: Any) -> float:
     Returns:
     - float
     '''
-    error_text = "%s is an invalid float value." % (str(value))
+    error_text = f"{str(value)} is an invalid float value."
     try:
         ivalue = float(value)
-    except:
-        raise ap.ArgumentTypeError(error_text)
+    except Exception as e:
+        raise ap.ArgumentTypeError(error_text) from e
     return ivalue
 
 def check_positive_float(value: Any) -> float:
@@ -70,12 +107,11 @@ def check_positive_float(value: Any) -> float:
     Returns:
     - float
     '''
-    error_text = "%s is an invalid positive float value." % (str(value))
+    error_text = f"{str(value)} is an invalid positive float value."
     try:
         ivalue = float(value)
-    except:
-        raise ap.ArgumentTypeError(error_text)
-        
+    except Exception as e:
+        raise ap.ArgumentTypeError(error_text) from e
     if ivalue <= 0:
         raise ap.ArgumentTypeError(error_text)
     return ivalue
@@ -89,12 +125,11 @@ def check_positive_or_zero_float (value: Any) -> float:
     Returns:
     - float
     '''
-    error_text = "%s is an invalid positive or zero float value." % (str(value))
+    error_text = f"{str(value)} is an invalid positive or zero float value."
     try:
         ivalue = float(value)
-    except:
-        raise ap.ArgumentTypeError(error_text)
-        
+    except Exception as e:
+        raise ap.ArgumentTypeError(error_text) from e
     if ivalue < 0:
         raise ap.ArgumentTypeError(error_text)
     return ivalue
@@ -117,33 +152,34 @@ def check_bounded_float(value: Any, _min: float, _max: float, equality: str) -> 
     - bounded float
 
     '''
-    error_text = "%s is either an invalid float value." % (str(value))
+    error_text = f"{str(value)} is either an invalid float value."
     error_text_bounds = "%s is not between the required bounds of {%s}."
     try:
         if _max < _min:
-            raise Exception('Invalid bounds; _max must be greater than _min')
+            raise ap.ArgumentTypeError('Invalid bounds; _max must be greater than _min')
         ivalue = float(value)
         if equality == 'lower':
             if not ((_min <= ivalue) and (ivalue < _max)):
-                bounding_str = "%s <= val < %s" % (str(_min), str(_max))
+                bounding_str = f"{str(_min)} <= val < {str(_max)}"
                 raise ap.ArgumentTypeError(error_text_bounds % (str(value), bounding_str))
         elif equality == 'upper':
             if not ((_min < ivalue) and (ivalue <= _max)):
-                bounding_str = "%s < val <= %s" % (str(_min), str(_max))
+                bounding_str = f"{str(_min)} < val <= {str(_max)}"
                 raise ap.ArgumentTypeError(error_text_bounds % (str(value), bounding_str))
         elif equality == 'both':
             if not ((_min <= ivalue) and (ivalue <= _max)):
-                bounding_str = "%s <= val <= %s" % (str(_min), str(_max))
+                bounding_str = f"{str(_min)} <= val <= {str(_max)}"
                 raise ap.ArgumentTypeError(error_text_bounds % (str(value), bounding_str))
         elif equality == 'none':
             if not ((_min < ivalue) and (ivalue < _max)):
-                bounding_str = "%s < val < %s" % (str(_min), str(_max))
+                bounding_str = f"{str(_min)} < val < {str(_max)}"
                 raise ap.ArgumentTypeError(error_text_bounds % (str(value), bounding_str))
         else:
-            raise Exception('Invalid equality mode %s. Valid modes: lower, upper, both, none.' % str(equality))
+            raise ap.ArgumentTypeError('Invalid equality mode {str(equality)}. Valid modes: '
+                                       'lower, upper, both, none.')
         return ivalue
-    except:
-        raise ap.ArgumentTypeError(error_text)
+    except Exception as e:
+        raise ap.ArgumentTypeError(error_text) from e
 
 def check_bool(value: Any) -> bool:
     '''
@@ -154,11 +190,14 @@ def check_bool(value: Any) -> bool:
     Returns:
     - boolean
     '''
-    error_text = "%s is an invalid boolean." % (str(value))
-    if isinstance(value, bool): return value
-    if isinstance(value, int): return not value == 0
-    if isinstance(value, str): return value.lower() == "true"
-    raise Exception(error_text)
+    error_text = f"{str(value)} is an invalid boolean."
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return not value == 0
+    if isinstance(value, str):
+        return value.lower() == "true"
+    raise ap.ArgumentTypeError(error_text)
 
 def check_positive_two_int_tuple(value: Any) -> Tuple[int, int]:
     '''
@@ -169,17 +208,18 @@ def check_positive_two_int_tuple(value: Any) -> Tuple[int, int]:
     Returns:
     - tuple; two elements (positive integers)
     '''
-    error_text = "%s is an invalid positive two-integer tuple." % (str(value))
+    error_text = f"{str(value)} is an invalid positive two-integer tuple."
     str_value = str(value) # force to string
-    value_list = str_value.replace(' ', '').replace('(','').replace(')','').replace('[','').replace(']','').split(',')
+    value_list = str_value.replace(' ', '').replace('(','').replace(')','')\
+                            .replace('[','').replace(']','').split(',')
     if not len(value_list) == 2:
-        raise ap.ArgumentTypeError(error_text) 
+        raise ap.ArgumentTypeError(error_text)
     if '.' in str(str_value):
-        raise ap.ArgumentTypeError(error_text) 
+        raise ap.ArgumentTypeError(error_text)
     try:
         ivalue = (int(value_list[0]), int(value_list[1]))
-    except:
-        raise ap.ArgumentTypeError(error_text)
+    except Exception as e:
+        raise ap.ArgumentTypeError(error_text) from e
     if not (ivalue[0] > 0 and ivalue[1] > 0):
         raise ap.ArgumentTypeError(error_text)
     return ivalue
@@ -193,17 +233,18 @@ def check_positive_two_int_list(value: Any) -> List[int]:
     Returns:
     - list; two elements (positive integers)
     '''
-    error_text = "%s is an invalid positive two-integer list." % (str(value))
+    error_text = f"{str(value)} is an invalid positive two-integer list."
     str_value = str(value) # force to string
-    value_list = str_value.replace(' ', '').replace('(','').replace(')','').replace('[','').replace(']','').split(',')
+    value_list = str_value.replace(' ', '').replace('(','').replace(')','').replace('[','') \
+                            .replace(']','').split(',')
     if not len(value_list) == 2:
-        raise ap.ArgumentTypeError(error_text) 
+        raise ap.ArgumentTypeError(error_text)
     if '.' in str(str_value):
-        raise ap.ArgumentTypeError(error_text) 
+        raise ap.ArgumentTypeError(error_text)
     try:
         ivalue = [int(value_list[0]), int(value_list[1])]
-    except:
-        raise ap.ArgumentTypeError(error_text)
+    except Exception as e:
+        raise ap.ArgumentTypeError(error_text) from e
     if not (ivalue[0] > 0 and ivalue[1] > 0):
         raise ap.ArgumentTypeError(error_text)
     return ivalue
@@ -219,15 +260,18 @@ def check_float_list(value: Any, _num: Optional[int] = None) -> List[float]:
     - list of floats
     '''
     str_value = str(value) # force to string
-    value_list = str_value.replace(' ', '').replace('(','').replace(')','').replace('[','').replace(']','').split(',')
+    value_list = str_value.replace(' ', '').replace('(','').replace(')','').replace('[','') \
+                            .replace(']','').split(',')
     if not _num is None and not len(value_list) == _num:
-        raise ap.ArgumentTypeError("%s is an invalid list of floats: does not contain the correct number of elements." % (str(value))) 
+        raise ap.ArgumentTypeError(f"{str(value)} is an invalid list of floats: does not contain "
+                                   "the correct number of elements.")
     try:
         ivalue = [float(i) for i in value_list]
-    except:
-        raise ap.ArgumentTypeError("%s is an invalid list of floats: could not parse elements to float." % (str(value)))
+    except Exception as e:
+        raise ap.ArgumentTypeError(f"{str(value)} is an invalid list of floats: could not "
+                                   "parse elements to float.") from e
     return ivalue
-    
+
 def check_valid_ip(value: Any) -> str:
     '''
     Parse an input as an IPv4 address.
@@ -240,7 +284,7 @@ def check_valid_ip(value: Any) -> str:
     Returns:
     - str IP address
     '''
-    error_text = "%s is an invalid ip address." % (str(value))
+    error_text = f"{str(value)} is an invalid ip address."
     ip_raw = str(value)
     if ip_raw == 'localhost':
         return ip_raw
@@ -250,8 +294,8 @@ def check_valid_ip(value: Any) -> str:
     for num in ip_slice:
         try:
             int(num)
-        except:
-            raise ap.ArgumentTypeError(error_text)
+        except Exception as e:
+            raise ap.ArgumentTypeError(error_text) from e
     return ip_raw
 
 def check_string(value: Any) -> Union[str, None]:
@@ -277,15 +321,16 @@ def check_string_list(value: Any) -> List[str]:
     Returns:
     - list of str type elements
     '''
-    error_text = "%s is an invalid string list." % (str(value))
+    error_text = f"{str(value)} is an invalid string list."
     try:
         if isinstance(value, list):
             return [str(i) for i in value]
-        return str(value).replace('(','').replace(')','').replace('[','').replace(']','').translate(str.maketrans('', '', string.whitespace)).split(',')
-    except:
-        raise ap.ArgumentTypeError(error_text)
+        return str(value).replace('(','').replace(')','').replace('[','').replace(']','') \
+                            .translate(str.maketrans('', '', string.whitespace)).split(',')
+    except Exception as e:
+        raise ap.ArgumentTypeError(error_text) from e
 
-def check_enum_list(value: Any, enum: Type[Enum], skip: List[Enum]=[]) -> List[Enum]:
+def check_enum_list(value: Any, enum: Type[Enum], skip: Optional[List[Enum]] = None) -> List[Enum]:
     '''
     Parse an input as a list of Enums
 
@@ -296,24 +341,29 @@ def check_enum_list(value: Any, enum: Type[Enum], skip: List[Enum]=[]) -> List[E
     Returns:
     - list of Enum type elements
     '''
-    error_text = "%s is an invalid (or not accepted) list of identifiers within the enumeration %s" % (str(value), str(enum))
+    if skip is None:
+        skip = []
+    error_text = f"{str(value)} is an invalid (or not accepted) list of identifiers within the " \
+                    f"enumeration {str(enum)}"
     if isinstance(value, enum):
         value = [value]
     try:
         if not isinstance(value, list):
-            value = str(value).replace('(','').replace(')','').replace('[','').replace(']','').translate(str.maketrans('', '', string.whitespace)).split(',')
+            value = str(value).replace('(','').replace(')','').replace('[','').replace(']','') \
+                                .translate(str.maketrans('', '', string.whitespace)).split(',')
         all_good = True
         for i in value:
-            if not (isinstance(i, enum) and not (i in skip)):
+            if not (isinstance(i, enum) and not i in skip):
                 all_good = False
                 break
         if all_good:
             return value # already enum list, done
-        
         # get enum information to compare against:
         enum_ids, enum_names = enum_value_options(enum, skip)
-        enum_ids_str         = [str(i) for i in enum_ids]
-        enum_names_str       = enum_names.replace('(','').replace(')','').replace('[','').replace(']','').translate(str.maketrans('', '', string.whitespace)).split(',')
+        enum_ids_str = [str(i) for i in enum_ids]
+        enum_names_str = enum_names.replace('(','').replace(')','').replace('[','') \
+                            .replace(']','').translate(str.maketrans('', '', string.whitespace)) \
+                            .split(',')
 
         # at this point, we should have a list of strings.
         str_list = []
@@ -323,11 +373,10 @@ def check_enum_list(value: Any, enum: Type[Enum], skip: List[Enum]=[]) -> List[E
             elif i in enum_names_str:
                 str_list.append(enum[enum_names_str[enum_names_str.index(i)]])
         return str_list
-    except:
-        pass
-    raise ap.ArgumentTypeError(error_text)
-        
-def check_enum(value: Any, enum: Type[Enum], skip: List[Enum]=[]) -> Enum:
+    except Exception as e:
+        raise ap.ArgumentTypeError(error_text) from e
+
+def check_enum(value: Any, enum: Type[Enum], skip: Optional[List[Enum]] = None) -> Enum:
     '''
     Parse an input an Enum
 
@@ -338,14 +387,19 @@ def check_enum(value: Any, enum: Type[Enum], skip: List[Enum]=[]) -> Enum:
     Returns:
     - Enum type
     '''
-    error_text = "%s is an invalid (or not accepted) identifier within the enumeration %s" % (str(value), str(enum))
-    if isinstance(value, enum) and not (value in skip):
+    if skip is None:
+        skip = []
+    error_text = f"{str(value)} is an invalid (or not accepted) identifier within the " \
+                 f"enumeration {str(enum)}"
+    if isinstance(value, enum) and not value in skip:
         return value
     try:
         str_value = str(value)
         enum_ids, enum_names = enum_value_options(enum, skip)
         enum_ids_str = [str(i) for i in enum_ids]
-        enum_names_str = enum_names.replace('(','').replace(')','').replace('[','').replace(']','').translate(str.maketrans('', '', string.whitespace)).split(',')
+        enum_names_str = enum_names.replace('(','').replace(')','').replace('[','') \
+                            .replace(']','').translate(str.maketrans('', '', string.whitespace)) \
+                            .split(',')
         if str_value in enum_ids_str:
             index = enum_ids_str.index(str_value)
             #print("yes - id", index)
@@ -354,6 +408,5 @@ def check_enum(value: Any, enum: Type[Enum], skip: List[Enum]=[]) -> Enum:
             index = enum_names_str.index(str_value)
             #print("yes - name", index)
             return enum[enum_names_str[index]]
-    except:
-        pass
-    raise ap.ArgumentTypeError(error_text)
+    except Exception as e:
+        raise ap.ArgumentTypeError(error_text) from e

@@ -2,19 +2,9 @@
 '''
 Basic pathing helper functions
 '''
-import warnings
 from typing import Union, List, Tuple
 import numpy as np
 from numpy.typing import NDArray
-
-try:
-    #pylint: disable=W0611
-    from pyaarapsi.pathing.basic_rospy import make_path_speeds, make_zones, \
-        publish_reversible_xyw_pose, publish_xyw_pose, publish_xyzrpy_pose
-    #pylint: enable=W0611
-except (ImportError, NameError):
-    warnings.warn("Failed to import ROS-related packages and message structures: some functions"
-                  "will error.")
 
 from pyaarapsi.core.helper_tools import angle_wrap, normalize_angle, m2m_dist
 from pyaarapsi.pathing.enums import Lookahead_Mode
@@ -66,8 +56,6 @@ def calc_zone_stats(path_len: float, len_guess: float, num_guess: Union[float, i
     len_true        = path_len / num_true
 
     return len_true, num_true
-
-
 
 def calc_path_errors(ego, current_ind: int, path_xyws: NDArray[np.float32]
                      ) -> Tuple[float, float]:

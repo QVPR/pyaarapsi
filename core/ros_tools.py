@@ -1,27 +1,37 @@
 #!/usr/bin/env python3
+'''
+Methods for ROS
+'''
 from __future__ import annotations
+
+import copy
+import logging
+import warnings
+from enum import Enum
+from typing import List, Dict, Union, Optional, Callable, TypeVar, Generic, Generator, Tuple, \
+    Type
 
 import rospy
 from rospy.impl.rosout import _rospy_to_logging_levels
 import genpy
 import rosbag
-import logging
 import numpy as np
-import genpy
-import warnings
-from enum import Enum
 
 from tqdm.auto import tqdm
 
-from std_msgs.msg               import String
-from geometry_msgs.msg          import Quaternion, Pose, PoseWithCovariance, PoseStamped, Twist, TwistStamped
+from std_msgs.msg import String
+from geometry_msgs.msg import Quaternion, Pose, PoseWithCovariance, PoseStamped, Twist, \
+    TwistStamped
+from aarapsi_robot_pack.msg import Heartbeat as Hb
 
-from tf.transformations         import quaternion_from_euler, euler_from_quaternion
-from .helper_tools              import formatException
-from .roslogger                 import LogType, roslogger
-from .image_transforms          import *
-
-from typing import List, Dict, Union, Optional, Callable, TypeVar, Generic, Generator, Tuple, Type
+from tf.transformations import quaternion_from_euler, euler_from_quaternion
+from pyaarapsi.core.helper_tools import format_exception
+from pyaarapsi.core.roslogger import LogType, roslogger
+from pyaarapsi.core.image_transforms import compressed2np, raw2np
+from pyaarapsi.vpr.classes.data.rosbagparams import RosbagParams
+from pyaarapsi.vpr.classes.data.rosbagdata import RosbagData
+from pyaarapsi.vpr.classes.data.rosbagdataset import RosbagDataset
+from pyaarapsi.vpr.classes.data.posearrayxyw import PoseArrayXYW
 
 def import_rosmsg_from_string(msg_str: str) -> Type[genpy.Message]:
     '''
@@ -33,20 +43,22 @@ def import_rosmsg_from_string(msg_str: str) -> Type[genpy.Message]:
     base class of genpy.Message type; imported class
     
     '''
-    _module_components = msg_str.split('.')
-    _class_string  = _module_components[-1]
-    _module_string = '.'.join(_module_components[:-1])
-    _module = __import__(_module_string, fromlist=[_class_string])
-    return getattr(_module, _class_string)
+    module_components = msg_str.split('.')
+    class_string  = module_components[-1]
+    module_string = '.'.join(module_components[:-1])
+    module = __import__(module_string, fromlist=[class_string])
+    return getattr(module, class_string)
 
-def open_rosbag(bag_path: str, topics: List[str]) -> Generator[Tuple[str, genpy.Message, rospy.rostime.Time], None, None]:
+def open_rosbag(bag_path: str, topics: List[str]
+                ) -> Generator[Tuple[str, genpy.Message, rospy.rostime.Time], None, None]:
     '''
     Open a rosbag in read-mode as a generator and yield topics
     This method hides away some of the mean-ness of reading rosbags and guarantees type.
 
     Inputs:
     - bag_path:     str type; full path to rosbag
-    - topics:       list type; list of strings where each string is a topic to extract from the rosbag
+    - topics:       list type; list of strings where each string is a topic to extract from
+                        the rosbag
     Yields:
     Tuple[str, genpy.Message, rospy.rostime.Time] (contents: ROS topic, ROS message, ROS timestamp)
     '''
@@ -97,83 +109,84 @@ def twist2xyw(twist: Union[Twist, TwistStamped]) -> List[float]:
         twist = twist.twist
     return [twist.linear.x, twist.linear.y, twist.angular.z]
 
-def process_bag(bag_path: str, sample_rate: float, odom_topic: Union[str, List[str]], img_topics: List[str], printer: Callable = print, use_tqdm: bool = True) -> dict:
+class RosbagProcessingError(Exception):
+    '''
+    Error when processing a rosbag
+    '''
+
+def process_bag(bag_path: str, dataset_params: RosbagParams, printer: Callable = print,
+                use_tqdm: bool = True) -> RosbagDataset:
     '''
     Open a ROS bag and extract odometry + image topics, sampling at a specified rate.
     Data is appended by row containing the processed ROS data, stored as numpy types.
     Returns type dict
 
     Inputs:
-    - bag_path:     String for full file path for bag, i.e. /home/user/bag_file.bag
-    - sample_rate:  Float for rate at which rosbag should be sampled
-    - odom_topic:   string or list of strings for odom topic/s to extract, if list then the order specifies order in returned data
-    - img_topics:   List of strings for image topics to extract, order specifies order in returned data
-    - printer:      Method wrapper for printing (default: print)
-    - use_tqdm:     Bool to enable/disable use of tqdm (default: True)
+    - dataset_params:   RosbagParams type; defines topics and sample rate.
+    - printer:          Callable type; Method wrapper for printing (default: print)
+    - use_tqdm:         bool type; to enable/disable use of tqdm (default: True)
     Returns:
     dict
     '''
-
     if not bag_path.endswith('.bag'):
         bag_path += '.bag'
-
-    if not isinstance(odom_topic, list):
-        _odom_topics = [odom_topic]
-    else:
-        _odom_topics = odom_topic
-
-    topic_list      = _odom_topics + img_topics
-
+    odom_topics = tuple(set(dataset_params.odom_topics))
+    img_topics = tuple(set(dataset_params.img_topics))
+    all_topics = (*odom_topics, *img_topics)
     # Read rosbag
-    data = rip_bag(bag_path, sample_rate, topic_list, printer=printer, use_tqdm=use_tqdm)
+    data = rip_bag(bag_path, dataset_params.sample_rate / 1000, all_topics, printer=printer,
+                   use_tqdm=use_tqdm)
     _len = len(data)
-    printer("Converting stored messages (%s)" % (str(_len)))
-    new_dict        = {key: [] for key in img_topics + ['px', 'py', 'pw', 'vx', 'vy', 'vw', 't']}
-
-    none_rows       =   0
+    printer(f"Converting stored messages ({str(_len)})")
+    new_dict = {key: [] for key in (*img_topics, 'px', 'py', 'pw', \
+                                                                'vx', 'vy', 'vw', 't')}
+    none_rows = 0
     if _len < 1:
-        raise Exception('No usable data!')
-    if use_tqdm:
-        iter_obj = tqdm(data)
-    else:
-        iter_obj = data
-    for row in iter_obj:
+        raise RosbagProcessingError('No usable data!')
+    for row in tqdm(data) if use_tqdm else data:
         if None in row:
             none_rows = none_rows + 1
             continue
-
         new_dict['t'].append(row[-1].header.stamp.to_sec()) # get time stamp
-
-        if len(_odom_topics) == 1:
-            new_dict['px'].append(row[1].pose.pose.position.x)
-            new_dict['py'].append(row[1].pose.pose.position.y)
-            new_dict['pw'].append(yaw_from_q(row[1].pose.pose.orientation))
-
-            new_dict['vx'].append(row[1].twist.twist.linear.x)
-            new_dict['vy'].append(row[1].twist.twist.linear.y)
-            new_dict['vw'].append(row[1].twist.twist.angular.z)
-        else:
-            new_odoms = []
-            for topic in _odom_topics:
-                new_odoms.append(np.array(pose2xyw(row[1 + topic_list.index(topic)].pose.pose) + twist2xyw(row[1 + topic_list.index(topic)].twist.twist)))
-            new_odoms = np.array(new_odoms)
-            new_dict['px'].append(new_odoms[:,0])
-            new_dict['py'].append(new_odoms[:,1])
-            new_dict['pw'].append(new_odoms[:,2])
-            new_dict['vx'].append(new_odoms[:,3])
-            new_dict['vy'].append(new_odoms[:,4])
-            new_dict['vw'].append(new_odoms[:,5])
-            
+        new_odoms = []
+        for topic in odom_topics:
+            new_odoms.append(np.array(pose2xyw(row[1 + all_topics.index(topic)].pose.pose) \
+                                    + twist2xyw(row[1 + all_topics.index(topic)].twist.twist)))
+        new_odoms_stack = np.stack(new_odoms, axis=1)
+        new_dict['px'].append(new_odoms_stack[0])
+        new_dict['py'].append(new_odoms_stack[1])
+        new_dict['pw'].append(new_odoms_stack[2])
+        new_dict['vx'].append(new_odoms_stack[3])
+        new_dict['vy'].append(new_odoms_stack[4])
+        new_dict['vw'].append(new_odoms_stack[5])
         for topic in img_topics:
             if "/compressed" in topic:
-                new_dict[topic].append(compressed2np(row[1 + topic_list.index(topic)]))
+                new_dict[topic].append(compressed2np(row[1 + all_topics.index(topic)]))
             else:
-                new_dict[topic].append(raw2np(row[1 + topic_list.index(topic)]))
-    
-    printer("%0.2f%% of %d rows contained NoneType; these were ignored." % (100 * none_rows / _len, _len))
-    return {key: np.array(new_dict[key]) for key in new_dict}
+                new_dict[topic].append(raw2np(row[1 + all_topics.index(topic)]))
+    printer(f"{100 * none_rows / _len:0.2f}% of {_len:d} rows contained NoneType; "
+            "these were ignored.")
+    _keys = copy.copy(list(new_dict.keys()))
+    precompiled_dict = {key: np.array(new_dict.pop(key)) for key in _keys} # transition to numpy
+    compiled_data = RosbagData().populate(
+        positions   = PoseArrayXYW( x=precompiled_dict.pop('px'),
+                                    y=precompiled_dict.pop('py'),
+                                    w=precompiled_dict.pop('pw'),
+                                    labels=odom_topics),
+        velocities  = PoseArrayXYW( x=precompiled_dict.pop('vx'),
+                                    y=precompiled_dict.pop('vy'),
+                                    w=precompiled_dict.pop('vw'),
+                                    labels=odom_topics),
+        times       = precompiled_dict.pop('t'),
+        data        = {i: precompiled_dict.pop(i,None) for i in img_topics}
+    )
+    return RosbagDataset().populate(
+        params = dataset_params.but_with(attr_changes={ "odom_topics": odom_topics, \
+                                                        "img_topics": img_topics}),
+        data = compiled_data)
 
-def rip_bag(bag_path: str, sample_rate: float, topics_in: List[str], timing: int = -1, printer: Callable = print, use_tqdm: bool = True) -> list:
+def rip_bag(bag_path: str, sample_rate: float, topics_in: List[str], timing: int = -1,
+            printer: Callable = print, use_tqdm: bool = True) -> list:
     '''
     Open a ROS bag and store messages from particular topics, sampling at a specified rate.
     If no messages are received, list is populated with NoneType (empties are also NoneType)
@@ -184,7 +197,8 @@ def rip_bag(bag_path: str, sample_rate: float, topics_in: List[str], timing: int
     Inputs:
     - bag_path:     String for full file path for bag, i.e. /home/user/bag_file.bag
     - sample_rate:  Float for rate at which rosbag should be sampled
-    - topics_in:    List of strings for topics to extract, order specifies order in returned data (time column added to the front)
+    - topics_in:    List of strings for topics to extract, order specifies order in returned
+                        data (time column added to the front)
     - timing:       int type; index of topics_in for topic to use as timekeeper
     - printer:      Method wrapper for printing (default: print)
     - use_tqdm:     Bool to enable/disable use of tqdm (default: True)
@@ -192,39 +206,36 @@ def rip_bag(bag_path: str, sample_rate: float, topics_in: List[str], timing: int
     List
     '''
     # warnings.warn('Deprecated, please use scan_bag.')
-    
-    topics         = [None] + topics_in
+    topics         = (None, *topics_in)
     data           = []
     logged_t       = -1
     num_topics     = len(topics)
     num_rows       = 0
     dt             = 1/sample_rate
-
     # Read rosbag
-    printer("Ripping through rosbag, processing topics: %s" % str(topics[1:]))
-
+    printer(f"Ripping through rosbag, processing topics: {str(topics[1:])}")
     row = [None] * num_topics
     with rosbag.Bag(bag_path, 'r') as ros_bag:
         iter_obj = ros_bag.read_messages(topics=topics)
-        if use_tqdm: 
-           iter_obj = tqdm(iter_obj)
-        for (topic, msg, timestamp) in iter_obj: # type: ignore
+        if use_tqdm:
+            iter_obj = tqdm(iter_obj)
+        for (topic, msg, _) in iter_obj: # type: ignore
             row[topics.index(topic)] = msg
             _timer = row[timing] # for linting
             if not isinstance(_timer, genpy.Message) or _timer is None:
                 continue
-            if hasattr(_timer, 'header') and not (_timer is None):
+            if hasattr(_timer, 'header') and _timer is not None:
                 if _timer.header.stamp.to_sec() - logged_t > dt:
                     logged_t    = _timer.header.stamp.to_sec()
                     row[0]      = (logged_t + dt/2) - ((logged_t + dt/2) % dt)
                     data.append(row)
                     row         = [None] * num_topics
                     num_rows    = num_rows + 1
-                
     return data
 
-def scan_bag(bag_path: str, sample_rate: float, topics_in: List[str], timer_topic: Optional[str] = None, 
-             printer: Callable = print, use_tqdm: bool = True) -> list:
+def scan_bag(bag_path: str, sample_rate: float, topics_in: List[str],
+             timer_topic: Optional[str] = None, printer: Callable = print, use_tqdm: bool = True
+             ) -> list:
     '''
     Prototype
 
@@ -237,7 +248,8 @@ def scan_bag(bag_path: str, sample_rate: float, topics_in: List[str], timer_topi
     Inputs:
     - bag_path:     str type; Full file path for bag, i.e. /home/user/bag_file.bag
     - sample_rate:  float type; Rate at which rosbag should be sampled
-    - topics_in:    List[str] type; List of strings for topics to extract, forms keys in returned data
+    - topics_in:    List[str] type; List of strings for topics to extract, forms keys in
+                        returned data
     - timer_topic:  str type (Optional); topic from topics_in to grab timestamps from
     - printer:      Callable type (default: print); Method wrapper for printing
     - use_tqdm:     bool type (default: True); Bool to enable/disable use of tqdm
@@ -245,22 +257,19 @@ def scan_bag(bag_path: str, sample_rate: float, topics_in: List[str], timer_topi
     List
     '''
     warnings.warn('scan_bag is in development stage, use at own risk.')
-
     data           = {k: [] for k in topics_in + ['__counter', '__timestamp']}
     logged_t       = -1
     logged_c       = -1
     dt             = 1/sample_rate
-
     timer_topic    = topics_in[-1] if timer_topic is None else timer_topic
-
     # Read rosbag
-    printer("Scanning through rosbag, processing topics: %s" % str(topics_in))
-
+    printer(f"Scanning through rosbag, processing topics: {str(topics_in)}")
     row = {k: None for k in topics_in + ['__counter', '__timestamp']}
     with rosbag.Bag(bag_path, 'r') as ros_bag:
         iter_obj = ros_bag.read_messages(topics=topics_in)
         for (topic, msg, timestamp) in tqdm(iter_obj) if use_tqdm else iter_obj:
-            if logged_t == -1: logged_t = timestamp.stamp.to_sec()
+            if logged_t == -1:
+                logged_t = timestamp.stamp.to_sec()
             row[topic] = msg
             _timer = row[timer_topic]
             if not isinstance(_timer, genpy.Message) or _timer is None:
@@ -268,12 +277,12 @@ def scan_bag(bag_path: str, sample_rate: float, topics_in: List[str], timer_topi
             logged_c            = _timer.header.stamp.to_sec()
             if timestamp.stamp.to_sec() - logged_t > dt:
                 logged_t         = timestamp.header.stamp.to_sec()
-                row['__timestamp'] = (logged_t + dt/2) - ((logged_t + dt/2) % dt) # round to nearest dt step
+                # round to nearest dt step:
+                row['__timestamp'] = (logged_t + dt/2) - ((logged_t + dt/2) % dt)
                 row['__counter']   = (logged_c + dt/2) - ((logged_c + dt/2) % dt)
                 for k, v in row.items():
                     data[k].append(v)
-                row         = {k: None for k in topics_in + ['__counter', '__timestamp']} # reset row
-                
+                row = {k: None for k in topics_in + ['__counter', '__timestamp']} # reset row
     return data
 
 def set_rospy_log_lvl(log_level: LogType = LogType.INFO):
@@ -311,7 +320,8 @@ class Heartbeat:
     - Create a listen point for diagnosing which nodes have failed
         - If node fails, heartbeat will stop
     '''
-    def __init__(self, node_name, namespace, node_rate, node_state=NodeState.INIT, hb_topic='/heartbeats', server=None, period=1):
+    def __init__(self, node_name, namespace, node_rate, node_state=NodeState.INIT,
+                 hb_topic='/heartbeats', server=None, period=1):
         '''
         Initialisation
 
@@ -324,21 +334,19 @@ class Heartbeat:
         Returns:
         None
         '''
-        self.namespace  = namespace
-        self.node_name  = node_name
-        self.node_rate  = node_rate
+        self.namespace = namespace
+        self.node_name = node_name
+        self.node_rate = node_rate
         self.node_state = node_state.value
-        self.hb_topic   = hb_topic
-        self.server     = server
-
-        from aarapsi_robot_pack.msg import Heartbeat as Hb
-
-        self.hb_msg     = Hb(node_name=self.node_name, node_rate=self.node_rate, node_state=self.node_state)
-        self.hb_pub     = rospy.Publisher(self.namespace + self.hb_topic, Hb, queue_size=1)
+        self.hb_topic = hb_topic
+        self.server = server
+        self.hb_msg = Hb(node_name=self.node_name, node_rate=self.node_rate,
+                         node_state=self.node_state)
+        self.hb_pub = rospy.Publisher(self.namespace + self.hb_topic, Hb, queue_size=1)
         if self.server is None:
-            self.hb_timer   = rospy.Timer(rospy.Duration(secs=period), self.heartbeat_cb)
+            self.hb_timer = rospy.Timer(rospy.Duration(secs=period), self.heartbeat_cb)
         else:
-            self.hb_timer   = rospy.Timer(rospy.Duration(secs=period), self.heartbeat_server_cb)
+            self.hb_timer = rospy.Timer(rospy.Duration(secs=period), self.heartbeat_server_cb)
 
     def set_state(self, state: NodeState):
         '''
@@ -367,11 +375,12 @@ class Heartbeat:
 
         Triggers publish of new heartbeat message
         '''
-        assert self.server != None
+        assert self.server is not None
         self.hb_msg.header.stamp = rospy.Time.now()
         self.hb_msg.topics = list(self.server.pubs.keys())
         now = rospy.Time.now().to_sec()
-        self.hb_msg.periods = [round(self.server.pubs[i].last_t - now) for i in self.server.pubs.keys()]
+        self.hb_msg.periods = [round(self.server.pubs[i].last_t - now) \
+                                    for i in self.server.pubs.keys()]
         self.hb_pub.publish(self.hb_msg)
 
 class SubscribeListener(rospy.SubscribeListener):
@@ -402,9 +411,9 @@ class SubscribeListener(rospy.SubscribeListener):
         Returns:
         - None
         '''
-        self.printer("[SubscribeListener] Subscribed: %s" % topic_name, LogType.DEBUG, ros=True)
-        if topic_name in self.topics.keys():
-            if not (self.topics[topic_name]['sub'] is None):
+        self.printer(f"[SubscribeListener] Subscribed: {topic_name}", LogType.DEBUG, ros=True)
+        if topic_name in self.topics:
+            if self.topics[topic_name]['sub'] is not None:
                 self.topics[topic_name]['sub'](topic_name)
 
     def peer_unsubscribe(self, topic_name, num_peers):
@@ -417,9 +426,9 @@ class SubscribeListener(rospy.SubscribeListener):
         Returns:
         - None
         '''
-        self.printer("[SubscribeListener] Unsubscribed: %s" % topic_name, LogType.DEBUG, ros=True)
-        if topic_name in self.topics.keys():
-            if not (self.topics[topic_name]['unsub'] is None):
+        self.printer(f"[SubscribeListener] Unsubscribed: {topic_name}", LogType.DEBUG, ros=True)
+        if topic_name in self.topics:
+            if not self.topics[topic_name]['unsub'] is not None:
                 self.topics[topic_name]['unsub'](topic_name)
 
     def add_operation(self, topic_name, method_sub=None, method_unsub=None):
@@ -435,7 +444,8 @@ class SubscribeListener(rospy.SubscribeListener):
         - None
         '''
         self.topics[topic_name] = {'sub': method_sub, 'unsub': method_unsub}
-        self.printer('New listener added. All current listeners: \n%s' % str(self.topics), LogType.DEBUG, ros=True)
+        self.printer(f'New listener added. All current listeners: \n{str(self.topics)}',
+                     LogType.DEBUG, ros=True)
 
 def yaw_from_q(q):
     '''
@@ -471,16 +481,20 @@ def q_from_rpy(r,p,y, mode='RAD'):
     Returns:
     - geometry_msgs/Quaternion, quaternion equivalent
     '''
-    if not mode == 'RAD':
+    if mode != 'RAD':
         r = r * 180 / np.pi
         p = p * 180 / np.pi
         y = y * 180 / np.pi
     q = quaternion_from_euler(r, p, y) # roll, pitch, yaw
     return Quaternion(x=q[0], y=q[1], z=q[2], w=q[3])
 
+class CustomROSParamError(Exception):
+    '''
+    Error when using ROSParam or ROSParamServer
+    '''
 
-ROS_ParamType = TypeVar("ROS_ParamType")
-class ROS_Param(Generic[ROS_ParamType]):
+ROSParamT = TypeVar("ROSParamT")
+class ROSParam(Generic[ROSParamT]):
     '''
     ROS Parameter Class
 
@@ -489,43 +503,44 @@ class ROS_Param(Generic[ROS_ParamType]):
     '''
 
     updates_queued      = [] # list of parameters pending an update
-    updates_possible    = [] # list of parameter names to check against (in case a parameter update was triggered against a parameter not in scope)
+    updates_possible    = [] # list of parameter names to check against (in case a parameter update
+                             #   was triggered against a parameter not in scope)
     param_objects       = []
 
-    def __init__(self, name, value: ROS_ParamType, evaluation, force=False, server: Optional["ROS_Param_Server"] = None, printer=roslogger):
+    def __init__(self, name: str, value: ROSParamT, evaluation: Callable, force: bool = False,
+                 server: Optional[ROSParamServer] = None, printer: Callable = roslogger):
         '''
         Initialisation
 
         Inputs:
-        - name:         string name of parameter to be used on parameter server
-        - value:        default value of parameter if unset on parameter server
-        - evaluation:   handle to method to check value type
-        - force:        bool to force update of value on parameter server with input value (defaults to False)
-        - server:       ROS_Param_Server reference (defaults to None)
-        - printer:      Method wrapper for printing (default: roslogger)
+        - name:         str type; name of parameter to be used on parameter server
+        - value:        ROSParamT type; default value of parameter if unset on parameter server
+        - evaluation:   callable type; handle to method to check value type
+        - force:        bool type (default: False); to force update of value on parameter server
+                            with input value
+        - server:       ROSParamServer type; reference (defaults to None)
+        - printer:      callable type; Method wrapper for printing (default: roslogger)
         Returns:
         None
         '''
-
         if value is None and force:
-            raise Exception("Can't force a NoneType value!")
-
+            raise CustomROSParamError("Can't force a NoneType value!")
+        #
         self.name       = name
         self.server     = server
         self.updates_possible.append(self.name)
         self.param_objects.append(self)
-
+        #
         if self.server is None:
             self.get = self._get_no_server
         else:
             self.get = self._get_server
-
+        #
         self.evaluation                     = evaluation
-        self.value: Optional[ROS_ParamType] = None
+        self.value: Optional[ROSParamT] = None
         self.old                            = None
         self.printer                        = printer
-        
-
+        #
         if (not rospy.has_param(self.name)) or (force):
             # If either the parameter doesn't exist, or we want to focus the
             # parameter server to have the inputted value:
@@ -543,7 +558,7 @@ class ROS_Param(Generic[ROS_ParamType]):
         - None
         '''
         if self.old is None:
-            raise Exception('No old value to revert to.')
+            raise CustomROSParamError('No old value to revert to.')
         self.set_param(self.old)
         self.value = self.old
         self.old = None
@@ -559,11 +574,11 @@ class ROS_Param(Generic[ROS_ParamType]):
         '''
         try:
             return self.set(rospy.get_param(self.name))
-        except:
-            self.printer(formatException())
+        except (rospy.ROSException, KeyError):
+            self.printer(format_exception())
             return False
-
-    def _get_server(self) -> ROS_ParamType:
+    #
+    def _get_server(self) -> ROSParamT:
         '''
         Return value of variable
 
@@ -572,16 +587,16 @@ class ROS_Param(Generic[ROS_ParamType]):
         Returns:
         - parsed value of variable
         '''
-        assert self.server != None
+        assert self.server is not None
         if self.server.autochecker:
-            assert self.value != None
+            assert self.value is not None
             return self.value
         else:
             return self._get_no_server()
-
-    def _get_no_server(self) -> ROS_ParamType:
+    #
+    def _get_no_server(self) -> ROSParamT:
         '''
-        Retrieve value of variable if no ROS_Param_Server exists
+        Retrieve value of variable if no ROSParamServer exists
         Runs a check to see if a change has been made to parameter server value
 
         Inputs:
@@ -589,15 +604,15 @@ class ROS_Param(Generic[ROS_ParamType]):
         Returns:
         - parsed value of variable
         '''
-        assert self.value != None
+        assert self.value is not None
         if self.name in self.updates_queued:
             self.updates_queued.remove(self.name)
             try:
                 self.value = self.evaluation(rospy.get_param(self.name))
-            except:
+            except (rospy.ROSException, KeyError):
                 self.set(self.value)
         return self.value
-
+    #
     def set(self, value):
         '''
         Set value of variable
@@ -609,29 +624,32 @@ class ROS_Param(Generic[ROS_ParamType]):
         None
         '''
         if value is None:
-            raise Exception("Cannot set %s to NoneType." % self.name)
+            raise CustomROSParamError(f"Cannot set {self.name} to NoneType.")
         try:
             check_value = self.evaluation(value)
-            if not (check_value == self.value):
+            if check_value != self.value:
                 self.old    = self.value
                 self.value  = check_value
                 self.set_param(self.value)
             return True
-        except:
+        except (rospy.ROSException, KeyError):
             self.set_param(self.value)
             return False
-        
+    #
     def set_param(self, value):
+        '''
+        Set value of variable to param server
+        '''
         if issubclass(type(value), Enum):
             rospy.set_param(self.name, value.value)
         else:
             rospy.set_param(self.name, value)
 
-class ROS_Param_Server:
+class ROSParamServer:
     '''
     ROS Parameter Server Class
-    Purpose:
-    - Wrapper class that for ROS_Param that manages and handles dynamic updates to ROS_Param instances
+    Wrapper class that for ROSParam that manages and handles dynamic updates to ROSParam
+    instances
     '''
     def __init__(self, printer: Callable = roslogger):
         '''
@@ -643,14 +661,14 @@ class ROS_Param_Server:
         None
         '''
         self.updates_possible               = []
-        self.params: Dict[str, ROS_Param]   = {}
+        self.params: Dict[str, ROSParam]   = {}
         self.autochecker                    = False
         self.param_sub                      = None
         self.printer                        = printer
 
         self.connection_timer               = rospy.Timer(rospy.Duration(5), self._check_server)
 
-    def _check_server(self, event) -> bool:
+    def _check_server(self, _) -> bool:
         if self.param_sub is None:
             self.autochecker = False
         elif self.param_sub.get_num_connections() > 0:
@@ -660,11 +678,14 @@ class ROS_Param_Server:
         return self.autochecker
 
     def add_sub(self, topic, cb, queue_size=100):
+        '''
+        Add subscriber to a topic
+        '''
         self.param_sub = rospy.Subscriber(topic, String, cb, queue_size=queue_size)
 
-    def add(self, name: str, value, evaluation: Callable, force: bool = False) -> ROS_Param:
+    def add(self, name: str, value, evaluation: Callable, force: bool = False) -> ROSParam:
         '''
-        Add new ROS_Param
+        Add new ROSParam
 
         Inputs:
         - name:         string name of parameter to be used on parameter server
@@ -672,15 +693,16 @@ class ROS_Param_Server:
         - evaluation:   handle to method to check value type
         - force:        bool to force update of value on parameter server with input value
         Returns:
-        Generated ROS_Param
+        Generated ROSParam
         '''
-        self.params[name] = ROS_Param[type(value)](name, value, evaluation, force, server=self, printer=self.printer)
+        self.params[name] = ROSParam[type(value)](name, value, evaluation, force, server=self,
+                                                  printer=self.printer)
         self.updates_possible.append(name)
         return self.params[name]
 
     def update(self, name: str) -> bool:
         '''
-        Update specified parameter / ROS_Param
+        Update specified parameter / ROSParam
 
         Inputs:
         - name:         string name of parameter to be used on parameter server
@@ -691,17 +713,18 @@ class ROS_Param_Server:
             return False
         try:
             current_value = str(rospy.get_param(name))
-        except:
+        except (KeyError, rospy.ROSException):
             current_value = str(None)
         update_status = self.params[name].update()
         if not update_status:
-            self.printer("[ROS_Param_Server] Bad parameter server value for %s [%s]. Remaining with last safe value, %s." 
-                      % (str(name), current_value, str(self.params[name].value)), LogType.ERROR)
+            self.printer(f"[ROSParamServer] Bad parameter server value for {str(name)} "
+                         f"[{current_value}]. Remaining with last safe value, "
+                         f"{str(self.params[name].value)}.", LogType.ERROR)
         return update_status
 
     def exists(self, name: str):
         '''
-        Check if specified parameter / ROS_Param exists on server
+        Check if specified parameter / ROSParam exists on server
 
         Inputs:
         - name:         string name of parameter to be used on parameter server
@@ -712,14 +735,15 @@ class ROS_Param_Server:
         if name in self.updates_possible:
             return True
         return False
-    
-class ROS_Publisher:
+
+class ROSPublisher:
     '''
     ROS Publisher Container Class
     Purpose:
     - Wrapper class for ROS Publishers
     '''
-    def __init__(self, topic: str, data_class, queue_size: int = 1, latch: bool = False, server = None, subscriber_listener: Optional[SubscribeListener] = None):
+    def __init__(self, topic: str, data_class, queue_size: int = 1, latch: bool = False,
+                 server = None, subscriber_listener: Optional[SubscribeListener] = None):
         '''
         Initialisation
 
@@ -739,9 +763,9 @@ class ROS_Publisher:
         self.last_t     = -1
         self.period     = -1
         self.sublist    = subscriber_listener
-
-        self.publisher  = rospy.Publisher(self.topic, self.data_class, queue_size=self.queue_size, latch=self.latch, subscriber_listener=subscriber_listener)
-    
+        self.publisher  = rospy.Publisher(self.topic, self.data_class, queue_size=self.queue_size,
+                                    latch=self.latch, subscriber_listener=subscriber_listener)
+    #
     def publish(self, msg):
         '''
         Helper for publishing
@@ -755,9 +779,9 @@ class ROS_Publisher:
         try:
             self.publisher.publish(msg)
             now = rospy.Time.now().to_sec()
-            if not self.last_t == -1:
+            if self.last_t != -1:
                 self.period = now - self.last_t
             self.last_t = now
             return True
-        except:
+        except rospy.ROSException:
             return False

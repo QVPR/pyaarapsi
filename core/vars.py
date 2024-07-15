@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-
-# https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+'''
+ANSI escape sequences
+More available at: https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+'''
 
 C_I_RED     = '\033[91m'
 C_I_GREEN   = '\033[92m'
