@@ -83,7 +83,7 @@ class RosbagDataset(AbstractData):
             if topic_name is not None:
                 topic_index = self.params.odom_topics.index(topic_name)
             else:
-                assert len(self.params.odom_topics) == 0, \
+                assert len(self.params.odom_topics) == 1, \
                     "topic_name is only optional for data with only one odom_topics!"
                 topic_index = 0
             return self.data.positions.xyw[:,topic_index]
@@ -102,7 +102,7 @@ class RosbagDataset(AbstractData):
             if topic_name is not None:
                 topic_index = self.params.odom_topics.index(topic_name)
             else:
-                assert len(self.params.odom_topics) == 0, \
+                assert len(self.params.odom_topics) == 1, \
                     "topic_name is only optional for data with only one odom_topics!"
                 topic_index = 0
             return self.data.velocities.xyw[:,topic_index]
@@ -125,13 +125,13 @@ class RosbagDataset(AbstractData):
                                             else descriptor_key
             else:
                 keys_tuple = tuple(self.data.data.keys())
-                assert len(keys_tuple) == 0, \
+                assert len(keys_tuple) == 1, \
                     "descriptor_key is only optional for data with only one key!"
                 descriptor_key_name = keys_tuple[0]
             if topic_name is not None:
                 topic_index = self.params.img_topics.index(topic_name)
             else:
-                assert len(self.params.img_topics) == 0, \
+                assert len(self.params.img_topics) == 1, \
                     "topic_name is only optional for data with only one img_topic!"
                 topic_index = 0
             return self.data.data[descriptor_key_name][:,topic_index]

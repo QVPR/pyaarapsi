@@ -3,7 +3,7 @@
 Class definition for a helper timer (for debugging)
 '''
 import time
-from typing import Optional, List
+from typing import Optional, List, Callable
 from typing_extensions import Self
 
 class Timer:
@@ -72,3 +72,15 @@ class Timer:
         '''
         print(string)
         return self
+    #
+    def time_function(self, func: Callable) -> float:
+        '''
+        Time a function
+        '''
+        self.clear()
+        self.add()
+        func()
+        self.add()
+        diff = self.points[1] - self.points[0]
+        self.clear()
+        return diff

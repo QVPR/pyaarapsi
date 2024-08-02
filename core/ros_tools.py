@@ -32,6 +32,7 @@ from pyaarapsi.vpr.classes.data.rosbagparams import RosbagParams
 from pyaarapsi.vpr.classes.data.rosbagdata import RosbagData
 from pyaarapsi.vpr.classes.data.rosbagdataset import RosbagDataset
 from pyaarapsi.vpr.classes.data.posearrayxyw import PoseArrayXYW
+from pyaarapsi.vpr.classes.data.datatypes import DataTypes
 
 def import_rosmsg_from_string(msg_str: str) -> Type[genpy.Message]:
     '''
@@ -178,7 +179,8 @@ def process_bag(bag_path: str, dataset_params: RosbagParams, printer: Callable =
                                     w=precompiled_dict.pop('vw'),
                                     labels=odom_topics),
         times       = precompiled_dict.pop('t'),
-        data        = {i: precompiled_dict.pop(i,None) for i in img_topics}
+        data        = {i: precompiled_dict.pop(i,None)[:,np.newaxis,:] for i in img_topics},
+        data_type   = DataTypes.UNPROCESSED
     )
     return RosbagDataset().populate(
         params = dataset_params.but_with(attr_changes={ "odom_topics": odom_topics, \

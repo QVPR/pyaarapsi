@@ -257,6 +257,6 @@ class HybridNetContainer(DescriptorContainer):
         if not save_dir is None:
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
-            output_global_features_filename = os.path.join(save_dir, 'NetVLAD_feats.npy')
+            output_global_features_filename = os.path.join(save_dir, 'HybridNet_feats.npy')
             np.save(output_global_features_filename, db_feat)
         return db_feat

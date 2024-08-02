@@ -3,7 +3,7 @@
 SALAD Container for feature extraction
 '''
 import os
-
+import warnings
 from tqdm.auto import tqdm
 import torch
 from torch import zeros as t_zeros #pylint: disable=E0611
@@ -12,10 +12,14 @@ from torchvision import transforms
 import numpy as np
 from PIL import Image
 
-from pyaarapsi.vpr.classes.descriptors.lib.salad_lib import VPRModel
 from pyaarapsi.vpr.classes.download_models import download_salad_models, MODELS_DIR
 from pyaarapsi.vpr.classes.descriptors.generic import GenericPlaceDataset, \
     PlaceDatasetError, DescriptorContainerError, DescriptorContainer
+
+warnings.filterwarnings("ignore")
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+from pyaarapsi.vpr.classes.descriptors.lib.salad_lib import VPRModel #pylint: disable=C0413
+warnings.resetwarnings()
 
 class PlaceDataset(GenericPlaceDataset):
     '''

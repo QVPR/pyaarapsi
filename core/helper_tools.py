@@ -78,6 +78,38 @@ def brandn(*args, mean: float = 0.5, scale: float = 6.0, fill_with_linear=True):
         x = x[0] # convert array back to scalar
     return x
 
+def linbrandn(*args, left_lin_prob: float = 0.2, right_lin_prob: float = 0.2,
+              left_lin_bound: float = 0.2, right_lin_bound: float = 0.8,
+              gaussian_mean: float = 0.5):
+    '''
+    TODO
+    '''
+    assert left_lin_bound <= right_lin_bound
+    assert (left_lin_prob + right_lin_prob) <= 1
+    assert (left_lin_prob >= 0) and (left_lin_prob <= 1)
+    assert (right_lin_prob >= 0) and (right_lin_prob <= 1)
+    assert (gaussian_mean >= 0) and (gaussian_mean <= 1)
+
+    region = np.random.rand(*args)
+    input_was_array = isinstance(region, np.ndarray) # flag so we return same type
+    in_left_region = region < left_lin_prob
+    in_right_region = region >= (1 - right_lin_prob)
+    in_middle_region = (in_left_region is False) & (in_right_region is False)
+
+    x = np.zeros(region.shape)
+    left_width = left_lin_bound
+    right_width = 1 - right_lin_bound
+    middle_width = 1 - right_width - left_width
+    x[in_left_region] = np.random.rand(np.sum(in_left_region)) \
+                        * left_width
+    x[in_right_region] = (np.random.rand(np.sum(in_right_region)) \
+                        * right_width) + right_lin_bound
+    x[in_middle_region] = (np.random.rand(np.sum(in_middle_region)) \
+                        * middle_width) + left_lin_bound
+    if not input_was_array:
+        x = x[0] # convert array back to scalar
+    return x
+
 def input_with_timeout(prompt: str, timeout: float) -> str:
     'https://stackoverflow.com/questions/15528939/time-limited-input'
     ready, _, _ = select.select([sys.stdin], [],[], timeout)
@@ -329,7 +361,7 @@ def get_array_statistics(arr: NDArray) -> str:
     _max    = str(np.max(arr))
     _mean   = str(np.mean(arr))
     _range  = str(np.max(arr) - np.min(arr))
-    string_to_ret = f"{_shape}{_type} {_min}<{_mean}<{_max} [{_range}]"
+    string_to_ret = f"shape:{_shape}({_type}) {_min} <= {_mean} <= {_max} [range: {_range}]"
     return string_to_ret
 
 def combine_dictionaries(dicts: List[dict], cast: Callable = list) -> dict:

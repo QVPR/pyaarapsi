@@ -4,7 +4,7 @@ General helpers; not specific to any action.
 '''
 import copy
 from datetime import datetime
-from typing import Optional, Union
+from typing import Optional, Union, Iterable, Callable, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -44,6 +44,52 @@ def bin_search(min_val, max_val, criteria, iterations):
     if criteria(smin):
         return sval
     return smin
+
+def try_get(arr_in: Iterable, index_in: int, if_fail: Any = None) -> Any:
+    '''
+    Attempt to retrieve a positive index from an array ('arr_in') or a Callable wrapper around an
+    array; if the index provided is negative or larger than the length of the iterable, then the
+    function returns the 'if_fail' value
+    '''
+    if index_in < 0:
+        return if_fail
+    try:
+        return arr_in(index_in)
+    except (TypeError, IndexError):
+        try:
+            return arr_in[index_in]
+        except (TypeError, IndexError):
+            return if_fail
+
+def bin_search_edge(left_bound: int, right_bound: int, criteria: Callable, \
+                    max_iter: int = 20, _debug: bool = False) -> int:
+    '''
+    Perform a binary search to look for an edge. Provide some compute-expensive function 'criteria',
+    which over the integer search range from left_bound to right_bound returns either 1 or 0. Find
+    the first value in the search range which returns a value of 1 where that value + 1 returns a
+    value of 0 (falling edge detection).
+    '''
+    assert right_bound > left_bound
+    assert right_bound - left_bound > 1
+    for _ in range(max_iter):
+        middle = int((right_bound + left_bound) / 2)
+        if criteria(middle) == 1:
+            if _debug:
+                print('left', left_bound, right_bound, middle)
+            left_bound = middle
+            try:
+                if criteria(middle+1) == 0:
+                    break
+            except IndexError:
+                break
+        else:
+            if _debug:
+                print('right', left_bound, right_bound, middle)
+            right_bound = middle
+    if _debug:
+        print(f'Finished -- result: {middle} [{try_get(criteria, middle-1)}, ' \
+              f'{try_get(criteria, middle)}, {try_get(criteria, middle+1)}]')
+    return middle
 
 def inds_to_bool(inds: Union[NDArray, list], length: int) -> list:
     '''

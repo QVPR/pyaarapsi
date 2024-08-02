@@ -11,17 +11,30 @@ class ImageDimensions(AbstractData):
     '''
     Dimensions (width, height)
     '''
-    def __init__(self, width: int, height: int) -> Self:
+    def __init__(self, width: int = -1, height: int = -1) -> Self:
+        self.populated = not (width == -1 and height == -1)
+        if self.populated:
+            assert isinstance(width, int) and width > 0
+            assert isinstance(height, int) and height > 0
+        self.width = width
+        self.height = height
+    #
+    def populate(self, width: int, height: int) -> Self:
+        '''
+        Populate
+        '''
         assert isinstance(width, int) and width > 0
         assert isinstance(height, int) and height > 0
         self.width = width
         self.height = height
+        self.populated = True
     #
     def for_cv(self) -> Tuple[int, int]:
         '''
         Convert to order for cv2 operations
         The result will have width columns and height rows
         '''
+        assert self.is_populated(), "ImageDimensions are not populated!"
         return (self.width, self.height)
     #
     def for_np(self) -> Tuple[int, int]:
@@ -29,7 +42,14 @@ class ImageDimensions(AbstractData):
         Convert to order for numpy operations
         The result will have width columns and height rows
         '''
+        assert self.is_populated(), "ImageDimensions are not populated!"
         return (self.height, self.width)
+    #
+    def is_populated(self) -> bool:
+        '''
+        Check if contains data
+        '''
+        return self.populated
     #
     def save_ready(self) -> dict:
         '''
@@ -67,8 +87,14 @@ class ImageDimensions(AbstractData):
         return ImageDimensions(np_shape[1], np_shape[0])
     #
     def __repr__(self) -> str:
-        return f"[w={self.width:d},h={self.height:d}]"
+        if not self.is_populated():
+            return "ImageDimensions(populated=False)"
+        return f"ImageDimensions(w={self.width:d},h={self.height:d})"
+    #
+    def __eq__(self, other_dims: ImageDimensions) -> bool:
+        return (self.width == other_dims.width) and (self.height == other_dims.height)
     #
     def __del__(self):
         del self.width
         del self.height
+        del self.populated

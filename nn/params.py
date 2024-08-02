@@ -120,7 +120,7 @@ class General(ParamHolder):
     try:
         VPR_DP.init_all_containers()
     except:#pylint: disable=W0702
-        warnings.warn("[params] Unable to initialize generation for GEN_IP.")
+        warnings.warn("[params] Unable to initialize generation for VPR_DP.")
 
 class DFGeneral(ParamHolder):
     '''

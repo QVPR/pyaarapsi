@@ -382,11 +382,7 @@ def get_feat(   im: Union[np.ndarray, List[np.ndarray]],
         for descriptor in descriptors_in:
             if descriptor in VPRDescriptor.containerless_descriptors():
                 generated_features_list = []
-                if use_tqdm:
-                    iter_obj = tqdm(im_in)
-                else:
-                    iter_obj = im_in
-                for i in iter_obj:
+                for i in tqdm(im_in) if use_tqdm else im_in:
                     imr = cv_resize(i, dims.for_cv(), interpolation=cv_INTER_AREA)
                     ft  = cv_cvtColor(imr, cv_COLOR_RGB2GRAY)
                     if descriptor == VPRDescriptor.PATCHNORM:
@@ -403,7 +399,7 @@ def get_feat(   im: Union[np.ndarray, List[np.ndarray]],
             elif descriptor in VPRDescriptor.descriptors_with_container():
                 container = containers[descriptor.name]
                 generated_features = container.get_feat(dataset_input=im_in, dims=None,
-                                                        use_tqdm=True, save_dir=None)
+                                                        use_tqdm=use_tqdm, save_dir=None)
             else:
                 raise VPRDescriptor.Exception(f"[get_feat] descriptor {descriptor.name} "
                                               "could not be handled.")

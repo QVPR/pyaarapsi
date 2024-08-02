@@ -19,14 +19,15 @@ class VPRDescriptor(Enum):
     '''
     VPR Descriptors
     '''
-    SAD                 = (1, "SAD",       None,               None, True,  False)
-    NORM                = (2, "Norm",      None,               None, True,  False)
-    ROLLNORM            = (3, "RollNorm",  None,               None, True,  False)
-    PATCHNORM           = (4, "PatchNorm", None,               None, True,  False)
-    NETVLAD             = (5, "NetVLAD",   NetVLADContainer,   4096, False, True )
-    HYBRIDNET           = (6, "HybridNet", HybridNetContainer, 4096, True,  True )
-    SALAD               = (7, "SALAD",     SALADContainer,     8192, False, True )
-    APGEM               = (8, "AP-GeM",    APGEMContainer,     4096, False, True )
+    UNPROCESSED         = (1, "Unprocessed", None,               None, True,  False)
+    SAD                 = (1, "SAD",         None,               None, True,  False)
+    NORM                = (2, "Norm",        None,               None, True,  False)
+    ROLLNORM            = (3, "RollNorm",    None,               None, True,  False)
+    PATCHNORM           = (4, "PatchNorm",   None,               None, True,  False)
+    NETVLAD             = (5, "NetVLAD",     NetVLADContainer,   4096, False, True )
+    HYBRIDNET           = (6, "HybridNet",   HybridNetContainer, 4096, True,  True )
+    SALAD               = (7, "SALAD",       SALADContainer,     8192, False, True )
+    APGEM               = (8, "AP-GeM",      APGEMContainer,     2048, False, True )
     #
     def __init__(self, _, descriptor_name: str, container_class: Union[DescriptorContainer, None],
                  feature_length: int, is_spatially_related: bool, requires_init: bool

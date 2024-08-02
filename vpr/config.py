@@ -70,7 +70,8 @@ def get_wsp_path(num: int):
     '''
     assert num in [1,2,3]
     try:
-        _config = json.load(open(_root.__path__[0] + '/config.json', encoding="utf-8"))
+        with open(_root.__path__[0] + '/config.json', encoding="utf-8") as fp:
+            _config = json.load(fp)
         return _config['wsp' + str(num)]
     except (OSError, json.decoder.JSONDecodeError, AttributeError, TypeError):
         print_config_error_help()
@@ -81,7 +82,8 @@ def get_data_path():
     Get path to data storage
     '''
     try:
-        _config = json.load(open(_root.__path__[0] + '/config.json', encoding="utf-8"))
+        with open(_root.__path__[0] + '/config.json', encoding="utf-8") as fp:
+            _config = json.load(fp)
         return _config['data_path']
     except (OSError, json.decoder.JSONDecodeError, AttributeError, TypeError):
         print_config_error_help()

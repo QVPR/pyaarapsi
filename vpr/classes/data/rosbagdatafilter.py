@@ -5,9 +5,8 @@ Class definition for RosbagDataFilter
 from __future__ import annotations
 import copy
 from abc import abstractmethod
-from typing import Optional, Any, Type, List, Tuple
+from typing import Optional, Any, List, Tuple
 from typing_extensions import Self
-from enum import Enum, unique
 
 import numpy as np
 
@@ -51,7 +50,8 @@ class RosbagDataFilter(AbstractData):
                                     data.velocities.w()[indices],
                                     data.velocities.labels),
             times = data.times[indices],
-            data = {key: value[indices] for key, value in data.data.items()})
+            data = {key: value[indices] for key, value in data.data.items()},
+            data_type=data.data_type)
 
 class DistanceFilter(RosbagDataFilter):
     '''
@@ -335,65 +335,3 @@ class DeleteSegmentsFilter(RosbagDataFilter):
     #
     def __del__(self):
         del self.segments
-
-@unique
-class FilterType(Enum):
-    '''
-    Filter types for RosbagParams. All classes extend RosbagDataFilter
-    '''
-    DISTANCE        = (0, DistanceFilter        )
-    PERFORATE       = (1, PerforateFilter       )
-    FORWARD         = (2, ForwardFilter         )
-    CROP_LOOP       = (3, CropLoopFilter        )
-    CROP_BOUNDS     = (4, CropBoundsFilter      )
-    DELETE_SEGMENTS = (5, DeleteSegmentsFilter  )
-    #
-    def __init__(self, _, cls: Type[RosbagDataFilter]):
-        self.cls_name = cls.__name__
-        self.cls = cls
-    #
-    def get_cls_name(self) -> str:
-        '''
-        Return class name
-        '''
-        return self.cls_name
-    #
-    def get_cls(self) -> Type[RosbagDataFilter]:
-        '''
-        Return class instance
-        '''
-        return self.cls
-    #
-    @staticmethod
-    def find_filter_type(cls_name: str) -> FilterType:
-        '''
-        Find matching entry
-        '''
-        for i in FilterType:
-            if i.cls_name == cls_name:
-                return i
-        raise FilterType.Exception("Failed to find a match")
-    #
-    @staticmethod
-    def find_cls(cls_name: str) -> Type[RosbagDataFilter]:
-        '''
-        Find matching entry's class instance
-        '''
-        return FilterType.find_filter_type(cls_name).get_cls()
-    #
-    @staticmethod
-    def make_filter(save_ready_dict: dict) -> RosbagDataFilter:
-        '''
-        Build a filter from saved data
-        '''
-        try:
-            return FilterType.find_cls(cls_name=save_ready_dict["type"])(**save_ready_dict["data"])
-        except (KeyError, AbstractData.LoadSaveProtocolError) as e:
-            raise FilterType.Exception("Corrupt save_ready_dict, only has keys: " \
-                                       f"{list(save_ready_dict.keys())}") from e
-    #
-    @classmethod
-    class Exception(Exception):
-        """
-        Bad usage.
-        """

@@ -3,6 +3,7 @@
 AP-GeM Container for feature extraction
 '''
 import os
+import warnings
 from typing import Callable
 from tqdm.auto import tqdm
 import torch
@@ -13,11 +14,14 @@ import numpy as np
 from PIL import Image
 from PIL.Image import BICUBIC as PIL_BICUBIC #pylint: disable=E0611
 
-from pyaarapsi.vpr.classes.descriptors.lib.apgem_lib import load_checkpoint, create_model, \
-    switch_model_to_cuda
 from pyaarapsi.vpr.classes.download_models import download_apgem_models, MODELS_DIR
 from pyaarapsi.vpr.classes.descriptors.generic import GenericPlaceDataset, \
     PlaceDatasetError, DescriptorContainerError, DescriptorContainer
+
+warnings.filterwarnings("ignore")
+from pyaarapsi.vpr.classes.descriptors.lib.apgem_lib import load_checkpoint, create_model, \
+        switch_model_to_cuda #pylint: disable=C0413
+warnings.resetwarnings()
 
 class PlaceDataset(GenericPlaceDataset):
     '''
@@ -320,6 +324,6 @@ class APGEMContainer(DescriptorContainer):
         if not save_dir is None:
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
-            output_global_features_filename = os.path.join(save_dir, 'SALAD_feats.npy')
+            output_global_features_filename = os.path.join(save_dir, 'AP-GeM_feats.npy')
             np.save(output_global_features_filename, db_feat)
         return db_feat

@@ -16,4 +16,5 @@ src/CMakeLists.txt
 *.egg-info
 *.code-workspace
 .ipynb_checkpoints
-vpr_simple/config.json
+vpr/config.json
+vpr/classes/data/custom_filters.json

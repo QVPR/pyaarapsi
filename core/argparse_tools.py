@@ -11,6 +11,8 @@ from pyaarapsi.core.enum_tools import enum_value_options
 
 
 InstanceT = TypeVar("InstanceT")
+TypeT = TypeVar("TypeT")
+
 @overload
 def assert_iterable_instances(iterable_in: List[InstanceT], type_in: Type,
                                 empty_ok: bool = False, iter_type: Optional[Type] = None \
@@ -38,14 +40,41 @@ def assert_iterable_instances(iterable_in: Union[List[InstanceT], Tuple[Instance
         assert_instance(instance_in=i, type_in=type_in)
     return iterable_in
 
-def assert_instance(instance_in: InstanceT, type_in: Type) -> InstanceT:
+def assert_instance(instance_in: InstanceT, type_in: Type) -> InstanceT: #, reload_ok: bool = True
     '''
     Perform assertion on an instance.
     Raises AssertionError on failure
     '''
-    assert isinstance(instance_in, type_in), f"Incorrect type, got: {type(instance_in)} " \
-                                                f"(wanted: {type_in})"
+    # if reload_ok:
+    #     try:
+    #         assert (instance_in.__class__ == type_in.__class__) \
+    #             and (instance_in.__module__ == type_in.__module__), \
+    #             f"Incorrect type, got: {instance_in.__module__}:{instance_in.__class__} " \
+    #             f"(wanted: {type_in.__module__}:{type_in.__class__})"
+    #     except AttributeError:
+    #         return assert_instance(instance_in=instance_in, type_in=type_in, reload_ok=False)
+    # else:
+    assert isinstance(instance_in, type_in), \
+            f"Incorrect type, got: {type(instance_in)} (wanted: {type_in})"
     return instance_in
+
+def assert_subclass(type_in: TypeT, baseclass_in: Type) -> TypeT: #, reload_ok: bool = True
+    '''
+    Perform assertion on a type.
+    Raises AssertionError on failure
+    '''
+    # if reload_ok:
+    #     try:
+    #         assert (instance_in.__class__ == type_in.__class__) \
+    #             and (instance_in.__module__ == type_in.__module__), \
+    #             f"Incorrect type, got: {instance_in.__module__}:{instance_in.__class__} " \
+    #             f"(wanted: {type_in.__module__}:{type_in.__class__})"
+    #     except AttributeError:
+    #         return assert_instance(instance_in=instance_in, type_in=type_in, reload_ok=False)
+    # else:
+    assert issubclass(type_in, baseclass_in), \
+            f"Incorrect type, got type with bases: {type_in.__bases__} (wanted: {baseclass_in})"
+    return type_in
 
 def check_int(value: Any) -> int:
     '''

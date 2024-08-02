@@ -140,7 +140,7 @@ class FilterlessRosbagParams(AbstractData):
         if set(i.name for i in self.vpr_descriptors) \
             != set(i.name for i in other_params.vpr_descriptors):
             return False
-        if self.img_dims.for_cv() != other_params.img_dims.for_cv():
+        if self.img_dims != other_params.img_dims:
             return False
         if self.sample_rate != other_params.sample_rate:
             return False

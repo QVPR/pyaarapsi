@@ -34,6 +34,7 @@ from pyaarapsi.vpr.classes.dimensions import ImageDimensions
 from pyaarapsi.vpr.classes.data.rosbagdata import RosbagData
 from pyaarapsi.vpr.classes.data.rosbagparams import RosbagParams
 from pyaarapsi.vpr.classes.data.rosbagdataset import RosbagDataset
+from pyaarapsi.vpr.classes.data.datatypes import DataTypes
 
 ROSPKG_ROOT = config.prep_rospkg_root()
 
@@ -389,8 +390,9 @@ class VPRDatasetProcessor(VPRProcessorBase):
         Erase attributes in a RosbagParams attribute that do not impact unprocessed dataset
         generation, and would otherwise unnecessarily restrict parameter searches.
         '''
-        return params.but_with(attr_changes={"vpr_descriptors": (), "img_dims": (), \
-                                                       "feature_filters": ()})
+        return params.but_with(attr_changes={"vpr_descriptors": (VPRDescriptor.UNPROCESSED,), \
+                                             "img_dims": ImageDimensions(), \
+                                             "feature_filters": ()})
     #
     def _adjust_upd_dataset_for_saving(self, dataset: RosbagDataset) -> RosbagDataset:
         '''
@@ -400,7 +402,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
         '''
         return RosbagDataset().populate( \
             params=self._adjust_upd_params_for_saving(params=dataset.params),
-            data=dataset.data)
+            data=copy.deepcopy(dataset.data))
     #
     def load_upd_dataset(self, dataset_params: RosbagParams, save: bool=True
                          ) -> Tuple[str, RosbagDataset]:
@@ -414,21 +416,20 @@ class VPRDatasetProcessor(VPRProcessorBase):
             Tuple[str, RosbagDataset] type; name of, and actual, loaded or generated
                 RosbagDataset for unprocessed data
         '''
-        params_for_upd = self._adjust_upd_params_for_saving(params=dataset_params)
         self.print("[load_upd_dataset] Loading dataset.")
         upd_datasets = self.get_all_saved_upd_dataset_params()
         if len(dataset_params.image_filters) == 0:
             upd_name, loaded_upd_dataset = self._normal_load_upd_helper(datasets=upd_datasets, \
-                                                                params=params_for_upd)
+                                                                params=dataset_params)
         else:
             upd_name, loaded_upd_dataset = self._filter_load_upd_helper(datasets=upd_datasets, \
-                                                                params=params_for_upd, save=save)
+                                                                params=dataset_params, save=save)
         if upd_name != '':
             return upd_name, loaded_upd_dataset
         else:
             self.print("[load_dataset] Generating unprocessed dataset with params: "
                         f"{str(dataset_params.to_dict())}", LogType.DEBUG)
-            loaded_upd_dataset = self.generate_upd_dataset(dataset_params=params_for_upd, \
+            loaded_upd_dataset = self.generate_upd_dataset(dataset_params=dataset_params, \
                                                            save=save)
             return 'NEW GENERATION', loaded_upd_dataset
     #
@@ -437,21 +438,20 @@ class VPRDatasetProcessor(VPRProcessorBase):
         '''
         Helper function for filter loading and processing.
         '''
-        params_for_upd = self._adjust_upd_params_for_saving(params=params)
         # Attempt to load, as-is:
         upd_name, loaded_upd_dataset = \
-            self._normal_load_upd_helper(datasets=datasets, params=params_for_upd)
+            self._normal_load_upd_helper(datasets=datasets, params=params)
         if upd_name != '':
             return upd_name, loaded_upd_dataset # load success, early finish
         # Couldn't find a match: try to find an unfiltered version:
-        filterless_upd_params = params_for_upd.but_with(attr_changes={"image_filters": ()})
+        filterless_upd_params = params.but_with(attr_changes={"image_filters": ()})
         filterless_upd_name, filterless_loaded_upd_dataset \
             = self._normal_load_upd_helper(datasets=datasets, params=filterless_upd_params)
         if filterless_upd_name == '':
             return '', RosbagDataset() # load failed, leave (and maybe go to generation)
         # Success - now apply filters:
         filtered_upd_dataset = filter_image_dataset(dataset=RosbagDataset().populate(
-                            params=params_for_upd,
+                            params=params,
                             data=filterless_loaded_upd_dataset.data
                             ), _printer=lambda msg: self.print(msg, LogType.DEBUG))
         if save:
@@ -483,17 +483,16 @@ class VPRDatasetProcessor(VPRProcessorBase):
             dict type; Generated dataset dictionary
         '''
         try:
-            params_for_upd = self._adjust_upd_params_for_saving(params=dataset_params)
-            filterless_params_for_upd = params_for_upd.but_with(attr_changes={"image_filters": ()})
-            bag_path = self.root +  '/' + self.bag_dbp + '/' + params_for_upd.bag_name
-            # generate:
+            filterless_params_for_upd = dataset_params.but_with(attr_changes={"image_filters": ()})
+            bag_path = self.root +  '/' + self.bag_dbp + '/' + dataset_params.bag_name
+            # generate; use filterless for next save step:
             rosbag_image_dataset = process_bag(bag_path=bag_path, \
                                             dataset_params=filterless_params_for_upd, \
                                             printer=self.print, use_tqdm=self.use_tqdm)
             if save:
                 self.save_upd_dataset(dataset=rosbag_image_dataset)
             filtered_image_dataset = filter_image_dataset(RosbagDataset().populate(
-                params=params_for_upd, data=rosbag_image_dataset.get_data()
+                params=dataset_params, data=rosbag_image_dataset.get_data()
                 ), _printer=lambda msg: self.print(msg, LogType.DEBUG))
             if save:
                 self.save_upd_dataset(dataset=filtered_image_dataset)
@@ -501,7 +500,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
         except Exception as e:
             raise DatasetLoadSaveError("Failed to generate unprocessed data") from e
     #
-    def generate_dataset(self, dataset_params: RosbagParams, store: bool = True) -> dict:
+    def generate_dataset(self, dataset_params: RosbagParams, store: bool = True) -> RosbagDataset:
         '''
         Generate new datasets from parameters
 
@@ -509,7 +508,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
         - dataset_params: RosbagParams type; params to define a unique extraction
         - store:          bool type {default: True}; whether or not to store in VPRDatasetProcessor
         Returns:
-            dict type; Generated dataset dictionary
+            RosbagDataset type; Generated dataset
         '''
         try:
             _, filtered_image_dataset = self.load_upd_dataset(dataset_params=dataset_params, \
@@ -531,16 +530,17 @@ class VPRDatasetProcessor(VPRProcessorBase):
                 positions   = copy.deepcopy(filtered_image_dataset.data.positions),
                 velocities  = copy.deepcopy(filtered_image_dataset.data.velocities),
                 times       = copy.deepcopy(filtered_image_dataset.data.times),
-                data        = features_data
+                data        = features_data,
+                data_type   = DataTypes.PROCESSED
             )
-            if self.autosave and len(filtered_image_dataset.params.feature_filters) > 0:
+            if self.autosave and len(dataset_params.feature_filters) > 0:
                 pre_filtered_dataset = RosbagDataset().populate(
-                                        params=filtered_image_dataset.params.but_with(\
+                                        params=dataset_params.but_with(\
                                             attr_changes={"feature_filters":()}),
                                         data=rosbag_feature_data)
                 self.save_dataset(dataset=pre_filtered_dataset)
             filtered_feature_dataset = filter_feature_dataset(RosbagDataset().populate(
-                                        params=filtered_image_dataset.params,
+                                        params=dataset_params,
                                         data=rosbag_feature_data
                                         ), _printer=lambda msg: self.print(msg, LogType.DEBUG))
             if store:
@@ -553,6 +553,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
                                                 data=filtered_feature_dataset.data)
             if self.autosave:
                 self.save_dataset(dataset=dataset)
+            return dataset
         except Exception as e:
             raise DatasetLoadSaveError("Failed to generate processed data") from e
     #
@@ -596,6 +597,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
         assert isinstance(dataset, RosbagDataset)
         if not dataset.is_populated():
             raise DatasetLoadSaveError("Dataset not populated.")
+        upd_dataset = self._adjust_upd_dataset_for_saving(dataset=dataset)
         save_dir = self.root + '/' + self.upd_dbp
         # Generate unique name:
         overwriting, name, file_list = self.make_saveable_file_name(save_dir=save_dir, name=name, \
@@ -611,7 +613,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
         full_param_path = save_dir + "/params/" + file_name
 
         if not overwriting:
-            file_ = self._check(params=dataset.params)
+            file_ = self._check(params=upd_dataset.params)
             if file_:
                 self.print(f"[save_dataset] File exists with identical parameters ({file_}); "
                             "skipping save.", LogType.DEBUG)
@@ -621,9 +623,9 @@ class VPRDatasetProcessor(VPRProcessorBase):
                 os.remove(full_file_path)
             with suppress(FileNotFoundError):
                 os.remove(full_param_path)
-        np.savez(full_file_path, params=dataset.params.save_ready(),
-                                    data=dataset.data.save_ready())
-        np.savez(full_param_path, params=dataset.params.save_ready())
+        np.savez(full_file_path, params=upd_dataset.params.save_ready(),
+                                    data=upd_dataset.data.save_ready())
+        np.savez(full_param_path, params=upd_dataset.params.save_ready())
         if overwriting:
             self.print(f"[save_upd_dataset] Overwrite complete.\n\t  file: {full_file_path}"
                         f"\n\tparams: {full_param_path}.")
@@ -772,7 +774,17 @@ class VPRDatasetProcessor(VPRProcessorBase):
         assert self.dataset.is_populated()
         return self.root +  '/' + self.bag_dbp + '/' + self.dataset.params.bag_name + ".bag"
     #
-    def load_dataset(self, dataset_params: RosbagParams, try_gen: bool = False) -> str:
+    @overload
+    def load_dataset(self, dataset_params: RosbagParams, try_gen: bool = False, \
+                     store: Literal[True] = True) -> str:
+        ...
+    @overload
+    def load_dataset(self, dataset_params: RosbagParams, try_gen: bool = False, \
+                     store: Literal[False] = True) -> Tuple[str, RosbagDataset]:
+        ...
+    #
+    def load_dataset(self, dataset_params: RosbagParams, try_gen: bool = False, store: bool = True
+                     ) -> Union[str, Tuple[str, RosbagDataset]]:
         '''
         Load a dataset by searching for a param dictionary match into VPRDatasetProcessor
 
@@ -789,49 +801,95 @@ class VPRDatasetProcessor(VPRProcessorBase):
         datasets = self.get_all_saved_dataset_params()
         sub_params = dataset_params.to_descriptor(dataset_params.vpr_descriptors[0])
         if len(dataset_params.feature_filters) == 0:
-            _name = self._normal_load_helper(datasets=datasets, params=sub_params)
+            load_output = self._normal_load_helper(datasets=datasets, params=sub_params, \
+                                                   store=store)
+            _name = load_output if store is True else load_output[0]
         else:
-            _name = self._filter_load_helper(datasets=datasets, params=sub_params, \
-                                             save=try_gen)
-        if not _name == '':
-            if len(dataset_params.vpr_descriptors) > 1:
+            load_output = self._filter_load_helper(datasets=datasets, params=sub_params, \
+                                             save=try_gen, store=store)
+            _name = load_output if store is True else load_output[0]
+        if _name != '':
+            if (store is True) and (len(dataset_params.vpr_descriptors) > 1):
                 for descriptor in dataset_params.vpr_descriptors[1:]:
                     if not self.extend_dataset(descriptor, try_gen=try_gen, save=try_gen):
                         return ''
-            return _name
+            return load_output
         else:
             if try_gen:
                 self.print("[load_dataset] Generating dataset with params: "
                            f"{str(dataset_params.to_dict())}", LogType.DEBUG)
-                self.generate_dataset(dataset_params=dataset_params, store=True)
-                return 'NEW GENERATION'
-            return ''
+                dataset = self.generate_dataset(dataset_params=dataset_params, store=store)
+                return 'NEW GENERATION', dataset
+            return '', RosbagDataset()
+    #
+    def probe_dataset(self, dataset_params: RosbagParams, try_gen: bool = False) -> bool:
+        '''
+        Check if a dataset exists; optionally, generate it if it doesn't.
+        Accelerates some checks, doesn't handle multiple descriptors or filters particularly well.
 
+        Inputs:
+        - dataset_params:   RosbagParams type; params to define a unique extraction
+        - try_gen:          bool type {default: False}; whether or not to attempt generation if
+                                load fails
+        Returns:
+            bool type; whether the dataset exists (always true if try_gen=True)
+        '''
+
+        self.print("[probe_dataset] Checking for dataset.")
+        datasets = self.get_all_saved_dataset_params()
+        for value in datasets.values():
+            if value == dataset_params:
+                return True
+        if try_gen:
+            self.load_dataset(dataset_params=dataset_params, try_gen=True, store=False)
+            return True
+        return False
+    #
+    @overload
     def _filter_load_helper(self, datasets: Dict[str, RosbagParams], params: RosbagParams, \
-                            save: bool = True) -> str:
+                            save: bool = True, store: Literal[True] = True \
+                            ) -> str:
+        ...
+    #
+    @overload
+    def _filter_load_helper(self, datasets: Dict[str, RosbagParams], params: RosbagParams, \
+                            save: bool = True, store: Literal[False] = True \
+                            ) -> Tuple[str, RosbagDataset]:
+        ...
+    #
+    def _filter_load_helper(self, datasets: Dict[str, RosbagParams], params: RosbagParams, \
+                            save: bool = True, store: bool = True \
+                            ) -> Union[str, Tuple[str, RosbagDataset]]:
         '''
         Helper function for filter loading and processing.
         '''
         # Attempt to load, as-is:
-        name_from_filter_load = self._normal_load_helper(datasets=datasets, params=params,
-                                                         store=True)
+        load_output = self._normal_load_helper(datasets=datasets, params=params, store=store)
+        name_from_filter_load = load_output if store is True else load_output[0]
         if name_from_filter_load != '':
-            return name_from_filter_load # load success, early finish
+            return load_output # load success, early finish
         # Couldn't find a match: try to find an unfiltered version:
         filterless_params = params.but_with(attr_changes={"feature_filters": ()})
         filterless_dataset = self._normal_load_helper(datasets=datasets, params=filterless_params,
-                                                   store=False)
+                                                        store=False)[1]
         if not filterless_dataset.is_populated():
-            return '' # load failed, leave (and maybe go to generation)
+            # load failed, leave (and maybe go to generation):
+            return '' if store else ('', RosbagDataset())
         # Success - now apply filters:
         filtered_dataset = filter_feature_dataset(dataset=RosbagDataset().populate(
                             params=params,
                             data=filterless_dataset.data
                             ), _printer=lambda msg: self.print(msg, LogType.DEBUG))
-        self.dataset.populate(params=filtered_dataset.params, data=filtered_dataset.data)
+        if store:
+            self.dataset.populate(params=filtered_dataset.params, data=filtered_dataset.data)
+            if save:
+                self.save_dataset()
+            return 'NEW GENERATION'
+        dataset = RosbagDataset().populate(params=filtered_dataset.params, \
+                                           data=filtered_dataset.data)
         if save:
-            self.save_dataset()
-        return 'NEW GENERATION'
+            self.save_dataset(dataset=dataset)
+        return 'NEW GENERATION', dataset
     #
     @overload
     def _normal_load_helper(self, datasets: Dict[str, RosbagParams], params: RosbagParams,
@@ -840,19 +898,19 @@ class VPRDatasetProcessor(VPRProcessorBase):
     #
     @overload
     def _normal_load_helper(self, datasets: Dict[str, RosbagParams], params: RosbagParams,
-                            store: Literal[False] = True) -> RosbagDataset:
+                            store: Literal[False] = True) -> Tuple[str, RosbagDataset]:
         ...
     #
     def _normal_load_helper(self, datasets: Dict[str, RosbagParams], params: RosbagParams,
-                            store: bool = True) -> Union[str, RosbagDataset]:
+                            store: bool = True) -> Union[str, Tuple[str, RosbagDataset]]:
         for key, value in datasets.items():
             if value == params:
                 try:
                     load_result = self._load_npz(dataset_name=key, store=store)
-                    return key if store else load_result
+                    return key if store else (key, load_result)
                 except IOError:
                     self._fix_processed(key)
-        return '' if store else RosbagDataset()
+        return '' if store else ('', RosbagDataset())
     #
     def swap(self, dataset_params: RosbagParams, generate: bool = False, allow_false: bool = True
              ) -> bool:
@@ -899,7 +957,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
         Returns:
             None
         '''
-        super(VPRDatasetProcessor, self).__del__()
+        super().__del__()
         del self.use_tqdm
         del self.autosave
         del self.root

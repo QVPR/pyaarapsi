@@ -1,14 +1,13 @@
-import os, sys
+#!/usr/bin/env python3
+import os#, sys
 from setuptools import setup, find_packages
-from setuptools.command.install import install
-
+# from setuptools.command.install import install
 
 here = os.path.abspath(os.path.dirname(__file__))
 
 # Get the long description from the README file
 with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
-
 
 normal_install_require_list = [
     'numpy', 'torch', 'torchvision',
@@ -59,10 +58,10 @@ ros_install_versioned_require_list = [
 #         if not any(arg.startswith('[') for arg in sys.argv):
 #             global EXTRAS_MISSING
 #             EXTRAS_MISSING = True
-            
+
 setup(
     name='pyaarapsi',
-    version='0.2.2',
+    version='0.3.0',
     description='PyAARAPSI: Python Package for AARAPSI Project',
     author='Owen Claxton, Connor Malone, and Helen Carson',
     author_email='claxtono@qut.edu.au',

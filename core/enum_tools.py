@@ -28,17 +28,18 @@ def enum_contains(value: Any, enumtype: Type[Enum], wrap: bool = False) -> Union
 EnumBaseT = TypeVar("EnumBaseT", bound=Enum)
 
 @overload
-def enum_get(value: Any, enumtype: Type[EnumBaseT], wrap: bool = False
-             ) -> Union[EnumBaseT,None]: ...
+def enum_get(value: Any, enumtype: Type[EnumBaseT], wrap: bool = False, \
+                allow_fail: bool = True) -> Union[EnumBaseT,None]: ...
 
 @overload
-def enum_get(value: List[Any], enumtype: Type[EnumBaseT], wrap: bool = False
-             ) -> Union[List[EnumBaseT],None]: ...
+def enum_get(value: List[Any], enumtype: Type[EnumBaseT], wrap: bool = False, \
+                allow_fail: bool = True) -> Union[List[EnumBaseT],None]: ...
 
-def enum_get(value: Union[Any, List[Any]], enumtype: Type[EnumBaseT], wrap: bool = False
-             ) -> Union[EnumBaseT,List[EnumBaseT],None]:
+def enum_get(value: Union[Any, List[Any]], enumtype: Type[EnumBaseT], wrap: bool = False, \
+                allow_fail: bool = True) -> Union[EnumBaseT,List[EnumBaseT],None]:
     '''
     Return enumtype corresponding to value if it exists (or return None)
+    If allow_fail=False, raises ValueError instead of None.
     '''
     if not isinstance(value, list):
         for i in enumtype:
@@ -53,6 +54,8 @@ def enum_get(value: Union[Any, List[Any]], enumtype: Type[EnumBaseT], wrap: bool
                     value[c] = i
                     break
         return value
+    if not allow_fail:
+        raise ValueError(f"Could not match value {value} to enum {enumtype}.")
     return None
 
 def enum_value_options(enumtype: Type[Enum], skip: Optional[List[Enum]] = None) -> Tuple[list, str]:

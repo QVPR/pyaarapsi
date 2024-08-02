@@ -10,8 +10,9 @@ from typing_extensions import Self
 
 from pyaarapsi.vpr.classes.vprdescriptor import VPRDescriptor
 from pyaarapsi.vpr.classes.dimensions import ImageDimensions
-from pyaarapsi.vpr.classes.data.rosbagdatafilter import RosbagDataFilter, FilterType
+from pyaarapsi.vpr.classes.data.rosbagdatafilter import RosbagDataFilter
 from pyaarapsi.vpr.classes.data.filterlessrosbagparams import FilterlessRosbagParams
+from pyaarapsi.vpr.classes.data.filtertype import FilterType
 from pyaarapsi.vpr.classes.data.abstractdata import AbstractData
 from pyaarapsi.core.argparse_tools import assert_iterable_instances
 from pyaarapsi.core.enum_tools import enum_get
@@ -140,7 +141,7 @@ class RosbagParams(FilterlessRosbagParams):
         return True
     #
     def __del__(self):
-        super(RosbagParams, self).__del__()
+        super().__del__()
         del self.image_filters
         del self.feature_filters
         
