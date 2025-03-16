@@ -1,8 +1,6 @@
 .vscode/
-build/
 .prof
 __pycache__
-src/CMakeLists.txt
 *:Zone.Identifier
 *.caffemodel
 *.pt
@@ -16,5 +14,5 @@ src/CMakeLists.txt
 *.egg-info
 *.code-workspace
 .ipynb_checkpoints
-vpr/config.json
-vpr/classes/data/custom_filters.json
+pyaarapsi/vpr/config.json
+pyaarapsi/vpr/classes/data/custom_filters.json
