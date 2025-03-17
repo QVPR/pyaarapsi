@@ -49,7 +49,7 @@ def make_config(data_path: Path, workspace_path_1: Optional[Path] = None,
             continue
         r_wsp = _wsp_path.resolve()
         r_wsp.mkdir(parents=False, exist_ok=True)
-        _config[_wsp_name] = str(_wsp_path)
+        _config[_wsp_name] = str(r_wsp)
 
     with open(_root.__path__[0] + '/config.json', 'w', encoding="utf-8") as fp:
         json.dump(_config, fp)
