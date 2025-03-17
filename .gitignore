@@ -16,3 +16,4 @@ __pycache__
 .ipynb_checkpoints
 pyaarapsi/vpr/config.json
 pyaarapsi/vpr/classes/data/custom_filters.json
+build/*
