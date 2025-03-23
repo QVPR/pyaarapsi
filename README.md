@@ -3,6 +3,8 @@ Multi-purpose python package, for a variety of needs across the AARAPSI Project
 
 Sister ROS Package: https://github.com/QVPR/aarapsi_robot_pack
 
+Now supports Python3.12
+
 # Installation steps:
 Grab the repo:
 ```
@@ -38,10 +40,6 @@ One of:
 ## core.classes
 - defaultdict.py: For DefaultDict, which extends ```dict```, to provide a default key.
 - object_storage_handler.py: For Object_Storage_Handler, to provide an easy loader/saver.
-
-## examples
-- extract_images_from_rosbags.py: Needs update.
-- working_with_VPRDatasetProcessor_and_SVMModelProcessor.py: Needs update.
 
 ## nn
 - classes.py:
