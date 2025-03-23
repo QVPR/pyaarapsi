@@ -287,5 +287,5 @@ def make_components(mode: GenMode, vect: NDArray, ref_feats: NDArray, qry_feats:
         raise GenMode.Exception(f'Unknown GenMode: {str(mode)}')
     #
     components = np.concatenate(comps, axis=0)
-    components[np.where(np.isfinite(components) is False)] = 0
+    components[np.where(np.isfinite(components) == False)] = 0
     return np.transpose(components)

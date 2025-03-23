@@ -3,6 +3,7 @@
 Parameters.
 '''
 import copy
+import os
 import warnings
 from typing import List, Tuple
 import torch
@@ -86,7 +87,7 @@ class General(ParamHolder):
     _KWARGS_SILENT          = {"use_tqdm": False, "printer": lambda *args, **kwargs: None}
     VPR_DP                  = (lambda kw=_KWARGS_VERBOSE if VPRDP_VERBOSE
                                                             else _KWARGS_SILENT:
-                                VPRDatasetProcessor(dataset_params=None, try_gen=True, cuda=True,
+                                VPRDatasetProcessor(dataset_params=None, try_gen=True, cuda=False,
                                                     autosave=True, ros=False, root=None,
                                                     **kw))()
     NN_IM_SCRIPT_VERBOSE    = True
@@ -104,7 +105,7 @@ class General(ParamHolder):
     PALETTE                 = (lambda mn=MODE_NAMES, pt=PRED_TYPES, clrs=_COLORS:
                                 {mn[k]: c for k,c in zip(pt + ['gt'], clrs)})()
     DIR_AP                  = config.get_wsp_path(1)
-    DIR_NN_REP              = DIR_AP + "/Paper_1_Scripts/NN_Replacement"
+    DIR_NN_REP              = DIR_AP + "/generated"
     DIR_NN                  = DIR_NN_REP + "/networks"
     DIR_NN_DS               = DIR_NN_REP + "/datasets_training"
     DIR_EXP_DS              = DIR_NN_REP + "/datasets_experiments"
@@ -114,6 +115,12 @@ class General(ParamHolder):
     PATH_EXP2_EXAMPLE       = DIR_MEDIA + "/exp2_along_path_example%s"
     BGIMG1                  = mpl_image.imread(DIR_AP + '/media/outdoors_2a.jpg')
     BGIMG2                  = mpl_image.imread(DIR_AP + '/media/carpet_2.jpg')
+
+    for path_ in [DIR_NN_REP, DIR_NN, DIR_NN_DS, DIR_EXP_DS, DIR_MEDIA]:
+        try:
+            os.mkdir(path_)
+        except FileExistsError:
+            pass
 
     # Ensure these do not get stored.
     ParamHolder.IGNORED_VARIABLES.extend(["VPR_DP", "BGIMG1", "BGIMG2", "DEVICE"])

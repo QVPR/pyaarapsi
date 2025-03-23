@@ -363,7 +363,7 @@ class ObjectStorageHandler():
         full_param_path = self.param_path / (file_name + ('.npz' \
                             if not file_name.endswith('.npz') else ''))
         _params = dict(params=dict(np.load(full_param_path, allow_pickle=True))['params'].item())
-        _obj    = torch.load(f=full_file_path)
+        _obj    = torch.load(f=full_file_path, weights_only=False)
         self.set_object(object_to_store=_obj, object_params=_params)
         return self
     #

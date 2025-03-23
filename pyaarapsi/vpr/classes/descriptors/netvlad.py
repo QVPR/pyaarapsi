@@ -161,7 +161,7 @@ class NetVLADContainer(DescriptorContainer):
 
         if os.path.isfile(file_path):
             self.logger(f"=> Trying to load checkpoint '{file_path}'")
-            checkpoint = torch.load(file_path, map_location=lambda storage, loc: storage)
+            checkpoint = torch.load(file_path, map_location=lambda storage, loc: storage, weights_only=False)
             if bool(self.num_pcs):
                 assert checkpoint['state_dict']['WPCA.0.bias'].shape[0] \
                     == int(self.config['global_params']['num_pcs'])

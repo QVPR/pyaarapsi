@@ -498,7 +498,7 @@ class VPRDatasetProcessor(VPRProcessorBase):
                 self.save_upd_dataset(dataset=filtered_image_dataset)
             return filtered_image_dataset
         except Exception as e:
-            raise DatasetLoadSaveError("Failed to generate unprocessed data") from e
+            raise DatasetLoadSaveError("Failed to generate unprocessed data. \nParams: " + str(dataset_params)) from e
     #
     def generate_dataset(self, dataset_params: RosbagParams, store: bool = True) -> RosbagDataset:
         '''

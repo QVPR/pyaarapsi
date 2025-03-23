@@ -729,7 +729,7 @@ def load_checkpoint(filename, iscuda=False):
     if not filename:
         return None
     assert os.path.isfile(filename), f"=> no checkpoint found at '{filename}'"
-    checkpoint = torch.load(filename, map_location=lambda storage, loc: storage)
+    checkpoint = torch.load(filename, map_location=lambda storage, loc: storage, weights_only=False)
     print(f"=> loading checkpoint '{filename}'", end='')
     for key in ['epoch', 'iter', 'current_iter']:
         if key in checkpoint:

@@ -104,8 +104,8 @@ def load_model(ckpt_path, verbose=False):
         },
         verbose=verbose
     )
-
-    model.load_state_dict(torch.load(ckpt_path))
+    checkpoint = torch.load(ckpt_path, map_location=lambda storage, loc: storage, weights_only=False)
+    model.load_state_dict(checkpoint)
     # model = model.eval()
     # model = model.to('cuda')
     if verbose:

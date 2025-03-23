@@ -192,7 +192,6 @@ class APGEMContainer(DescriptorContainer):
         del self.batchsize
         del self.cachebatchsize
         del self.whitenp
-        del self.whitenv
         del self.whitenm
         del self.threads
         del self.resumepath

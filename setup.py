@@ -61,7 +61,7 @@ ros_install_versioned_require_list = [
 
 setup(
     name='pyaarapsi',
-    version='0.3.0',
+    version='0.4.0',
     description='PyAARAPSI: Python Package for AARAPSI Project',
     author='Owen Claxton, Connor Malone, and Helen Carson',
     author_email='claxtono@qut.edu.au',
@@ -95,6 +95,8 @@ setup(
         'complete-versioned': normal_install_versioned_require_list + ros_install_versioned_require_list
     },
     packages=find_packages(),
+    package_data={'': ['.hidden', 'amosnet_mean.npy', 'custom_filters.json', 'deploy.prototxt', 'downloader.sh']},
+    include_package_data=True,
     keywords=[
         'python', 'place recognition', 'image retrieval', 'computer vision', 'robotics'
     ],

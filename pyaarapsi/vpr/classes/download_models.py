@@ -5,8 +5,9 @@ Methods to download models from online repositories
 import os
 import subprocess
 from pyaarapsi.core.helper_tools import ask_yesnoexit
-from . import downloads
-MODELS_DIR = downloads.__path__._path[0] + '/' #pylint: disable=W0212,E1101
+from pyaarapsi.vpr.classes import downloads
+
+MODELS_DIR = downloads.__path__[0] + '/' #pylint: disable=W0212,E1101
 
 def download_file(file_id, file_name):
     '''
@@ -70,7 +71,7 @@ def download_netvlad_models(force=False):
         if not os.path.isfile(os.path.join(dest_dir, "pittsburgh_WPCA4096.pth.tar")):
             print('Downloading pittsburgh_WPCA4096.pth.tar')
             download_file("1TcF6Z2n7lxkf_9pXnEbJXmOzCMEljhjO", "pittsburgh_WPCA4096.pth.tar")
-        print('Downloaded all pretrained models.')
+        print('Downloaded all pretrained NetVLAD models.')
 
 def download_hybridnet_models(force=False):
     '''
@@ -88,6 +89,7 @@ def download_hybridnet_models(force=False):
         if not os.path.isfile(os.path.join(dest_dir, "HybridNet.caffemodel")):
             print('Downloading HybridNet.caffemodel')
             download_file("1_tzdDkM5TeyB37TEduyxWMi_T4CqQ4u4", "HybridNet.caffemodel")
+        print('Downloaded all pretrained HybridNet models.')
 
 def download_salad_models(force=False):
     '''
@@ -104,7 +106,8 @@ def download_salad_models(force=False):
                 pass
         if not os.path.isfile(os.path.join(dest_dir, "dino_salad.ckpt")):
             print('Downloading dino_salad.ckpt')
-            download_file("1MH7vvvXmbjwMlU_bNx4CR4iFpu_fRYcY", "dino_salad.ckpt")
+            download_file("1gOM7brNbkI_5i64Wc8SZf4N_X0OadCrT", "dino_salad.ckpt")
+        print('Downloaded all pretrained SALAD models.')
 
 def download_apgem_models(force=False):
     '''
@@ -122,6 +125,7 @@ def download_apgem_models(force=False):
         if not os.path.isfile(os.path.join(dest_dir, "Resnet-101-AP-GeM.pt")):
             print('Downloading Resnet-101-AP-GeM.pt')
             download_file("16V8ShtsbDHdBmbGWjfdWyVkNn36kkztB", "Resnet-101-AP-GeM.pt")
+        print('Downloaded all pretrained AP-GeM models.')
 
 def download_all_models(force=False):
     '''
