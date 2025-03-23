@@ -3,6 +3,8 @@ Multi-purpose python package, for a variety of needs across the AARAPSI Project
 
 Sister ROS Package: https://github.com/QVPR/aarapsi_robot_pack
 
+Now supports Python3.12
+
 # Installation steps:
 Grab the repo:
 ```
